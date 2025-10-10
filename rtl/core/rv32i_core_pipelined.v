@@ -230,6 +230,9 @@ module rv32i_core_pipelined #(
   );
 
   // Register File
+  wire [31:0] id_rs1_data_raw;  // Raw register file output
+  wire [31:0] id_rs2_data_raw;  // Raw register file output
+
   register_file regfile (
     .clk(clk),
     .reset_n(reset_n),
@@ -238,9 +241,17 @@ module rv32i_core_pipelined #(
     .rd_addr(memwb_rd_addr),          // Write from WB stage
     .rd_data(wb_data),                // Write data from WB stage
     .rd_wen(memwb_reg_write),         // Write enable from WB stage
-    .rs1_data(id_rs1_data),
-    .rs2_data(id_rs2_data)
+    .rs1_data(id_rs1_data_raw),
+    .rs2_data(id_rs2_data_raw)
   );
+
+  // WB-to-ID Forwarding (Register File Bypass)
+  // Forward from WB stage if reading the same register being written
+  assign id_rs1_data = (memwb_reg_write && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs1))
+                       ? wb_data : id_rs1_data_raw;
+
+  assign id_rs2_data = (memwb_reg_write && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs2))
+                       ? wb_data : id_rs2_data_raw;
 
   // Immediate Selection
   assign id_immediate = (id_imm_sel == 3'b000) ? id_imm_i :
