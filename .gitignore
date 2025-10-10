@@ -1,0 +1,53 @@
+# Simulation files
+*.vvp
+*.vcd
+*.fst
+*.log
+sim/*.vvp
+sim/*.log
+sim/waves/
+
+# Compiled objects
+*.o
+*.elf
+*.bin
+*.dump
+tests/vectors/*.o
+tests/vectors/*.elf
+tests/vectors/*.dump
+
+# Verilator
+obj_dir/
+*.d
+*.mk
+
+# Synthesis
+*.blif
+*.json
+*.asc
+*.bin
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Backup files
+*.bak
+*.backup
+
+# Build artifacts
+build/
+dist/
+
+# OS generated
+Thumbs.db
