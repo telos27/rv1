@@ -1,0 +1,112 @@
+========================================
+RISC-V Compliance Test Runner (Pipelined)
+========================================
+
+Step 1: Converting tests to hex format...
+  Converted: rv32ui-p-add -> rv32ui-p-add.hex
+  Converted: rv32ui-p-addi -> rv32ui-p-addi.hex
+  Converted: rv32ui-p-and -> rv32ui-p-and.hex
+  Converted: rv32ui-p-andi -> rv32ui-p-andi.hex
+  Converted: rv32ui-p-auipc -> rv32ui-p-auipc.hex
+  Converted: rv32ui-p-beq -> rv32ui-p-beq.hex
+  Converted: rv32ui-p-bge -> rv32ui-p-bge.hex
+  Converted: rv32ui-p-bgeu -> rv32ui-p-bgeu.hex
+  Converted: rv32ui-p-blt -> rv32ui-p-blt.hex
+  Converted: rv32ui-p-bltu -> rv32ui-p-bltu.hex
+  Converted: rv32ui-p-bne -> rv32ui-p-bne.hex
+  Converted: rv32ui-p-fence_i -> rv32ui-p-fence_i.hex
+  Converted: rv32ui-p-jal -> rv32ui-p-jal.hex
+  Converted: rv32ui-p-jalr -> rv32ui-p-jalr.hex
+  Converted: rv32ui-p-lb -> rv32ui-p-lb.hex
+  Converted: rv32ui-p-lbu -> rv32ui-p-lbu.hex
+  Converted: rv32ui-p-ld_st -> rv32ui-p-ld_st.hex
+  Converted: rv32ui-p-lh -> rv32ui-p-lh.hex
+  Converted: rv32ui-p-lhu -> rv32ui-p-lhu.hex
+  Converted: rv32ui-p-lui -> rv32ui-p-lui.hex
+  Converted: rv32ui-p-lw -> rv32ui-p-lw.hex
+  Converted: rv32ui-p-ma_data -> rv32ui-p-ma_data.hex
+  Converted: rv32ui-p-or -> rv32ui-p-or.hex
+  Converted: rv32ui-p-ori -> rv32ui-p-ori.hex
+  Converted: rv32ui-p-sb -> rv32ui-p-sb.hex
+  Converted: rv32ui-p-sh -> rv32ui-p-sh.hex
+  Converted: rv32ui-p-simple -> rv32ui-p-simple.hex
+  Converted: rv32ui-p-sll -> rv32ui-p-sll.hex
+  Converted: rv32ui-p-slli -> rv32ui-p-slli.hex
+  Converted: rv32ui-p-slt -> rv32ui-p-slt.hex
+  Converted: rv32ui-p-slti -> rv32ui-p-slti.hex
+  Converted: rv32ui-p-sltiu -> rv32ui-p-sltiu.hex
+  Converted: rv32ui-p-sltu -> rv32ui-p-sltu.hex
+  Converted: rv32ui-p-sra -> rv32ui-p-sra.hex
+  Converted: rv32ui-p-srai -> rv32ui-p-srai.hex
+  Converted: rv32ui-p-srl -> rv32ui-p-srl.hex
+  Converted: rv32ui-p-srli -> rv32ui-p-srli.hex
+  Converted: rv32ui-p-st_ld -> rv32ui-p-st_ld.hex
+  Converted: rv32ui-p-sub -> rv32ui-p-sub.hex
+  Converted: rv32ui-p-sw -> rv32ui-p-sw.hex
+  Converted: rv32ui-p-xor -> rv32ui-p-xor.hex
+  Converted: rv32ui-p-xori -> rv32ui-p-xori.hex
+
+Converted 42 tests to hex format
+
+Step 2: Running compliance tests...
+
+Running rv32ui-p-add... [0;32mPASSED[0m
+Running rv32ui-p-addi... [0;32mPASSED[0m
+Running rv32ui-p-and... [0;32mPASSED[0m
+Running rv32ui-p-andi... [0;32mPASSED[0m
+Running rv32ui-p-auipc... [0;32mPASSED[0m
+Running rv32ui-p-beq... [0;32mPASSED[0m
+Running rv32ui-p-bge... [0;32mPASSED[0m
+Running rv32ui-p-bgeu... [0;32mPASSED[0m
+Running rv32ui-p-blt... [0;32mPASSED[0m
+Running rv32ui-p-bltu... [0;32mPASSED[0m
+Running rv32ui-p-bne... [0;32mPASSED[0m
+Running rv32ui-p-fence_i... [0;31mFAILED (test #5)[0m
+Running rv32ui-p-jal... [0;32mPASSED[0m
+Running rv32ui-p-jalr... [0;32mPASSED[0m
+Running rv32ui-p-lb... [0;32mPASSED[0m
+Running rv32ui-p-lbu... [0;32mPASSED[0m
+Running rv32ui-p-ld_st... [0;32mPASSED[0m
+Running rv32ui-p-lh... [0;32mPASSED[0m
+Running rv32ui-p-lhu... [0;32mPASSED[0m
+Running rv32ui-p-lui... [0;32mPASSED[0m
+Running rv32ui-p-lw... [0;32mPASSED[0m
+Running rv32ui-p-ma_data... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-or... [0;32mPASSED[0m
+Running rv32ui-p-ori... [0;32mPASSED[0m
+Running rv32ui-p-sb... [0;32mPASSED[0m
+Running rv32ui-p-sh... [0;32mPASSED[0m
+Running rv32ui-p-simple... [0;32mPASSED[0m
+Running rv32ui-p-sll... [0;32mPASSED[0m
+Running rv32ui-p-slli... [0;32mPASSED[0m
+Running rv32ui-p-slt... [0;32mPASSED[0m
+Running rv32ui-p-slti... [0;32mPASSED[0m
+Running rv32ui-p-sltiu... [0;32mPASSED[0m
+Running rv32ui-p-sltu... [0;32mPASSED[0m
+Running rv32ui-p-sra... [0;32mPASSED[0m
+Running rv32ui-p-srai... [0;32mPASSED[0m
+Running rv32ui-p-srl... [0;32mPASSED[0m
+Running rv32ui-p-srli... [0;32mPASSED[0m
+Running rv32ui-p-st_ld... [0;32mPASSED[0m
+Running rv32ui-p-sub... [0;32mPASSED[0m
+Running rv32ui-p-sw... [0;32mPASSED[0m
+Running rv32ui-p-xor... [0;32mPASSED[0m
+Running rv32ui-p-xori... [0;32mPASSED[0m
+
+========================================
+COMPLIANCE TEST SUMMARY
+========================================
+Total tests: 42
+[0;32mPassed: 40[0m
+[0;31mFailed: 2[0m
+
+Failed tests:
+
+  - rv32ui-p-fence_i (failed at test #5)
+  - rv32ui-p-ma_data (timeout or error)
+
+Pass rate: 95%
+[0;32m✓ Target achieved (≥90%)[0m
+
+Logs saved to: /home/lei/rv1/sim/compliance/
+
