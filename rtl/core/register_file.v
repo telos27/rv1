@@ -18,7 +18,7 @@ module register_file (
   // Register array (x0-x31)
   reg [31:0] registers [0:31];
 
-  // Initialize registers
+  // Initialize registers and write on posedge
   integer i;
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin

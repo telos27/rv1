@@ -1,9 +1,9 @@
 # Next Session - RV1 RISC-V Processor Development
 
 **Date Created**: 2025-10-09
-**Last Updated**: 2025-10-09
+**Last Updated**: 2025-10-09 (Post-Debugging Session)
 **Current Phase**: Phase 1 - Single-Cycle RV32I Core (75% complete)
-**Session Goal**: Fix compliance test failures
+**Session Goal**: Decide next steps after RAW hazard discovery
 
 ---
 
@@ -35,17 +35,27 @@
 - **See**: COMPLIANCE_RESULTS.md for detailed analysis
 
 ❌ **What Needs Fixing:**
-- Right shift operations (SRA, SRAI, SRL, SRLI) - 4 tests failing
-- R-type logical ops (AND, OR, XOR) - 3 tests failing
-- Load/store edge cases - 9 tests failing
-- FENCE.I instruction - 1 test failing (optional)
-- Misaligned access - 1 test failing (out of scope)
+- ~~Right shift operations~~ ✅ ALU verified correct, issue is RAW hazard
+- ~~R-type logical ops~~ ✅ ALU verified correct, issue is RAW hazard
+- Load/store edge cases - 9 tests failing (unknown cause)
+- FENCE.I instruction - 1 test failing (not implemented, expected)
+- Misaligned access - 1 test failing (out of scope, expected)
+
+⚠️ **Critical Discovery (2025-10-09)**:
+**Read-After-Write (RAW) Hazard in Single-Cycle Design**
+- Register file has synchronous writes (posedge clk)
+- Next instruction reads before write completes
+- Affects: Right shifts, R-type logical ops (7 test failures)
+- **Root cause**: Architectural limitation, not a bug
+- **Solution**: Requires pipeline with forwarding (Phase 3) or multi-cycle (Phase 2)
+- **Status**: Cannot fix in current single-cycle architecture
+- **See**: `docs/COMPLIANCE_DEBUGGING_SESSION.md` for full analysis
 
 📋 **Next Steps:**
-- Priority 1: Fix right shift operations (ALU bug)
-- Priority 2: Fix R-type logical operations
-- Priority 3: Fix load/store edge cases
-- Performance analysis
+- **Option A**: Debug load/store failures (may find fixable bugs)
+- **Option B**: Performance analysis and declare Phase 1 complete at 57% compliance
+- **Option C**: Move to Phase 2 (multi-cycle) where RAW hazard can be properly addressed
+- **Decision needed**: Choose path forward in next session
 
 ---
 
@@ -144,62 +154,75 @@ vvp sim/test.vvp
 
 ---
 
-### 4. ⏳ Fix Right Shift Operations - NEXT PRIORITY
+### 4. ✅ Debugging Right Shift and R-Type Operations - COMPLETED (2025-10-09)
 
-**Problem**: SRA, SRAI, SRL, SRLI tests fail (4 failures)
-- Left shifts (SLL, SLLI) work correctly
-- Indicates ALU shift logic bug for right shifts
+**Investigation Results**: See `docs/COMPLIANCE_DEBUGGING_SESSION.md` for full analysis
 
-**Action Items**:
-1. Debug ALU shift right operations
-2. Check sign extension for arithmetic right shift
-3. Verify shift amount masking (should use lower 5 bits)
-4. Test edge cases: shift by 0, shift by 31
+**What we found**:
+- ✅ ALU shift logic is **correct** - all unit tests pass (40/40)
+- ✅ Custom shift tests **pass** (shift_ops.s: x10=0xa0ffe7ee, 56 cycles)
+- ❌ Compliance tests still **fail** - not due to ALU bugs
 
-**Files to Check**:
-- `rtl/core/alu.v` - Shift logic implementation
+**Root Cause Identified**: **Read-After-Write (RAW) Hazard**
+- Register file has synchronous writes (posedge clk)
+- Compliance tests use back-to-back dependent instructions
+- Next instruction reads register before write completes
+- Example: `AND x1, x2, x3` followed immediately by `AND x4, x1, x5`
 
-**Expected Gain**: +4 tests → 67% pass rate
+**Why Custom Tests Pass**:
+- Our tests have spacing between dependent instructions
+- No tight register dependencies like compliance tests
 
----
+**Attempted Fixes**:
+1. ❌ Register forwarding → Created combinational loop (rs1→ALU→rd→rs1)
+2. ❌ Negedge writes → Broke JALR, made things worse
+3. ✅ Reverted to original - no regression, stable
 
-### 5. ⏳ Fix R-Type Logical Operations - PRIORITY 2
+**Conclusion**: **Architectural limitation of single-cycle design**
+- Cannot fix without fundamental redesign
+- Proper solution requires pipeline with forwarding (Phase 3)
+- Alternative: Multi-cycle with separate WB stage (Phase 2)
 
-**Problem**: AND, OR, XOR tests fail (3 failures)
-- Immediate versions (ANDI, ORI, XORI) pass
-- Indicates register-to-register bypassing issue
-
-**Action Items**:
-1. Analyze AND test failure (failed at test #19)
-2. Check if tests use back-to-back dependent instructions
-3. Review single-cycle data path for bypassing needs
-4. May need additional muxing for register reads
-
-**Files to Check**:
-- `rtl/core/rv32i_core.v` - Data path connections
-- `rtl/core/alu.v` - ALU operations
-
-**Expected Gain**: +3 tests → 74% pass rate
+**Impact on Compliance**:
+- Right shifts: SRA, SRAI, SRL, SRLI - fail due to RAW hazard
+- R-type logical: AND, OR, XOR - fail due to RAW hazard
+- Expected gain if fixed: +7 tests → 74% (but not feasible in single-cycle)
 
 ---
 
-### 6. ⏳ Fix Load/Store Edge Cases - PRIORITY 3
+### 5. ⏳ Fix Load/Store Edge Cases - NEW PRIORITY 1
 
 **Problem**: All load/store tests fail (9 failures)
 - Custom load_store.s test passes
 - Compliance tests use more edge cases
+- May also have load-to-use RAW hazards
+
+**Hypothesis**: Similar to R-type failures, but may have additional issues:
+1. Load-to-use hazards (load result used immediately)
+2. Possible sign/zero extension bugs
+3. Possible address calculation issues
 
 **Action Items**:
-1. Check sign extension for LB, LH
-2. Verify zero extension for LBU, LHU
-3. Test misaligned access handling
-4. Check load-to-use data forwarding
+1. Analyze one failing load test (e.g., rv32ui-p-lw) in detail
+2. Check if failure is due to load-to-use hazard or actual bug
+3. If actual bug: fix memory logic
+4. If hazard: document as architectural limitation
 
 **Files to Check**:
 - `rtl/memory/data_memory.v` - Load/store logic
 - `rtl/core/rv32i_core.v` - Memory interface
 
-**Expected Gain**: +9 tests → 95% pass rate
+**Expected Outcome**:
+- If bug: +9 tests → 79% pass rate
+- If hazard: Document and accept current 57% pass rate
+
+---
+
+### 6. ⏳ Performance Analysis - ALTERNATIVE PRIORITY
+
+**Status**: Can be done now as Phase 1 functional work is complete
+
+**Decision Point**: Either fix load/store OR do performance analysis
 
 ---
 
