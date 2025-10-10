@@ -2,11 +2,20 @@
 // Generates control signals based on opcode and function fields
 // Author: RV1 Project
 // Date: 2025-10-09
+// Updated: 2025-10-10 - Added CSR and trap support
 
 module control (
   input  wire [6:0] opcode,      // Opcode from instruction
   input  wire [2:0] funct3,      // Function3 field
   input  wire [6:0] funct7,      // Function7 field
+
+  // Decoder inputs for special instructions
+  input  wire       is_csr,      // CSR instruction
+  input  wire       is_ecall,    // ECALL instruction
+  input  wire       is_ebreak,   // EBREAK instruction
+  input  wire       is_mret,     // MRET instruction
+
+  // Standard control outputs
   output reg        reg_write,   // Register file write enable
   output reg        mem_read,    // Memory read enable
   output reg        mem_write,   // Memory write enable
@@ -14,8 +23,15 @@ module control (
   output reg        jump,        // Jump instruction
   output reg  [3:0] alu_control, // ALU operation
   output reg        alu_src,     // ALU source: 0=rs2, 1=immediate
-  output reg  [1:0] wb_sel,      // Write-back select: 00=ALU, 01=MEM, 10=PC+4
-  output reg  [2:0] imm_sel      // Immediate format select
+  output reg  [1:0] wb_sel,      // Write-back select: 00=ALU, 01=MEM, 10=PC+4, 11=CSR
+  output reg  [2:0] imm_sel,     // Immediate format select
+
+  // CSR control outputs
+  output reg        csr_we,      // CSR write enable
+  output reg        csr_src,     // CSR source: 0=rs1, 1=uimm
+
+  // Exception/trap outputs
+  output reg        illegal_inst // Illegal instruction detected
 );
 
   // Opcode definitions
@@ -79,6 +95,9 @@ module control (
     alu_src = 1'b0;
     wb_sel = 2'b00;
     imm_sel = IMM_I;
+    csr_we = 1'b0;
+    csr_src = 1'b0;
+    illegal_inst = 1'b0;
 
     case (opcode)
       OP_LUI: begin
@@ -165,12 +184,40 @@ module control (
       end
 
       OP_SYSTEM: begin
-        // ECALL/EBREAK: No-op for now
-        // Future: trigger exception
+        // SYSTEM instructions: CSR, ECALL, EBREAK, MRET
+        if (is_csr) begin
+          // CSR instructions
+          reg_write = 1'b1;        // Write CSR read value to rd
+          wb_sel = 2'b11;          // Write-back from CSR
+
+          // Determine CSR write enable
+          // For CSRRW/CSRRWI: always write (unless rd=x0, but that's handled in core)
+          // For CSRRS/CSRRC/CSRRSI/CSRRCI: write if rs1/uimm != 0
+          // We'll handle the write suppression in the core, so always enable here
+          csr_we = 1'b1;
+
+          // CSR source: immediate (1) for funct3[2]=1, register (0) otherwise
+          csr_src = funct3[2];
+
+        end else if (is_ecall || is_ebreak) begin
+          // ECALL/EBREAK: trigger exception
+          // These don't write to registers or memory
+          // Exception will be handled in the core
+
+        end else if (is_mret) begin
+          // MRET: return from trap
+          // This is handled as a special jump in the core
+          jump = 1'b1;  // Indicate control flow change
+
+        end else begin
+          // Unknown SYSTEM instruction
+          illegal_inst = 1'b1;
+        end
       end
 
       default: begin
-        // Invalid opcode: all signals stay at default (no-op)
+        // Invalid opcode: mark as illegal instruction
+        illegal_inst = 1'b1;
       end
     endcase
   end
