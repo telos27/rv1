@@ -347,9 +347,13 @@ module rv32i_core_pipelined #(
                             (idex_opcode == 7'b0110111) ? 32'h0 :        // LUI
                             idex_rs1_data;                                // Others
 
-  assign ex_alu_operand_a_forwarded = (forward_a == 2'b10) ? exmem_alu_result :    // EX hazard
-                                      (forward_a == 2'b01) ? wb_data :              // MEM hazard
-                                      ex_alu_operand_a;                              // No hazard
+  // Disable forwarding for LUI and AUIPC (they don't use rs1, decoder extracts garbage)
+  wire disable_forward_a = (idex_opcode == 7'b0110111) || (idex_opcode == 7'b0010111);  // LUI or AUIPC
+
+  assign ex_alu_operand_a_forwarded = disable_forward_a ? ex_alu_operand_a :            // No forward for LUI/AUIPC
+                                      (forward_a == 2'b10) ? exmem_alu_result :         // EX hazard
+                                      (forward_a == 2'b01) ? wb_data :                  // MEM hazard
+                                      ex_alu_operand_a;                                  // No hazard
 
   // ALU Operand B selection (with forwarding)
   wire [31:0] ex_rs2_data_forwarded;
