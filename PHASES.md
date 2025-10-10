@@ -4,11 +4,18 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 1 - Single-Cycle RV32I Core
-**Completion**: ~75% (architectural limitation discovered)
-**Next Milestone**: Decision point - fix load/store, performance analysis, or move to Phase 2
+**Active Phase**: Phase 3 - 5-Stage Pipeline (Phase 3.1 Complete)
+**Completion**: Phase 3.1: 100% ✅ | Overall Phase 3: ~15%
+**Next Milestone**: Phase 3.2 - Build pipelined core top-level integration
 
-**Recent Progress (2025-10-09):**
+**Recent Progress (2025-10-10):**
+- ✅ Phase 3 architecture documentation completed (2 comprehensive docs)
+- ✅ All 4 pipeline registers implemented and tested (7/7 tests PASSED)
+- ✅ Forwarding unit implemented (handles EX-to-EX, MEM-to-EX forwarding)
+- ✅ Hazard detection unit implemented (detects load-use hazards)
+- ✅ Phase 3.1 complete: Pipeline infrastructure ready for integration
+
+**Earlier Progress (2025-10-09):**
 - ✅ Debugging session completed for right shift and R-type logical operations
 - ✅ Discovered Read-After-Write (RAW) hazard - architectural limitation
 - ✅ Verified ALU and register file are functionally correct
@@ -392,24 +399,40 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 **Goal**: Implement classic RISC pipeline with hazard handling
 
-**Status**: NOT STARTED
+**Status**: IN PROGRESS (Phase 3.1 Complete)
 
+**Start Date**: 2025-10-10
+**Last Updated**: 2025-10-10
 **Estimated Duration**: 3-4 weeks
 
-### Stage 3.1: Basic Pipeline Structure
-**Status**: NOT STARTED
+### Stage 3.1: Basic Pipeline Structure ✅
+**Status**: COMPLETED (2025-10-10)
 
 #### Tasks
-- [ ] Create IF/ID pipeline register
-- [ ] Create ID/EX pipeline register
-- [ ] Create EX/MEM pipeline register
-- [ ] Create MEM/WB pipeline register
-- [ ] Update all modules for pipelined operation
+- [x] Create IF/ID pipeline register
+- [x] Create ID/EX pipeline register
+- [x] Create EX/MEM pipeline register
+- [x] Create MEM/WB pipeline register
+- [x] Create forwarding unit
+- [x] Create hazard detection unit
+- [x] Write comprehensive unit tests
+- [ ] Update all modules for pipelined operation (Next: Phase 3.2)
 
 #### Success Criteria
-- Pipeline registers update correctly
-- Basic instruction flow through pipeline
-- No hazard handling yet (will fail on dependencies)
+- ✅ Pipeline registers update correctly (All 7 tests PASSED)
+- ✅ Stall and flush mechanisms work correctly
+- ✅ Forwarding unit detects RAW hazards
+- ✅ Hazard detection unit detects load-use hazards
+- ✅ All unit tests pass (7/7 PASSED, 100%)
+
+**Implementation Files:**
+- `rtl/core/ifid_register.v` - IF/ID stage register with stall/flush
+- `rtl/core/idex_register.v` - ID/EX stage register with 18+ control signals
+- `rtl/core/exmem_register.v` - EX/MEM stage register
+- `rtl/core/memwb_register.v` - MEM/WB stage register
+- `rtl/core/forwarding_unit.v` - EX-to-EX and MEM-to-EX forwarding
+- `rtl/core/hazard_detection_unit.v` - Load-use hazard detection
+- `tb/unit/tb_pipeline_registers.v` - Comprehensive testbench (7 tests PASSED)
 
 ### Stage 3.2: Forwarding Logic
 **Status**: NOT STARTED
