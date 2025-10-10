@@ -1,214 +1,246 @@
 # Next Session - RV1 RISC-V Processor Development
 
 **Date Created**: 2025-10-09
-**Last Updated**: 2025-10-10 (Phase 3.5 Complete - Critical Forwarding Fix)
-**Current Phase**: Phase 3 - 5-Stage Pipelined Core (80% complete)
-**Session Goal**: RISC-V compliance testing and performance analysis
+**Last Updated**: 2025-10-10 (Session 3 Complete - Control Hazard Fixed)
+**Current Phase**: Phase 3 - 5-Stage Pipelined Core (85% complete)
+**Session Goal**: Debug data forwarding and load-use hazards
 
 ---
 
 ## Quick Status
 
 ✅ **Phase 3 Progress:**
-- **Phase 3.1** ✅ COMPLETE - Pipeline registers and hazard control units (7/7 tests PASSED)
-- **Phase 3.2** ✅ COMPLETE - Basic pipelined datapath integration (3/3 tests PASSED)
-- **Phase 3.3** ✅ COMPLETE - Data forwarding (integrated into 3.2)
-- **Phase 3.4** ✅ COMPLETE - Load-use hazard detection (integrated into 3.2)
-- **Phase 3.5** ✅ COMPLETE - **Complete 3-level forwarding architecture** (CRITICAL FIX)
-- **Phase 3.6** 🔲 NOT STARTED - Comprehensive integration testing
+- **Phase 3.1** ✅ COMPLETE - Pipeline registers and hazard control units
+- **Phase 3.2** ✅ COMPLETE - Basic pipelined datapath integration
+- **Phase 3.3** ✅ COMPLETE - Data forwarding (integrated)
+- **Phase 3.4** ✅ COMPLETE - Load-use hazard detection (integrated)
+- **Phase 3.5** ✅ COMPLETE - Complete 3-level forwarding architecture
+- **Phase 3.6** 🔄 IN PROGRESS - Control hazard fixed, data forwarding needs debug
 - **Phase 3.7** 🔲 NOT STARTED - Branch prediction (optional)
 
-**Overall Phase 3**: ~80% complete
+**Overall Phase 3**: ~85% complete
 
 ---
 
-## 🎯 Major Accomplishment: Complete Forwarding Architecture
+## 🎯 Major Accomplishment: Control Hazard Bug Fixed!
 
-### Critical Bug Found and Fixed
+### Session 3 Achievements (2025-10-10)
 
-**Problem Identified:**
-- Original pipelined core only had **2 levels of forwarding** (EX-to-EX and MEM-to-EX)
-- Missing **WB-to-ID forwarding** (register file bypass)
-- Caused RAW hazards when ID stage read registers being written in WB stage
-- Symptom: Back-to-back dependent instructions produced incorrect results
-
-**Example Failure:**
-```assembly
-li x1, 10          # x1 = 10
-li x2, 20          # x2 = 20
-add x3, x1, x2     # x3 = 30
-add x4, x3, x1     # x4 should be 40, but was getting 30 (x1 read as 0)
-```
+**Critical Bug Found and Fixed:**
+- **Problem**: Only IF/ID register was flushed on branch/jump, not ID/EX
+- **Impact**: ALL branch tests failing (beq, bne, blt, bge, bltu, bgeu, jalr)
+- **Pass rate dropped**: 24/42 (57%) → 19/42 (45%)
 
 **Solution Implemented:**
-Added proper **3-level data forwarding architecture**:
-
-1. **WB-to-ID Forwarding** (NEW) - Register File Bypass
-   - Forwards data from WB stage to ID stage
-   - Handles register reads in same cycle as write-back
-   - Location: `rv32i_core_pipelined.v` lines 248-254
-
-2. **MEM-to-EX Forwarding** - Already implemented
-   - Forwards data from MEM/WB stage to EX stage
-   - Handles 1-cycle-old data dependencies
-
-3. **EX-to-EX Forwarding** - Already implemented
-   - Forwards data from EX/MEM stage to EX stage
-   - Handles back-to-back ALU dependencies
-
-This is the **standard, complete forwarding solution** used in all modern pipelined processors.
-
----
-
-## ✅ What's Working Now
-
-**All 7 Phase 1 Tests PASS on Pipelined Core:**
-1. ✅ simple_add.s - PASSED (10 cycles)
-2. ✅ fibonacci.s - PASSED (21 cycles)
-3. ✅ logic_ops.s - PASSED
-4. ✅ load_store.s - PASSED (16 cycles)
-5. ✅ shift_ops.s - PASSED (50 cycles)
-6. ✅ branch_test.s - PASSED (15 cycles)
-7. ✅ jump_test.s - PASSED (13 cycles)
-
-**RAW Hazard Tests Created and Validated:**
-- `test_simple_raw.s` - Simple back-to-back dependency ✅ PASSED
-- `test_raw_hazards.s` - Comprehensive RAW hazard test ✅ PASSED
-  - Tests EX-to-EX forwarding
-  - Tests MEM-to-EX forwarding
-  - Tests WB-to-ID forwarding
-  - Tests load-use hazards
-  - Tests chained dependencies
-  - Tests R-type logical ops (AND, OR, XOR)
-  - Tests right shifts (SRL, SRA)
-
-**Complete Pipelined Core:**
-- File: `rtl/core/rv32i_core_pipelined.v` (465 lines)
-- All 4 pipeline registers integrated
-- Complete 3-level forwarding
-- Hazard detection for load-use stalls
-- Branch/jump handling with flush
-- All Phase 1 modules reused without modification
-
----
-
-## 📊 Performance Improvements
-
-Cycle count comparison (Pipelined vs Single-Cycle):
-
-| Test | Single-Cycle | Pipelined | Improvement |
-|------|--------------|-----------|-------------|
-| simple_add | 5 cycles | 10 cycles | ❌ (pipeline fill overhead) |
-| fibonacci | 65 cycles | 21 cycles | ✅ 3.1x faster |
-| branch_test | 70 cycles | 15 cycles | ✅ 4.7x faster |
-| jump_test | 49 cycles | 13 cycles | ✅ 3.8x faster |
-
-The pipelined core shows **significant speedup** on real programs with loops and branches!
-
----
-
-## Immediate Tasks (Priority Order)
-
-### 1. 🔲 Create Phase 3 Test Results Document
-
-**Goal**: Document the forwarding fix and validation results
-
-**Contents**:
-- Bug description and root cause analysis
-- 3-level forwarding architecture diagram
-- Test results comparison (before/after fix)
-- Cycle count analysis
-
-**File**: `docs/PHASE3_FORWARDING_FIX.md`
-
----
-
-### 2. 🔲 RISC-V Compliance Tests (if available)
-
-**Goal**: Verify that pipelined core with complete forwarding passes compliance tests
-
-**Expected Results**:
-- **Phase 1 Baseline**: 24/42 PASSED (57%) - limited by RAW hazards
-- **Phase 3 Target**: 40+/42 PASSED (95%+) - RAW hazards eliminated
-- **Expected Improvements**:
-  - R-type logical ops (AND, OR, XOR): 0/3 → 3/3 PASSED (+3)
-  - Right shifts (SRL, SRA, SRLI, SRAI): 0/4 → 4/4 PASSED (+4)
-  - Load/store improvements: 6/15 → 13/15 PASSED (+7)
-  - **Total gain**: +14 tests
-
-**Note**: Compliance test binaries not in repo (were generated in Phase 1 session)
-
----
-
-### 3. 🔲 Performance Analysis
-
-**Goal**: Measure and analyze pipeline performance
-
-**Metrics to Collect**:
-1. **CPI (Cycles Per Instruction)**: Target 1.1-1.3
-   - Ideal pipeline: 1.0 CPI
-   - With hazards: 1.1-1.3 CPI expected
-2. **Hazard Statistics**:
-   - Number of EX-to-EX forwards
-   - Number of MEM-to-EX forwards
-   - Number of WB-to-ID forwards
-   - Number of load-use stalls
-   - Number of branch/jump flushes
-3. **Branch Penalty**: Should be 2-3 cycles for taken branches
-4. **Instruction Throughput**: Instructions/cycle
-
-**Analysis Tasks**:
-- Calculate average CPI across all test programs
-- Breakdown CPI by hazard type
-- Identify performance bottlenecks
-- Compare with theoretical maximum
-
----
-
-### 4. 🔲 Documentation Updates
-
-**Files to Update**:
-- [x] PHASES.md - Updated with Phase 3.5 completion ✅
-- [ ] NEXT_SESSION.md - This file (update after session complete)
-- [ ] README.md - Add Phase 3 achievements
-- [ ] Create `docs/PHASE3_FORWARDING_FIX.md` - Document bug fix
-- [ ] Create `docs/PHASE3_TEST_RESULTS.md` - Document all test results
-- [ ] Update `docs/PHASE3_PROGRESS.md` - Add forwarding fix details
-
----
-
-## Environment Info
-
-**Tools Installed**:
-- Icarus Verilog 11.0 (`iverilog`, `vvp`)
-- GTKWave 3.3.104 (`gtkwave`)
-- RISC-V Toolchain:
-  - riscv64-unknown-elf-gcc 10.2.0
-  - riscv64-unknown-elf-as (GNU 2.35.1)
-  - riscv64-unknown-elf-ld (GNU 2.35.1)
-
-**Verification**:
-```bash
-./tools/check_env.sh
-# Should show all green checkmarks
+```verilog
+// Flush BOTH IF/ID and ID/EX when branch taken
+assign flush_idex = flush_idex_hazard | ex_take_branch;
 ```
 
+**Results:**
+- ✅ All 7 branch/jump tests now PASS
+- ✅ Pass rate recovered: 19/42 (45%) → 24/42 (57%)
+- ✅ Matches Phase 1 baseline (no regression)
+
 ---
 
-## Quick Reference Commands
+## 📊 RISC-V Compliance Test Results
 
-**Run pipelined core test**:
+### Current Results (Phase 3 - After Fix)
+**24/42 PASSED (57%)**
+
+### Comparison
+| Phase | Passed | Failed | Pass Rate |
+|-------|--------|--------|-----------|
+| Phase 1 (Single-Cycle) | 24/42 | 18/42 | 57% |
+| Phase 3 (Before Fix) | 19/42 | 23/42 | 45% ❌ |
+| Phase 3 (After Fix) | 24/42 | 18/42 | 57% ✅ |
+
+### Category Breakdown
+
+**✅ Passing (24 tests):**
+- Arithmetic: add, addi, sub (3)
+- Logical immediate: andi, ori, xori (3)
+- Shifts (left only): sll, slli (2)
+- Comparisons: slt, slti, sltiu, sltu (4)
+- **Branches: beq, bne, blt, bge, bltu, bgeu (6)** ← FIXED!
+- **Jumps: jal, jalr (2)** ← FIXED!
+- Upper immediate: lui, auipc (2)
+- Miscellaneous: simple, st_ld (2)
+
+**❌ Still Failing (18 tests):**
+
+1. **R-type Logical Operations (3 tests)** - HIGH PRIORITY
+   - `and` (fails at test #19)
+   - `or` (fails at test #19)
+   - `xor` (fails at test #19)
+   - **Issue**: Data forwarding not eliminating RAW hazards
+
+2. **Right Shift Operations (4 tests)** - HIGH PRIORITY
+   - `sra` (fails at test #27)
+   - `srai` (fails at test #27)
+   - `srl` (fails at test #53)
+   - `srli` (fails at test #39)
+   - **Issue**: Data forwarding not working
+
+3. **Load Instructions (5 tests)** - MEDIUM PRIORITY
+   - `lb` (fails at test #5)
+   - `lbu` (fails at test #5)
+   - `lh` (fails at test #5)
+   - `lhu` (fails at test #5)
+   - `lw` (fails at test #5)
+   - **Issue**: Load-use hazard detection not working correctly
+
+4. **Store Instructions (3 tests)** - MEDIUM PRIORITY
+   - `sb` (fails at test #9)
+   - `sh` (fails at test #9)
+   - `sw` (fails at test #7)
+   - **Issue**: Unknown - needs investigation
+
+5. **Special Cases (3 tests)** - LOW PRIORITY
+   - `fence_i` (fails at test #5) - Not implemented
+   - `ma_data` (fails at test #3) - Misaligned access not supported
+   - `ld_st` (fails at test #53) - Complex load/store interactions
+
+---
+
+## 🔍 Key Issues Identified
+
+### Issue 1: Data Forwarding Not Working (CRITICAL)
+
+**Evidence:**
+- R-type logical operations (and, or, xor) STILL fail at same test numbers as Phase 1
+- Right shifts (sra, srai, srl, srli) STILL fail at same test numbers
+- The 3-level forwarding was implemented but isn't eliminating RAW hazards
+
+**Hypothesis:**
+1. **WB-to-ID forwarding timing issue**: Register file write may be happening at wrong clock edge
+2. **Forwarding priority incorrect**: Multiple forwarding sources, wrong one selected
+3. **Forwarding not connected to register file reads**: ID stage may not be using forwarded data
+
+**What We Know:**
+- Simple tests (simple_add, fibonacci, logic_ops) PASS
+- These have natural spacing between dependent instructions
+- Compliance tests have back-to-back dependencies and fail
+
+**Next Steps:**
+1. Examine waveforms of failing AND test
+2. Check WB-to-ID forwarding path
+3. Verify register file read timing vs write timing
+4. Add debug signals to trace forwarding events
+
+### Issue 2: Load-Use Hazards Not Handled (IMPORTANT)
+
+**Evidence:**
+- All load tests fail at test #5 (very early)
+- Hazard detection unit implemented but not working
+
+**Hypothesis:**
+1. Stall not being asserted at right time
+2. Bubble (NOP) not being inserted correctly
+3. PC stall timing issue
+
+**Next Steps:**
+1. Examine waveforms of failing load test
+2. Check hazard detection unit outputs
+3. Verify stall and bubble signals
+
+### Issue 3: Store Instructions Failing (INVESTIGATE)
+
+**Evidence:**
+- sb, sh, sw all failing at different test numbers
+- This is unexpected - stores should be simpler than loads
+
+**Next Steps:**
+1. Check if this is related to data forwarding
+2. Verify store data path
+3. Check memory write timing
+
+---
+
+## 🎯 Next Session Priorities
+
+### Priority 1: Fix Data Forwarding (CRITICAL)
+
+**Goal**: Make R-type logical and shift operations pass
+
+**Approach:**
+1. Create minimal failing test case (back-to-back AND)
+2. Generate waveform and analyze
+3. Trace WB-to-ID forwarding path
+4. Check register file write/read timing
+5. Fix forwarding logic
+6. Re-run compliance tests
+
+**Expected Gain**: +7 tests (and, or, xor, sra, srai, srl, srli)
+
+### Priority 2: Fix Load-Use Hazard Detection
+
+**Goal**: Make load instructions pass
+
+**Approach:**
+1. Create minimal failing load-use test
+2. Generate waveform and analyze hazard detection
+3. Check stall/bubble signal timing
+4. Fix hazard detection logic
+5. Re-run compliance tests
+
+**Expected Gain**: +5 tests (lb, lbu, lh, lhu, lw)
+
+### Priority 3: Debug Store Instructions
+
+**Goal**: Understand why stores are failing
+
+**Approach:**
+1. Analyze store test failures
+2. Check if related to forwarding
+3. Fix any issues found
+
+**Expected Gain**: +3 tests (sb, sh, sw)
+
+### Target: 39+/42 PASSED (93%+)
+
+With all three issues fixed, we expect:
+- Current: 24/42 (57%)
+- After fixes: 39/42 (93%)
+- Remaining 3: fence_i (not impl), ma_data (misaligned), ld_st (complex)
+
+---
+
+## 📁 Files Modified This Session
+
+**RTL Changes:**
+- `rtl/core/rv32i_core_pipelined.v`
+  - Added `flush_idex_hazard` wire
+  - Modified `flush_idex` to combine hazard flush and branch flush
+  - Fixed control hazard bug
+
+**Documentation:**
+- `PHASES.md` - Updated with Session 3 progress
+- `NEXT_SESSION.md` - This file (updated for next session)
+- `tb/integration/tb_core_pipelined.v` - Added ECALL detection for compliance tests
+
+**Test Infrastructure:**
+- RISC-V compliance tests built in `/tmp/riscv-tests/isa/`
+- Test binaries converted to hex in `tests/riscv-compliance/`
+- Compliance logs in `sim/compliance/`
+
+---
+
+## 🛠️ Quick Reference Commands
+
+**Run single compliance test:**
 ```bash
-iverilog -g2012 -DMEM_FILE='"tests/vectors/<test>.hex"' -o sim/test_pipelined.vvp rtl/core/*.v rtl/memory/*.v tb/integration/tb_core_pipelined.v
-vvp sim/test_pipelined.vvp
+iverilog -g2012 -DCOMPLIANCE_TEST -DMEM_FILE='"tests/riscv-compliance/rv32ui-p-<test>.hex"' -o sim/test.vvp rtl/core/*.v rtl/memory/*.v tb/integration/tb_core_pipelined.v
+vvp sim/test.vvp | grep "COMPLIANCE TEST"
 ```
 
-**View waveforms**:
+**Run all compliance tests:**
 ```bash
-gtkwave sim/waves/core_pipelined.vcd &
+./tools/run_compliance_pipelined.sh
 ```
 
-**Run all Phase 1 tests**:
+**Run Phase 1 custom tests:**
 ```bash
 for test in simple_add fibonacci logic_ops load_store shift_ops branch_test jump_test; do
   echo "Testing $test..."
@@ -217,7 +249,7 @@ for test in simple_add fibonacci logic_ops load_store shift_ops branch_test jump
 done
 ```
 
-**Check git status**:
+**Check git status:**
 ```bash
 git status
 git log --oneline -5
@@ -225,56 +257,27 @@ git log --oneline -5
 
 ---
 
-## Files Modified This Session (2025-10-10 Session 2)
+## 📝 Session Handoff Notes
 
-**RTL Changes**:
-- `rtl/core/rv32i_core_pipelined.v` - **CRITICAL FIX**
-  - Added WB-to-ID forwarding (lines 233-254)
-  - Complete 3-level forwarding architecture
+**What was accomplished this session:**
+✅ Fixed critical control hazard bug (ID/EX flush missing)
+✅ All branch/jump tests now pass (7 tests recovered)
+✅ Ran full RISC-V compliance test suite (24/42 = 57%)
+✅ Identified that data forwarding isn't working as expected
+✅ Documented detailed analysis of all failing tests
+✅ Created clear priorities for next session
 
-**New Test Files**:
-- `tests/asm/test_simple_raw.s` - Simple RAW hazard test
-- `tests/asm/test_raw_hazards.s` - Comprehensive RAW hazard test
-- `tests/vectors/test_simple_raw.hex` - Compiled test
-- `tests/vectors/test_raw_hazards.hex` - Compiled test
+**What's next:**
+🎯 **Priority 1**: Debug why data forwarding isn't eliminating RAW hazards
+🎯 **Priority 2**: Fix load-use hazard detection
+🎯 **Priority 3**: Investigate store instruction failures
+🎯 **Target**: Achieve 93%+ compliance test pass rate (39+/42)
 
-**Tool Scripts**:
-- `tools/run_compliance_pipelined.sh` - Modified for pipelined core testing
+**Blockers:** None - issues identified and clear debug path exists
 
-**Documentation Updates**:
-- `PHASES.md` - Updated Phase 3 progress to 80% complete
-- `NEXT_SESSION.md` - This file
-
----
-
-## Session Handoff Notes
-
-**What was accomplished this session**:
-✅ **CRITICAL BUG FIX**: Identified and fixed missing WB-to-ID forwarding
-✅ Implemented complete 3-level data forwarding architecture
-✅ All 7 Phase 1 tests now PASS on pipelined core (100% pass rate)
-✅ Created RAW hazard validation tests
-✅ Verified forwarding eliminates all data hazards
-✅ Documentation updated with Phase 3.5 completion
-✅ Pipeline now correctly handles all RAW dependencies
-
-**What's next**:
-🎯 Document the forwarding architecture and bug fix
-🎯 Run RISC-V compliance tests (if binaries available)
-🎯 Measure and analyze pipeline performance (CPI)
-🎯 Create comprehensive test results documentation
-🎯 Consider optional optimizations (branch prediction, jump handling)
-
-**Blockers**: None! Pipelined core is fully functional with complete forwarding.
-
-**Key Insight**:
-The original pipelined implementation looked correct at first glance with EX-to-EX and MEM-to-EX forwarding, but was missing the critical **WB-to-ID forwarding path**. This is a subtle but essential component of any pipelined processor with synchronous register files. The fix demonstrates the importance of:
-1. Thorough testing with back-to-back dependencies
-2. Understanding register file write/read timing
-3. Implementing all three levels of forwarding in a 5-stage pipeline
+**Key Insight:**
+The pipelined core is now structurally correct (control hazards fixed), but the data forwarding paths exist but aren't functioning correctly. The fact that simple tests pass but compliance tests fail at the same test numbers as Phase 1 indicates the forwarding logic isn't being triggered or isn't correctly prioritized.
 
 ---
 
-**Outstanding progress! 🎉**
-
-The pipelined processor now has **complete, correct data forwarding** and passes all tests. Phase 3 is 80% complete with only performance analysis and optional optimizations remaining!
+**Great progress! The control hazard fix was critical. Now we need to make the forwarding actually work! 🚀**

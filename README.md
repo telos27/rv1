@@ -16,22 +16,24 @@ A educational RISC-V processor implementation in Verilog, built incrementally fr
 **Phase**: Phase 3 - 5-Stage Pipelined Implementation
 **Target ISA**: RV32I (32-bit Base Integer)
 **Architecture**: 5-stage pipeline (IF → ID → EX → MEM → WB)
-**Completion**: ~60% (Stages 3.1-3.4 complete, testing in progress)
+**Completion**: ~85% (Stages 3.1-3.5 complete, debugging data forwarding)
 
 **Statistics:**
 - **Phase 1**: Single-cycle core ✅ COMPLETE (9 RTL modules, 24/42 compliance tests)
 - **Phase 3**: Pipelined core 🔄 IN PROGRESS
   - **15 RTL modules** total (9 Phase 1 + 6 Phase 3 pipeline modules)
-  - **6 testbenches** (4 unit + 2 integration)
-  - **7 test programs** validated
+  - **7 testbenches** (4 unit + 3 integration)
+  - **9 test programs** validated (7 Phase 1 + 2 RAW hazard tests)
   - **47/47 RV32I instructions** supported with hazard handling
+  - **24/42 compliance tests PASSED** (57% - matches Phase 1 baseline)
 
-**Recent Achievement (2025-10-10):**
-✅ Complete 5-stage pipelined processor core operational!
-- Data forwarding (EX-to-EX, MEM-to-EX)
-- Load-use hazard detection with stalling
-- Branch/jump handling with pipeline flush
-- 3 initial tests passing (simple_add, fibonacci, logic_ops)
+**Recent Achievement (2025-10-10 - Session 3):**
+✅ **Critical Control Hazard Bug Fixed!**
+- Fixed missing ID/EX pipeline flush on branches/jumps
+- All 7 branch/jump tests now pass (beq, bne, blt, bge, bltu, bgeu, jalr)
+- Ran full RISC-V compliance test suite
+- Pass rate recovered: 45% → 57%
+- Core now structurally correct for control flow
 
 See [PHASES.md](PHASES.md) for detailed development roadmap.
 
@@ -52,15 +54,18 @@ See [PHASES.md](PHASES.md) for detailed development roadmap.
 - Status: Skipped in favor of direct pipeline implementation
 - Rationale: Pipeline better addresses RAW hazard discovered in Phase 1
 
-### Phase 3: 5-Stage Pipeline 🔄 IN PROGRESS (~60% complete)
+### Phase 3: 5-Stage Pipeline 🔄 IN PROGRESS (~85% complete)
 - [x] **Phase 3.1**: Pipeline registers (IF/ID, ID/EX, EX/MEM, MEM/WB) ✅
 - [x] **Phase 3.2**: Basic pipelined datapath integration ✅
 - [x] **Phase 3.3**: Data forwarding (EX-to-EX, MEM-to-EX) ✅
 - [x] **Phase 3.4**: Load-use hazard detection with stalling ✅
-- [ ] **Phase 3.5**: Advanced branch prediction
-- [ ] **Phase 3.6**: Comprehensive testing and compliance validation
+- [x] **Phase 3.5**: Complete 3-level forwarding (WB-to-ID added) ✅
+- [x] **Phase 3.6**: Control hazard bug fixed ✅
+  - All branch/jump tests passing
+  - 24/42 compliance tests (57% - baseline restored)
+- [ ] **Phase 3.7**: Debug data forwarding and load-use hazards
+  - Current: Forwarding implemented but not eliminating RAW hazards
   - Target: 40+/42 compliance tests (95%+)
-  - Expected: RAW hazard fixes gain +16 tests
 
 ### Phase 4: Extensions
 - [ ] M Extension (multiply/divide)

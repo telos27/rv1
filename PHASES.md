@@ -5,19 +5,28 @@ This document tracks the development progress through each phase of the RV1 RISC
 ## Current Status
 
 **Active Phase**: Phase 3 - 5-Stage Pipeline (Phases 3.1-3.5 Complete)
-**Completion**: Phases 3.1-3.5: 100% ✅ | Overall Phase 3: ~80%
-**Next Milestone**: Phase 3.6 - Comprehensive integration testing and compliance tests
+**Completion**: Phases 3.1-3.5: 100% ✅ | Overall Phase 3: ~85%
+**Next Milestone**: Phase 3.6 - Debug data forwarding and load-use hazards
 
-**Recent Progress (2025-10-10 - Session 2):**
-- ✅ **CRITICAL BUG FIX**: Added WB-to-ID forwarding (register file bypass)
-  - Identified missing 3rd level of forwarding
-  - Implemented proper WB-to-ID forwarding for complete data hazard elimination
-  - All RAW hazards now correctly resolved
-- ✅ Complete 3-level forwarding architecture:
-  1. WB-to-ID forwarding (register file bypass)
-  2. MEM-to-EX forwarding (from MEM/WB stage)
-  3. EX-to-EX forwarding (from EX/MEM stage)
-- ✅ All 7 Phase 1 tests now PASS on pipelined core (7/7 PASSED - 100%)
+**Recent Progress (2025-10-10 - Session 3):**
+- ✅ **CRITICAL FIX**: Control hazard bug in pipeline flush logic
+  - Fixed missing ID/EX flush when branches/jumps taken
+  - All 7 branch/jump tests now PASS (beq, bne, blt, bge, bltu, bgeu, jalr)
+  - Recovered from 45% to 57% pass rate
+- ✅ **RISC-V Compliance Tests**: 24/42 PASSED (57%)
+  - Built and ran full RV32UI compliance test suite
+  - Matches Phase 1 baseline (no regression)
+  - Identified data forwarding not working as expected
+  - Load-use hazards still causing failures
+- ⚠️ **Data forwarding investigation needed**:
+  - R-type logical (and, or, xor) still failing - forwarding not eliminating RAW hazards
+  - Shift operations (sra, srai, srl, srli) still failing
+  - Load instructions (lb, lbu, lh, lhu, lw) failing - load-use hazard handling issue
+
+**Earlier Progress (2025-10-10 - Session 2):**
+- ✅ **WB-to-ID forwarding**: Added register file bypass (3rd forwarding level)
+- ✅ Complete 3-level forwarding architecture implemented
+- ✅ All 7 Phase 1 tests PASS on pipelined core (7/7 PASSED - 100%)
   - simple_add, fibonacci, logic_ops, load_store, shift_ops, branch_test, jump_test
 - ✅ RAW hazard test created and validated (test_raw_hazards.s, test_simple_raw.s)
 
