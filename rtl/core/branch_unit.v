@@ -1,20 +1,25 @@
-// branch_unit.v - Branch condition evaluator for RV32I
+// branch_unit.v - Branch condition evaluator for RISC-V
 // Determines if branch should be taken based on funct3 and operands
 // Author: RV1 Project
 // Date: 2025-10-09
+// Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit support)
 
-module branch_unit (
-  input  wire [31:0] rs1_data,     // First operand
-  input  wire [31:0] rs2_data,     // Second operand
-  input  wire [2:0]  funct3,       // Function3 (branch type)
-  input  wire        branch,       // Branch instruction flag
-  input  wire        jump,         // Jump instruction flag
-  output reg         take_branch   // Branch/jump taken
+`include "config/rv_config.vh"
+
+module branch_unit #(
+  parameter XLEN = `XLEN  // Data width: 32 or 64 bits
+) (
+  input  wire [XLEN-1:0]  rs1_data,     // First operand
+  input  wire [XLEN-1:0]  rs2_data,     // Second operand
+  input  wire [2:0]       funct3,       // Function3 (branch type)
+  input  wire             branch,       // Branch instruction flag
+  input  wire             jump,         // Jump instruction flag
+  output reg              take_branch   // Branch/jump taken
 );
 
   // Signed comparison
-  wire signed [31:0] signed_rs1;
-  wire signed [31:0] signed_rs2;
+  wire signed [XLEN-1:0] signed_rs1;
+  wire signed [XLEN-1:0] signed_rs2;
 
   assign signed_rs1 = rs1_data;
   assign signed_rs2 = rs2_data;

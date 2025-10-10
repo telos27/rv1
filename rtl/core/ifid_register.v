@@ -1,21 +1,26 @@
 // IF/ID Pipeline Register
 // Latches outputs from Instruction Fetch stage for use in Decode stage
 // Supports stall (hold current value) and flush (insert NOP bubble)
+// Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit support)
 
-module ifid_register (
-  input  wire        clk,
-  input  wire        reset_n,
-  input  wire        stall,           // Hold current values (for load-use hazard)
-  input  wire        flush,           // Clear to NOP (for branch misprediction)
+`include "config/rv_config.vh"
+
+module ifid_register #(
+  parameter XLEN = `XLEN  // PC width: 32 or 64 bits
+) (
+  input  wire             clk,
+  input  wire             reset_n,
+  input  wire             stall,           // Hold current values (for load-use hazard)
+  input  wire             flush,           // Clear to NOP (for branch misprediction)
 
   // Inputs from IF stage
-  input  wire [31:0] pc_in,
-  input  wire [31:0] instruction_in,
+  input  wire [XLEN-1:0]  pc_in,
+  input  wire [31:0]      instruction_in,  // Instructions always 32-bit
 
   // Outputs to ID stage
-  output reg  [31:0] pc_out,
-  output reg  [31:0] instruction_out,
-  output reg         valid_out        // 0 = bubble (NOP), 1 = valid instruction
+  output reg  [XLEN-1:0]  pc_out,
+  output reg  [31:0]      instruction_out,
+  output reg              valid_out        // 0 = bubble (NOP), 1 = valid instruction
 );
 
   // NOP instruction encoding (ADDI x0, x0, 0)
@@ -24,12 +29,12 @@ module ifid_register (
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       // Reset: insert NOP bubble
-      pc_out          <= 32'h0;
+      pc_out          <= {XLEN{1'b0}};
       instruction_out <= NOP;
       valid_out       <= 1'b0;
     end else if (flush) begin
       // Flush: insert NOP bubble (branch taken)
-      pc_out          <= 32'h0;
+      pc_out          <= {XLEN{1'b0}};
       instruction_out <= NOP;
       valid_out       <= 1'b0;
     end else if (stall) begin

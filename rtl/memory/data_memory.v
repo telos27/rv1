@@ -1,42 +1,55 @@
-// data_memory.v - Data memory for RV32I
-// Byte-addressable memory with byte/halfword/word access
+// data_memory.v - Data memory for RISC-V
+// Byte-addressable memory with byte/halfword/word/doubleword access
 // Author: RV1 Project
 // Date: 2025-10-09
+// Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit support)
+
+`include "config/rv_config.vh"
 
 module data_memory #(
-  parameter MEM_SIZE = 4096,      // Memory size in bytes (4KB default)
+  parameter XLEN     = `XLEN,     // Data width: 32 or 64 bits
+  parameter MEM_SIZE = 65536,     // Memory size in bytes (64KB default)
   parameter MEM_FILE = ""         // Hex file to initialize memory (for compliance tests)
 ) (
-  input  wire        clk,         // Clock
-  input  wire [31:0] addr,        // Byte address
-  input  wire [31:0] write_data,  // Data to write
-  input  wire        mem_read,    // Read enable
-  input  wire        mem_write,   // Write enable
-  input  wire [2:0]  funct3,      // Function3 for size/sign
-  output reg  [31:0] read_data    // Data read from memory
+  input  wire             clk,         // Clock
+  input  wire [XLEN-1:0]  addr,        // Byte address
+  input  wire [XLEN-1:0]  write_data,  // Data to write
+  input  wire             mem_read,    // Read enable
+  input  wire             mem_write,   // Write enable
+  input  wire [2:0]       funct3,      // Function3 for size/sign
+  output reg  [XLEN-1:0]  read_data    // Data read from memory
 );
 
   // Memory array (byte-addressable)
   reg [7:0] mem [0:MEM_SIZE-1];
 
   // Internal signals
-  wire [31:0] masked_addr;
-  wire [31:0] word_addr;
-  wire [1:0]  byte_offset;
-  wire [7:0]  byte_data;
-  wire [15:0] halfword_data;
-  wire [31:0] word_data;
+  wire [XLEN-1:0] masked_addr;
+  wire [XLEN-1:0] word_addr;
+  wire [XLEN-1:0] dword_addr;  // For RV64 doubleword access
+  wire [2:0]      byte_offset;
+  wire [7:0]      byte_data;
+  wire [15:0]     halfword_data;
+  wire [31:0]     word_data;
+  wire [63:0]     dword_data;  // For RV64
 
   // Mask address to fit within memory size (handles different base addresses)
   assign masked_addr = addr & (MEM_SIZE - 1);
-  assign word_addr = {masked_addr[31:2], 2'b00};  // Word-aligned address
-  assign byte_offset = masked_addr[1:0];
+  assign word_addr = {masked_addr[XLEN-1:2], 2'b00};    // Word-aligned address
+  assign dword_addr = {masked_addr[XLEN-1:3], 3'b000}; // Doubleword-aligned (RV64)
+  assign byte_offset = masked_addr[2:0];
 
-  // Read data from memory
+  // Read data from memory (little-endian)
   assign byte_data = mem[masked_addr];
-  assign halfword_data = {mem[masked_addr + 1], mem[masked_addr]};  // Fixed: use masked_addr for unaligned support
+  assign halfword_data = {mem[masked_addr + 1], mem[masked_addr]};
   assign word_data = {mem[word_addr + 3], mem[word_addr + 2],
                       mem[word_addr + 1], mem[word_addr]};
+
+  // Doubleword data for RV64
+  assign dword_data = {mem[dword_addr + 7], mem[dword_addr + 6],
+                       mem[dword_addr + 5], mem[dword_addr + 4],
+                       mem[dword_addr + 3], mem[dword_addr + 2],
+                       mem[dword_addr + 1], mem[dword_addr]};
 
   // Write operation
   always @(posedge clk) begin
@@ -55,6 +68,18 @@ module data_memory #(
           mem[word_addr + 2] <= write_data[23:16];
           mem[word_addr + 3] <= write_data[31:24];
         end
+        3'b011: begin  // SD (store doubleword - RV64 only)
+          if (XLEN == 64) begin
+            mem[dword_addr]     <= write_data[7:0];
+            mem[dword_addr + 1] <= write_data[15:8];
+            mem[dword_addr + 2] <= write_data[23:16];
+            mem[dword_addr + 3] <= write_data[31:24];
+            mem[dword_addr + 4] <= write_data[39:32];
+            mem[dword_addr + 5] <= write_data[47:40];
+            mem[dword_addr + 6] <= write_data[55:48];
+            mem[dword_addr + 7] <= write_data[63:56];
+          end
+        end
       endcase
     end
   end
@@ -64,26 +89,41 @@ module data_memory #(
     if (mem_read) begin
       case (funct3)
         3'b000: begin  // LB (load byte, sign-extended)
-          read_data = {{24{byte_data[7]}}, byte_data};
+          read_data = {{(XLEN-8){byte_data[7]}}, byte_data};
         end
         3'b001: begin  // LH (load halfword, sign-extended)
-          read_data = {{16{halfword_data[15]}}, halfword_data};
+          read_data = {{(XLEN-16){halfword_data[15]}}, halfword_data};
         end
-        3'b010: begin  // LW (load word)
-          read_data = word_data;
+        3'b010: begin  // LW (load word, sign-extended for RV64)
+          if (XLEN == 64)
+            read_data = {{32{word_data[31]}}, word_data};  // Sign-extend for RV64
+          else
+            read_data = word_data;
+        end
+        3'b011: begin  // LD (load doubleword - RV64 only)
+          if (XLEN == 64)
+            read_data = dword_data;
+          else
+            read_data = {XLEN{1'b0}};
         end
         3'b100: begin  // LBU (load byte unsigned)
-          read_data = {24'h0, byte_data};
+          read_data = {{(XLEN-8){1'b0}}, byte_data};
         end
         3'b101: begin  // LHU (load halfword unsigned)
-          read_data = {16'h0, halfword_data};
+          read_data = {{(XLEN-16){1'b0}}, halfword_data};
+        end
+        3'b110: begin  // LWU (load word unsigned - RV64 only)
+          if (XLEN == 64)
+            read_data = {32'h0, word_data};  // Zero-extend for RV64
+          else
+            read_data = {XLEN{1'b0}};
         end
         default: begin
-          read_data = 32'h0;
+          read_data = {XLEN{1'b0}};
         end
       endcase
     end else begin
-      read_data = 32'h0;
+      read_data = {XLEN{1'b0}};
     end
   end
 

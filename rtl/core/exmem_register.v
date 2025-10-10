@@ -1,17 +1,22 @@
 // EX/MEM Pipeline Register
 // Latches outputs from Execute stage for use in Memory stage
 // No stall or flush needed (hazards handled in earlier stages)
+// Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit support)
 
-module exmem_register (
-  input  wire        clk,
-  input  wire        reset_n,
+`include "config/rv_config.vh"
+
+module exmem_register #(
+  parameter XLEN = `XLEN  // Data/address width: 32 or 64 bits
+) (
+  input  wire             clk,
+  input  wire             reset_n,
 
   // Inputs from EX stage
-  input  wire [31:0] alu_result_in,
-  input  wire [31:0] mem_write_data_in,  // Potentially forwarded rs2
-  input  wire [4:0]  rd_addr_in,
-  input  wire [31:0] pc_plus_4_in,       // For JAL/JALR write-back
-  input  wire [2:0]  funct3_in,          // For memory access size/signedness
+  input  wire [XLEN-1:0]  alu_result_in,
+  input  wire [XLEN-1:0]  mem_write_data_in,  // Potentially forwarded rs2
+  input  wire [4:0]       rd_addr_in,
+  input  wire [XLEN-1:0]  pc_plus_4_in,       // For JAL/JALR write-back
+  input  wire [2:0]       funct3_in,          // For memory access size/signedness
 
   // Control signals from EX stage
   input  wire        mem_read_in,
@@ -21,21 +26,21 @@ module exmem_register (
   input  wire        valid_in,
 
   // CSR signals from EX stage
-  input  wire [11:0] csr_addr_in,
-  input  wire        csr_we_in,
-  input  wire [31:0] csr_rdata_in,    // CSR read data from CSR file
+  input  wire [11:0]      csr_addr_in,
+  input  wire             csr_we_in,
+  input  wire [XLEN-1:0]  csr_rdata_in,    // CSR read data from CSR file
 
   // Exception signals from EX stage
   input  wire        is_mret_in,
   input  wire [31:0] instruction_in,
-  input  wire [31:0] pc_in,           // For exception handling
+  input  wire [XLEN-1:0] pc_in,           // For exception handling
 
   // Outputs to MEM stage
-  output reg  [31:0] alu_result_out,
-  output reg  [31:0] mem_write_data_out,
-  output reg  [4:0]  rd_addr_out,
-  output reg  [31:0] pc_plus_4_out,
-  output reg  [2:0]  funct3_out,
+  output reg  [XLEN-1:0]  alu_result_out,
+  output reg  [XLEN-1:0]  mem_write_data_out,
+  output reg  [4:0]       rd_addr_out,
+  output reg  [XLEN-1:0]  pc_plus_4_out,
+  output reg  [2:0]       funct3_out,
 
   // Control signals to MEM stage
   output reg         mem_read_out,
@@ -45,23 +50,23 @@ module exmem_register (
   output reg         valid_out,
 
   // CSR signals to MEM stage
-  output reg  [11:0] csr_addr_out,
-  output reg         csr_we_out,
-  output reg  [31:0] csr_rdata_out,
+  output reg  [11:0]      csr_addr_out,
+  output reg              csr_we_out,
+  output reg  [XLEN-1:0]  csr_rdata_out,
 
   // Exception signals to MEM stage
   output reg         is_mret_out,
   output reg  [31:0] instruction_out,
-  output reg  [31:0] pc_out
+  output reg  [XLEN-1:0] pc_out
 );
 
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       // Reset: clear all outputs
-      alu_result_out     <= 32'h0;
-      mem_write_data_out <= 32'h0;
+      alu_result_out     <= {XLEN{1'b0}};
+      mem_write_data_out <= {XLEN{1'b0}};
       rd_addr_out        <= 5'h0;
-      pc_plus_4_out      <= 32'h0;
+      pc_plus_4_out      <= {XLEN{1'b0}};
       funct3_out         <= 3'h0;
 
       mem_read_out       <= 1'b0;
@@ -72,11 +77,11 @@ module exmem_register (
 
       csr_addr_out       <= 12'h0;
       csr_we_out         <= 1'b0;
-      csr_rdata_out      <= 32'h0;
+      csr_rdata_out      <= {XLEN{1'b0}};
 
       is_mret_out        <= 1'b0;
       instruction_out    <= 32'h0;
-      pc_out             <= 32'h0;
+      pc_out             <= {XLEN{1'b0}};
     end else begin
       // Normal operation: latch all values
       alu_result_out     <= alu_result_in;

@@ -1,19 +1,23 @@
-// rv32i_core_pipelined.v - 5-Stage Pipelined RV32I Processor Core
+// rv_core_pipelined.v - 5-Stage Pipelined RISC-V Processor Core
 // Implements classic RISC pipeline: IF -> ID -> EX -> MEM -> WB
 // Includes data forwarding and hazard detection
+// Parameterized for RV32/RV64 support
 // Author: RV1 Project
 // Date: 2025-10-10
 
-module rv32i_core_pipelined #(
-  parameter RESET_VECTOR = 32'h00000000,
+`include "config/rv_config.vh"
+
+module rv_core_pipelined #(
+  parameter XLEN = `XLEN,
+  parameter RESET_VECTOR = {XLEN{1'b0}},
   parameter IMEM_SIZE = 4096,
   parameter DMEM_SIZE = 16384,
   parameter MEM_FILE = ""
 ) (
-  input  wire        clk,
-  input  wire        reset_n,
-  output wire [31:0] pc_out,        // For debugging
-  output wire [31:0] instr_out      // For debugging
+  input  wire             clk,
+  input  wire             reset_n,
+  output wire [XLEN-1:0]  pc_out,        // For debugging
+  output wire [31:0]      instr_out      // For debugging (instructions always 32-bit)
 );
 
   //==========================================================================
@@ -34,31 +38,31 @@ module rv32i_core_pipelined #(
   //==========================================================================
   // IF Stage Signals
   //==========================================================================
-  wire [31:0] pc_current;
-  wire [31:0] pc_next;
-  wire [31:0] pc_plus_4;
-  wire [31:0] if_instruction;
+  wire [XLEN-1:0] pc_current;
+  wire [XLEN-1:0] pc_next;
+  wire [XLEN-1:0] pc_plus_4;
+  wire [31:0]     if_instruction;  // Instructions always 32-bit
 
   //==========================================================================
   // IF/ID Pipeline Register Outputs
   //==========================================================================
-  wire [31:0] ifid_pc;
-  wire [31:0] ifid_instruction;
-  wire        ifid_valid;
+  wire [XLEN-1:0] ifid_pc;
+  wire [31:0]     ifid_instruction;  // Instructions always 32-bit
+  wire            ifid_valid;
 
   //==========================================================================
   // ID Stage Signals
   //==========================================================================
   // Decoder outputs
-  wire [6:0]  id_opcode;
-  wire [4:0]  id_rd, id_rs1, id_rs2;
-  wire [2:0]  id_funct3;
-  wire [6:0]  id_funct7;
-  wire [31:0] id_imm_i, id_imm_s, id_imm_b, id_imm_u, id_imm_j;
-  wire        id_is_csr_dec;   // CSR instruction from decoder
-  wire        id_is_ecall_dec; // ECALL from decoder
-  wire        id_is_ebreak_dec; // EBREAK from decoder
-  wire        id_is_mret_dec;   // MRET from decoder
+  wire [6:0]      id_opcode;
+  wire [4:0]      id_rd, id_rs1, id_rs2;
+  wire [2:0]      id_funct3;
+  wire [6:0]      id_funct7;
+  wire [XLEN-1:0] id_imm_i, id_imm_s, id_imm_b, id_imm_u, id_imm_j;
+  wire            id_is_csr_dec;   // CSR instruction from decoder
+  wire            id_is_ecall_dec; // ECALL from decoder
+  wire            id_is_ebreak_dec; // EBREAK from decoder
+  wire            id_is_mret_dec;   // MRET from decoder
 
   // Control signals
   wire        id_reg_write;
@@ -72,126 +76,126 @@ module rv32i_core_pipelined #(
   wire [2:0]  id_imm_sel;
 
   // CSR signals
-  wire [11:0] id_csr_addr;
-  wire        id_csr_we;
-  wire        id_csr_src;
-  wire [31:0] id_csr_wdata;
+  wire [11:0]     id_csr_addr;
+  wire            id_csr_we;
+  wire            id_csr_src;
+  wire [XLEN-1:0] id_csr_wdata;
 
   // Exception signals
-  wire        id_is_ecall;
-  wire        id_is_ebreak;
-  wire        id_is_mret;
-  wire        id_illegal_inst;
+  wire            id_is_ecall;
+  wire            id_is_ebreak;
+  wire            id_is_mret;
+  wire            id_illegal_inst;
 
   // Register file outputs
-  wire [31:0] id_rs1_data;
-  wire [31:0] id_rs2_data;
+  wire [XLEN-1:0] id_rs1_data;
+  wire [XLEN-1:0] id_rs2_data;
 
   // Immediate selection
-  wire [31:0] id_immediate;
+  wire [XLEN-1:0] id_immediate;
 
   //==========================================================================
   // ID/EX Pipeline Register Outputs
   //==========================================================================
-  wire [31:0] idex_pc;
-  wire [31:0] idex_rs1_data;
-  wire [31:0] idex_rs2_data;
-  wire [4:0]  idex_rs1_addr;
-  wire [4:0]  idex_rs2_addr;
-  wire [4:0]  idex_rd_addr;
-  wire [31:0] idex_imm;
-  wire [6:0]  idex_opcode;
-  wire [2:0]  idex_funct3;
-  wire [6:0]  idex_funct7;
-  wire [3:0]  idex_alu_control;
-  wire        idex_alu_src;
-  wire        idex_branch;
-  wire        idex_jump;
-  wire        idex_mem_read;
-  wire        idex_mem_write;
-  wire        idex_reg_write;
-  wire [1:0]  idex_wb_sel;
-  wire        idex_valid;
-  wire [11:0] idex_csr_addr;
-  wire        idex_csr_we;
-  wire        idex_csr_src;
-  wire [31:0] idex_csr_wdata;
-  wire        idex_is_ecall;
-  wire        idex_is_ebreak;
-  wire        idex_is_mret;
-  wire        idex_illegal_inst;
-  wire [31:0] idex_instruction;
+  wire [XLEN-1:0] idex_pc;
+  wire [XLEN-1:0] idex_rs1_data;
+  wire [XLEN-1:0] idex_rs2_data;
+  wire [4:0]      idex_rs1_addr;
+  wire [4:0]      idex_rs2_addr;
+  wire [4:0]      idex_rd_addr;
+  wire [XLEN-1:0] idex_imm;
+  wire [6:0]      idex_opcode;
+  wire [2:0]      idex_funct3;
+  wire [6:0]      idex_funct7;
+  wire [3:0]      idex_alu_control;
+  wire            idex_alu_src;
+  wire            idex_branch;
+  wire            idex_jump;
+  wire            idex_mem_read;
+  wire            idex_mem_write;
+  wire            idex_reg_write;
+  wire [1:0]      idex_wb_sel;
+  wire            idex_valid;
+  wire [11:0]     idex_csr_addr;
+  wire            idex_csr_we;
+  wire            idex_csr_src;
+  wire [XLEN-1:0] idex_csr_wdata;
+  wire            idex_is_ecall;
+  wire            idex_is_ebreak;
+  wire            idex_is_mret;
+  wire            idex_illegal_inst;
+  wire [31:0]     idex_instruction;  // Instructions always 32-bit
 
   //==========================================================================
   // EX Stage Signals
   //==========================================================================
-  wire [31:0] ex_alu_operand_a;
-  wire [31:0] ex_alu_operand_b;
-  wire [31:0] ex_alu_operand_a_forwarded;
-  wire [31:0] ex_alu_operand_b_forwarded;
-  wire [31:0] ex_alu_result;
-  wire        ex_alu_zero;
-  wire        ex_alu_lt;
-  wire        ex_alu_ltu;
-  wire        ex_take_branch;
-  wire [31:0] ex_branch_target;
-  wire [31:0] ex_jump_target;
-  wire [31:0] ex_pc_plus_4;
-  wire [31:0] ex_csr_rdata;       // CSR read data
-  wire        ex_illegal_csr;     // Illegal CSR access
+  wire [XLEN-1:0] ex_alu_operand_a;
+  wire [XLEN-1:0] ex_alu_operand_b;
+  wire [XLEN-1:0] ex_alu_operand_a_forwarded;
+  wire [XLEN-1:0] ex_alu_operand_b_forwarded;
+  wire [XLEN-1:0] ex_alu_result;
+  wire            ex_alu_zero;
+  wire            ex_alu_lt;
+  wire            ex_alu_ltu;
+  wire            ex_take_branch;
+  wire [XLEN-1:0] ex_branch_target;
+  wire [XLEN-1:0] ex_jump_target;
+  wire [XLEN-1:0] ex_pc_plus_4;
+  wire [XLEN-1:0] ex_csr_rdata;       // CSR read data
+  wire            ex_illegal_csr;     // Illegal CSR access
 
   //==========================================================================
   // EX/MEM Pipeline Register Outputs
   //==========================================================================
-  wire [31:0] exmem_alu_result;
-  wire [31:0] exmem_mem_write_data;
-  wire [4:0]  exmem_rd_addr;
-  wire [31:0] exmem_pc_plus_4;
-  wire [2:0]  exmem_funct3;
-  wire        exmem_mem_read;
-  wire        exmem_mem_write;
-  wire        exmem_reg_write;
-  wire [1:0]  exmem_wb_sel;
-  wire        exmem_valid;
-  wire [11:0] exmem_csr_addr;
-  wire        exmem_csr_we;
-  wire [31:0] exmem_csr_rdata;
-  wire        exmem_is_mret;
-  wire [31:0] exmem_instruction;
-  wire [31:0] exmem_pc;
+  wire [XLEN-1:0] exmem_alu_result;
+  wire [XLEN-1:0] exmem_mem_write_data;
+  wire [4:0]      exmem_rd_addr;
+  wire [XLEN-1:0] exmem_pc_plus_4;
+  wire [2:0]      exmem_funct3;
+  wire            exmem_mem_read;
+  wire            exmem_mem_write;
+  wire            exmem_reg_write;
+  wire [1:0]      exmem_wb_sel;
+  wire            exmem_valid;
+  wire [11:0]     exmem_csr_addr;
+  wire            exmem_csr_we;
+  wire [XLEN-1:0] exmem_csr_rdata;
+  wire            exmem_is_mret;
+  wire [31:0]     exmem_instruction;  // Instructions always 32-bit
+  wire [XLEN-1:0] exmem_pc;
 
   //==========================================================================
   // MEM Stage Signals
   //==========================================================================
-  wire [31:0] mem_read_data;
+  wire [XLEN-1:0] mem_read_data;
 
   //==========================================================================
   // MEM/WB Pipeline Register Outputs
   //==========================================================================
-  wire [31:0] memwb_alu_result;
-  wire [31:0] memwb_mem_read_data;
-  wire [4:0]  memwb_rd_addr;
-  wire [31:0] memwb_pc_plus_4;
-  wire        memwb_reg_write;
-  wire [1:0]  memwb_wb_sel;
-  wire        memwb_valid;
-  wire [31:0] memwb_csr_rdata;
+  wire [XLEN-1:0] memwb_alu_result;
+  wire [XLEN-1:0] memwb_mem_read_data;
+  wire [4:0]      memwb_rd_addr;
+  wire [XLEN-1:0] memwb_pc_plus_4;
+  wire            memwb_reg_write;
+  wire [1:0]      memwb_wb_sel;
+  wire            memwb_valid;
+  wire [XLEN-1:0] memwb_csr_rdata;
 
   //==========================================================================
   // CSR and Exception Signals
   //==========================================================================
-  wire        exception;
-  wire [4:0]  exception_code;     // 5-bit exception code for mcause
-  wire [31:0] exception_pc;
-  wire [31:0] exception_val;
-  wire [31:0] trap_vector;
-  wire [31:0] mepc;
-  wire        mstatus_mie;
+  wire            exception;
+  wire [4:0]      exception_code;     // 5-bit exception code for mcause
+  wire [XLEN-1:0] exception_pc;
+  wire [XLEN-1:0] exception_val;
+  wire [XLEN-1:0] trap_vector;
+  wire [XLEN-1:0] mepc;
+  wire            mstatus_mie;
 
   //==========================================================================
   // WB Stage Signals
   //==========================================================================
-  wire [31:0] wb_data;
+  wire [XLEN-1:0] wb_data;
 
   //==========================================================================
   // Debug outputs
@@ -204,7 +208,7 @@ module rv32i_core_pipelined #(
   //==========================================================================
 
   // PC calculation
-  assign pc_plus_4 = pc_current + 32'd4;
+  assign pc_plus_4 = pc_current + {{(XLEN-3){1'b0}}, 3'b100};  // PC + 4
 
   // Trap and MRET handling
   assign trap_flush = exception;  // Exception occurred
@@ -231,6 +235,7 @@ module rv32i_core_pipelined #(
 
   // Program Counter
   pc #(
+    .XLEN(XLEN),
     .RESET_VECTOR(RESET_VECTOR)
   ) pc_inst (
     .clk(clk),
@@ -242,6 +247,7 @@ module rv32i_core_pipelined #(
 
   // Instruction Memory
   instruction_memory #(
+    .XLEN(XLEN),
     .MEM_SIZE(IMEM_SIZE),
     .MEM_FILE(MEM_FILE)
   ) imem (
@@ -250,7 +256,9 @@ module rv32i_core_pipelined #(
   );
 
   // IF/ID Pipeline Register
-  ifid_register ifid_reg (
+  ifid_register #(
+    .XLEN(XLEN)
+  ) ifid_reg (
     .clk(clk),
     .reset_n(reset_n),
     .stall(stall_ifid),
@@ -267,7 +275,9 @@ module rv32i_core_pipelined #(
   //==========================================================================
 
   // Instruction Decoder
-  decoder decoder_inst (
+  decoder #(
+    .XLEN(XLEN)
+  ) decoder_inst (
     .instruction(ifid_instruction),
     .opcode(id_opcode),
     .rd(id_rd),
@@ -287,7 +297,9 @@ module rv32i_core_pipelined #(
   );
 
   // Control Unit
-  control control_inst (
+  control #(
+    .XLEN(XLEN)
+  ) control_inst (
     .opcode(id_opcode),
     .funct3(id_funct3),
     .funct7(id_funct7),
@@ -317,10 +329,12 @@ module rv32i_core_pipelined #(
   assign id_is_mret = id_is_mret_dec;
 
   // Register File
-  wire [31:0] id_rs1_data_raw;  // Raw register file output
-  wire [31:0] id_rs2_data_raw;  // Raw register file output
+  wire [XLEN-1:0] id_rs1_data_raw;  // Raw register file output
+  wire [XLEN-1:0] id_rs2_data_raw;  // Raw register file output
 
-  register_file regfile (
+  register_file #(
+    .XLEN(XLEN)
+  ) regfile (
     .clk(clk),
     .reset_n(reset_n),
     .rs1_addr(id_rs1),
@@ -346,13 +360,13 @@ module rv32i_core_pipelined #(
                         (id_imm_sel == 3'b010) ? id_imm_b :
                         (id_imm_sel == 3'b011) ? id_imm_u :
                         (id_imm_sel == 3'b100) ? id_imm_j :
-                        32'h0;
+                        {XLEN{1'b0}};
 
   // CSR Address Extraction (from immediate field bits[31:20])
   assign id_csr_addr = ifid_instruction[31:20];
 
   // CSR Write Data (either rs1 data or zero-extended uimm from rs1 field)
-  assign id_csr_wdata = id_csr_src ? {27'h0, id_rs1} : id_rs1_data;
+  assign id_csr_wdata = id_csr_src ? {{(XLEN-5){1'b0}}, id_rs1} : id_rs1_data;
 
   // CSR Write Enable Suppression (RISC-V spec requirement)
   // For CSRRS/CSRRC (funct3[1]=1): if rs1=x0, don't write (read-only operation)
@@ -374,7 +388,9 @@ module rv32i_core_pipelined #(
   );
 
   // ID/EX Pipeline Register
-  idex_register idex_reg (
+  idex_register #(
+    .XLEN(XLEN)
+  ) idex_reg (
     .clk(clk),
     .reset_n(reset_n),
     .flush(flush_idex),
@@ -448,7 +464,7 @@ module rv32i_core_pipelined #(
   // EX STAGE: Execute
   //==========================================================================
 
-  assign ex_pc_plus_4 = idex_pc + 32'd4;
+  assign ex_pc_plus_4 = idex_pc + {{(XLEN-3){1'b0}}, 3'b100};  // PC + 4
 
   // Forwarding Unit
   forwarding_unit forward_unit (
@@ -464,9 +480,9 @@ module rv32i_core_pipelined #(
 
   // ALU Operand A selection (with forwarding)
   // AUIPC uses PC, LUI uses 0, others use rs1
-  assign ex_alu_operand_a = (idex_opcode == 7'b0010111) ? idex_pc :     // AUIPC
-                            (idex_opcode == 7'b0110111) ? 32'h0 :        // LUI
-                            idex_rs1_data;                                // Others
+  assign ex_alu_operand_a = (idex_opcode == 7'b0010111) ? idex_pc :          // AUIPC
+                            (idex_opcode == 7'b0110111) ? {XLEN{1'b0}} :   // LUI
+                            idex_rs1_data;                                    // Others
 
   // Disable forwarding for LUI and AUIPC (they don't use rs1, decoder extracts garbage)
   wire disable_forward_a = (idex_opcode == 7'b0110111) || (idex_opcode == 7'b0010111);  // LUI or AUIPC
@@ -477,7 +493,7 @@ module rv32i_core_pipelined #(
                                       ex_alu_operand_a;                                  // No hazard
 
   // ALU Operand B selection (with forwarding)
-  wire [31:0] ex_rs2_data_forwarded;
+  wire [XLEN-1:0] ex_rs2_data_forwarded;
   assign ex_rs2_data_forwarded = (forward_b == 2'b10) ? exmem_alu_result :         // EX hazard
                                   (forward_b == 2'b01) ? wb_data :                  // MEM hazard
                                   idex_rs2_data;                                     // No hazard
@@ -485,7 +501,9 @@ module rv32i_core_pipelined #(
   assign ex_alu_operand_b = idex_alu_src ? idex_imm : ex_rs2_data_forwarded;
 
   // ALU
-  alu alu_inst (
+  alu #(
+    .XLEN(XLEN)
+  ) alu_inst (
     .operand_a(ex_alu_operand_a_forwarded),
     .operand_b(ex_alu_operand_b),
     .alu_control(idex_alu_control),
@@ -496,7 +514,9 @@ module rv32i_core_pipelined #(
   );
 
   // Branch Unit
-  branch_unit branch_inst (
+  branch_unit #(
+    .XLEN(XLEN)
+  ) branch_inst (
     .rs1_data(ex_alu_operand_a_forwarded),
     .rs2_data(ex_rs2_data_forwarded),
     .funct3(idex_funct3),
@@ -509,8 +529,9 @@ module rv32i_core_pipelined #(
   assign ex_branch_target = idex_pc + idex_imm;
 
   // JALR uses rs1 + imm, JAL uses PC + imm
+  // Clear LSB for JALR (always aligned to 2 bytes)
   assign ex_jump_target = (idex_opcode == 7'b1100111) ?
-                          (ex_alu_operand_a_forwarded + idex_imm) & 32'hFFFFFFFE :
+                          (ex_alu_operand_a_forwarded + idex_imm) & ~{{(XLEN-1){1'b0}}, 1'b1} :
                           idex_pc + idex_imm;
 
   //==========================================================================
@@ -524,12 +545,14 @@ module rv32i_core_pipelined #(
   wire ex_csr_uses_rs1;
   assign ex_csr_uses_rs1 = (idex_wb_sel == 2'b11) && !idex_csr_src;  // CSR instruction using rs1
 
-  wire [31:0] ex_csr_wdata_forwarded;
+  wire [XLEN-1:0] ex_csr_wdata_forwarded;
   assign ex_csr_wdata_forwarded = (ex_csr_uses_rs1 && forward_a == 2'b10) ? exmem_alu_result :  // EX-to-EX forward
                                   (ex_csr_uses_rs1 && forward_a == 2'b01) ? wb_data :           // MEM-to-EX forward
                                   idex_csr_wdata;                                                 // No hazard or imm form
 
-  csr_file csr_file_inst (
+  csr_file #(
+    .XLEN(XLEN)
+  ) csr_file_inst (
     .clk(clk),
     .reset_n(reset_n),
     .csr_addr(idex_csr_addr),
@@ -553,7 +576,9 @@ module rv32i_core_pipelined #(
   //==========================================================================
   // Note: Exception unit needs valid flags to be properly connected
   // For now, using conservative approach: exceptions in EX stage for ECALL/EBREAK/illegal
-  exception_unit exception_unit_inst (
+  exception_unit #(
+    .XLEN(XLEN)
+  ) exception_unit_inst (
     // IF stage - instruction fetch (check misaligned PC)
     .if_pc(pc_current),
     .if_valid(!flush_ifid),         // IF invalid when flushing
@@ -581,7 +606,9 @@ module rv32i_core_pipelined #(
   );
 
   // EX/MEM Pipeline Register
-  exmem_register exmem_reg (
+  exmem_register #(
+    .XLEN(XLEN)
+  ) exmem_reg (
     .clk(clk),
     .reset_n(reset_n),
     .alu_result_in(ex_alu_result),
@@ -633,6 +660,7 @@ module rv32i_core_pipelined #(
 
   // Data Memory
   data_memory #(
+    .XLEN(XLEN),
     .MEM_SIZE(DMEM_SIZE),
     .MEM_FILE(MEM_FILE)  // Load same file as instruction memory (for compliance tests)
   ) dmem (
@@ -646,7 +674,9 @@ module rv32i_core_pipelined #(
   );
 
   // MEM/WB Pipeline Register
-  memwb_register memwb_reg (
+  memwb_register #(
+    .XLEN(XLEN)
+  ) memwb_reg (
     .clk(clk),
     .reset_n(reset_n),
     .alu_result_in(exmem_alu_result),
@@ -679,6 +709,6 @@ module rv32i_core_pipelined #(
                    (memwb_wb_sel == 2'b01) ? memwb_mem_read_data :   // Memory data
                    (memwb_wb_sel == 2'b10) ? memwb_pc_plus_4 :       // PC + 4 (JAL/JALR)
                    (memwb_wb_sel == 2'b11) ? memwb_csr_rdata :       // CSR data
-                   32'h0;
+                   {XLEN{1'b0}};
 
 endmodule

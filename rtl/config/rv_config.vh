@@ -1,0 +1,217 @@
+// rv_config.vh - RISC-V Core Configuration Parameters
+// Central configuration file for parameterizing core variants
+// Author: RV1 Project
+// Date: 2025-10-10
+
+`ifndef RV_CONFIG_VH
+`define RV_CONFIG_VH
+
+// ============================================================================
+// Architecture Width Configuration
+// ============================================================================
+
+// XLEN: Register and data path width (32 or 64)
+`ifndef XLEN
+  `define XLEN 32
+`endif
+
+// Derived parameters
+`define XLEN_MINUS_1 (`XLEN - 1)
+`define SHAMT_WIDTH  ($clog2(`XLEN))  // Shift amount width: 5 for RV32, 6 for RV64
+
+// ============================================================================
+// ISA Extension Configuration
+// ============================================================================
+
+// M Extension: Integer Multiply/Divide
+`ifndef ENABLE_M_EXT
+  `define ENABLE_M_EXT 0
+`endif
+
+// A Extension: Atomic Instructions
+`ifndef ENABLE_A_EXT
+  `define ENABLE_A_EXT 0
+`endif
+
+// C Extension: Compressed Instructions (16-bit)
+`ifndef ENABLE_C_EXT
+  `define ENABLE_C_EXT 0
+`endif
+
+// Zicsr: CSR Instructions (always enabled for now)
+`ifndef ENABLE_ZICSR
+  `define ENABLE_ZICSR 1
+`endif
+
+// Zifencei: Instruction Fence (requires I-cache)
+`ifndef ENABLE_ZIFENCEI
+  `define ENABLE_ZIFENCEI 0
+`endif
+
+// ============================================================================
+// Cache Configuration
+// ============================================================================
+
+// Instruction Cache
+`ifndef ICACHE_SIZE
+  `define ICACHE_SIZE 4096  // 4KB default
+`endif
+
+`ifndef ICACHE_LINE_SIZE
+  `define ICACHE_LINE_SIZE 32  // 32 bytes (8 words)
+`endif
+
+`ifndef ICACHE_WAYS
+  `define ICACHE_WAYS 1  // Direct-mapped by default
+`endif
+
+// Data Cache
+`ifndef DCACHE_SIZE
+  `define DCACHE_SIZE 4096  // 4KB default
+`endif
+
+`ifndef DCACHE_LINE_SIZE
+  `define DCACHE_LINE_SIZE 32  // 32 bytes (8 words)
+`endif
+
+`ifndef DCACHE_WAYS
+  `define DCACHE_WAYS 1  // Direct-mapped by default
+`endif
+
+// L2 Cache (for multicore)
+`ifndef L2_CACHE_SIZE
+  `define L2_CACHE_SIZE 65536  // 64KB default
+`endif
+
+`ifndef L2_CACHE_ENABLE
+  `define L2_CACHE_ENABLE 0
+`endif
+
+// ============================================================================
+// Multicore Configuration
+// ============================================================================
+
+`ifndef NUM_CORES
+  `define NUM_CORES 1
+`endif
+
+`ifndef ENABLE_COHERENCY
+  `define ENABLE_COHERENCY 0
+`endif
+
+// ============================================================================
+// Memory Configuration
+// ============================================================================
+
+// Memory sizes (in bytes)
+`ifndef IMEM_SIZE
+  `define IMEM_SIZE 65536  // 64KB instruction memory
+`endif
+
+`ifndef DMEM_SIZE
+  `define DMEM_SIZE 65536  // 64KB data memory
+`endif
+
+// Address width (derived from memory size)
+`define IMEM_ADDR_WIDTH $clog2(`IMEM_SIZE)
+`define DMEM_ADDR_WIDTH $clog2(`DMEM_SIZE)
+
+// ============================================================================
+// Pipeline Configuration
+// ============================================================================
+
+`ifndef PIPELINE_STAGES
+  `define PIPELINE_STAGES 5  // Classic 5-stage pipeline
+`endif
+
+// ============================================================================
+// Debug and Verification
+// ============================================================================
+
+`ifndef ENABLE_ASSERTIONS
+  `define ENABLE_ASSERTIONS 1
+`endif
+
+`ifndef ENABLE_COVERAGE
+  `define ENABLE_COVERAGE 0
+`endif
+
+// ============================================================================
+// Common Presets
+// ============================================================================
+
+// To use a preset, include one of these before including rv_config.vh:
+//
+// RV32I - Minimal 32-bit base ISA
+//   -DCONFIG_RV32I
+//
+// RV32IM - 32-bit with multiply/divide
+//   -DCONFIG_RV32IM
+//
+// RV32IMC - 32-bit with M and compressed
+//   -DCONFIG_RV32IMC
+//
+// RV64I - 64-bit base ISA
+//   -DCONFIG_RV64I
+//
+// RV64GC - 64-bit full-featured (IMAFC + Zicsr + Zifencei)
+//   -DCONFIG_RV64GC
+
+`ifdef CONFIG_RV32I
+  `undef XLEN
+  `define XLEN 32
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 0
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 0
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 0
+`endif
+
+`ifdef CONFIG_RV32IM
+  `undef XLEN
+  `define XLEN 32
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 1
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 0
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 0
+`endif
+
+`ifdef CONFIG_RV32IMC
+  `undef XLEN
+  `define XLEN 32
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 1
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 0
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 1
+`endif
+
+`ifdef CONFIG_RV64I
+  `undef XLEN
+  `define XLEN 64
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 0
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 0
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 0
+`endif
+
+`ifdef CONFIG_RV64GC
+  `undef XLEN
+  `define XLEN 64
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 1
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 1
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 1
+  `undef ENABLE_ZIFENCEI
+  `define ENABLE_ZIFENCEI 1
+`endif
+
+`endif // RV_CONFIG_VH

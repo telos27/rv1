@@ -1,10 +1,15 @@
-// control.v - Main control unit for RV32I
+// control.v - Main control unit for RISC-V
 // Generates control signals based on opcode and function fields
+// Parameterized for RV32/RV64 support
 // Author: RV1 Project
 // Date: 2025-10-09
-// Updated: 2025-10-10 - Added CSR and trap support
+// Updated: 2025-10-10 - Added CSR and trap support, RV64 support
 
-module control (
+`include "config/rv_config.vh"
+
+module control #(
+  parameter XLEN = `XLEN
+) (
   input  wire [6:0] opcode,      // Opcode from instruction
   input  wire [2:0] funct3,      // Function3 field
   input  wire [6:0] funct7,      // Function7 field
@@ -34,7 +39,7 @@ module control (
   output reg        illegal_inst // Illegal instruction detected
 );
 
-  // Opcode definitions
+  // Opcode definitions (RV32I)
   localparam OP_LUI    = 7'b0110111;
   localparam OP_AUIPC  = 7'b0010111;
   localparam OP_JAL    = 7'b1101111;
@@ -46,6 +51,10 @@ module control (
   localparam OP_OP     = 7'b0110011;
   localparam OP_FENCE  = 7'b0001111;
   localparam OP_SYSTEM = 7'b1110011;
+
+  // RV64I-specific opcodes
+  localparam OP_IMM_32 = 7'b0011011;  // ADDIW, SLLIW, SRLIW, SRAIW
+  localparam OP_OP_32  = 7'b0111011;  // ADDW, SUBW, SLLW, SRLW, SRAW
 
   // Immediate format select
   localparam IMM_I = 3'b000;
@@ -181,6 +190,35 @@ module control (
       OP_FENCE: begin
         // FENCE: No-op in our simple implementation
         // In a real system, this would flush caches/buffers
+      end
+
+      OP_IMM_32: begin
+        // RV64I: 32-bit immediate operations (ADDIW, SLLIW, SRLIW, SRAIW)
+        // These operate on lower 32 bits and sign-extend result to 64 bits
+        if (XLEN == 64) begin
+          reg_write = 1'b1;
+          alu_src = 1'b1;
+          alu_control = get_alu_control(funct3, funct7, 1'b0);
+          wb_sel = 2'b00;
+          imm_sel = IMM_I;
+        end else begin
+          // Illegal in RV32
+          illegal_inst = 1'b1;
+        end
+      end
+
+      OP_OP_32: begin
+        // RV64I: 32-bit register operations (ADDW, SUBW, SLLW, SRLW, SRAW)
+        // These operate on lower 32 bits and sign-extend result to 64 bits
+        if (XLEN == 64) begin
+          reg_write = 1'b1;
+          alu_src = 1'b0;  // Use rs2
+          alu_control = get_alu_control(funct3, funct7, 1'b1);
+          wb_sel = 2'b00;
+        end else begin
+          // Illegal in RV32
+          illegal_inst = 1'b1;
+        end
       end
 
       OP_SYSTEM: begin

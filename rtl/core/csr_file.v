@@ -1,33 +1,38 @@
 // CSR (Control and Status Register) File
-// Implements Machine-mode CSRs for RISC-V RV32I
+// Implements Machine-mode CSRs for RISC-V
 // Supports CSR instructions: CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
 // Supports trap handling: exception entry and MRET
+// Parameterized for RV32/RV64
 
-module csr_file (
-  input  wire        clk,
-  input  wire        reset_n,
+`include "config/rv_config.vh"
+
+module csr_file #(
+  parameter XLEN = `XLEN
+) (
+  input  wire             clk,
+  input  wire             reset_n,
 
   // CSR read/write interface
-  input  wire [11:0] csr_addr,       // CSR address
-  input  wire [31:0] csr_wdata,      // Write data (from rs1 or uimm)
-  input  wire [2:0]  csr_op,         // CSR operation (funct3)
-  input  wire        csr_we,         // CSR write enable
-  output reg  [31:0] csr_rdata,      // Read data
+  input  wire [11:0]      csr_addr,       // CSR address
+  input  wire [XLEN-1:0]  csr_wdata,      // Write data (from rs1 or uimm)
+  input  wire [2:0]       csr_op,         // CSR operation (funct3)
+  input  wire             csr_we,         // CSR write enable
+  output reg  [XLEN-1:0]  csr_rdata,      // Read data
 
   // Trap handling interface
-  input  wire        trap_entry,     // Trap is occurring
-  input  wire [31:0] trap_pc,        // PC to save in mepc
-  input  wire [4:0]  trap_cause,     // Exception cause code
-  input  wire [31:0] trap_val,       // mtval value (bad address, instruction, etc.)
-  output wire [31:0] trap_vector,    // mtvec value (trap handler address)
+  input  wire             trap_entry,     // Trap is occurring
+  input  wire [XLEN-1:0]  trap_pc,        // PC to save in mepc
+  input  wire [4:0]       trap_cause,     // Exception cause code
+  input  wire [XLEN-1:0]  trap_val,       // mtval value (bad address, instruction, etc.)
+  output wire [XLEN-1:0]  trap_vector,    // mtvec value (trap handler address)
 
   // MRET (trap return)
-  input  wire        mret,           // MRET instruction
-  output wire [31:0] mepc_out,       // mepc for return
+  input  wire             mret,           // MRET instruction
+  output wire [XLEN-1:0]  mepc_out,       // mepc for return
 
   // Status outputs
-  output wire        mstatus_mie,    // Global interrupt enable
-  output wire        illegal_csr     // Invalid CSR access
+  output wire             mstatus_mie,    // Global interrupt enable
+  output wire             illegal_csr     // Invalid CSR access
 );
 
   // =========================================================================
@@ -72,30 +77,37 @@ module csr_file (
   reg [1:0]  mstatus_mpp_r;   // [12:11] - Machine Previous Privilege (always 2'b11)
 
   // Machine ISA Register (misa) - read-only
-  // [31:30] = 2'b01 (MXL=1 for RV32)
-  // [25:0] = extensions bitmap (bit 8 = I extension)
-  wire [31:0] misa = {2'b01, 4'b0, 26'b00000000000000000100000000};
+  // RV32: [31:30] = 2'b01 (MXL=1), [25:0] = extensions (bit 8 = I)
+  // RV64: [63:62] = 2'b10 (MXL=2), [25:0] = extensions (bit 8 = I)
+  generate
+    if (XLEN == 32) begin : gen_misa_rv32
+      wire [31:0] misa = {2'b01, 4'b0, 26'b00000000000000000100000000};
+    end else begin : gen_misa_rv64
+      wire [63:0] misa = {2'b10, 36'b0, 26'b00000000000000000100000000};
+    end
+  endgenerate
 
   // Machine Interrupt Enable (mie) - not fully implemented yet
-  reg [31:0] mie_r;
+  reg [XLEN-1:0] mie_r;
 
   // Machine Trap-Vector Base Address (mtvec)
-  reg [31:0] mtvec_r;
+  reg [XLEN-1:0] mtvec_r;
 
   // Machine Scratch Register (mscratch) - software use
-  reg [31:0] mscratch_r;
+  reg [XLEN-1:0] mscratch_r;
 
   // Machine Exception Program Counter (mepc)
-  reg [31:0] mepc_r;
+  reg [XLEN-1:0] mepc_r;
 
   // Machine Cause Register (mcause)
-  reg [31:0] mcause_r;
+  // [XLEN-1] = interrupt flag, [XLEN-2:0] = exception code
+  reg [XLEN-1:0] mcause_r;
 
   // Machine Trap Value (mtval)
-  reg [31:0] mtval_r;
+  reg [XLEN-1:0] mtval_r;
 
   // Machine Interrupt Pending (mip) - not fully implemented yet
-  reg [31:0] mip_r;
+  reg [XLEN-1:0] mip_r;
 
   // =========================================================================
   // Read-Only CSRs (hardwired)
@@ -118,21 +130,37 @@ module csr_file (
   // =========================================================================
 
   // Construct mstatus from individual fields
-  wire [31:0] mstatus_value = {
-    19'b0,                // [31:13] Reserved
-    mstatus_mpp_r,        // [12:11] MPP
-    3'b0,                 // [10:8] Reserved
-    mstatus_mpie_r,       // [7] MPIE
-    3'b0,                 // [6:4] Reserved
-    mstatus_mie_r,        // [3] MIE
-    3'b0                  // [2:0] Reserved
-  };
+  // RV32: Standard layout with fields at [12:11], [7], [3]
+  // RV64: Same fields, but wider register (upper bits reserved)
+  generate
+    if (XLEN == 32) begin : gen_mstatus_rv32
+      wire [31:0] mstatus_value = {
+        19'b0,                // [31:13] Reserved
+        mstatus_mpp_r,        // [12:11] MPP
+        3'b0,                 // [10:8] Reserved
+        mstatus_mpie_r,       // [7] MPIE
+        3'b0,                 // [6:4] Reserved
+        mstatus_mie_r,        // [3] MIE
+        3'b0                  // [2:0] Reserved
+      };
+    end else begin : gen_mstatus_rv64
+      wire [63:0] mstatus_value = {
+        51'b0,                // [63:13] Reserved
+        mstatus_mpp_r,        // [12:11] MPP
+        3'b0,                 // [10:8] Reserved
+        mstatus_mpie_r,       // [7] MPIE
+        3'b0,                 // [6:4] Reserved
+        mstatus_mie_r,        // [3] MIE
+        3'b0                  // [2:0] Reserved
+      };
+    end
+  endgenerate
 
   // CSR read multiplexer
   always @(*) begin
     case (csr_addr)
-      CSR_MSTATUS:   csr_rdata = mstatus_value;
-      CSR_MISA:      csr_rdata = misa;
+      CSR_MSTATUS:   csr_rdata = (XLEN == 32) ? gen_mstatus_rv32.mstatus_value : gen_mstatus_rv64.mstatus_value;
+      CSR_MISA:      csr_rdata = (XLEN == 32) ? gen_misa_rv32.misa : gen_misa_rv64.misa;
       CSR_MIE:       csr_rdata = mie_r;
       CSR_MTVEC:     csr_rdata = mtvec_r;
       CSR_MSCRATCH:  csr_rdata = mscratch_r;
@@ -140,11 +168,11 @@ module csr_file (
       CSR_MCAUSE:    csr_rdata = mcause_r;
       CSR_MTVAL:     csr_rdata = mtval_r;
       CSR_MIP:       csr_rdata = mip_r;
-      CSR_MVENDORID: csr_rdata = mvendorid;
-      CSR_MARCHID:   csr_rdata = marchid;
-      CSR_MIMPID:    csr_rdata = mimpid;
-      CSR_MHARTID:   csr_rdata = mhartid;
-      default:       csr_rdata = 32'h0;  // Return 0 for unknown CSRs
+      CSR_MVENDORID: csr_rdata = {{(XLEN-32){1'b0}}, mvendorid};  // Zero-extend to XLEN
+      CSR_MARCHID:   csr_rdata = {{(XLEN-32){1'b0}}, marchid};    // Zero-extend to XLEN
+      CSR_MIMPID:    csr_rdata = {{(XLEN-32){1'b0}}, mimpid};     // Zero-extend to XLEN
+      CSR_MHARTID:   csr_rdata = {{(XLEN-32){1'b0}}, mhartid};    // Zero-extend to XLEN
+      default:       csr_rdata = {XLEN{1'b0}};  // Return 0 for unknown CSRs
     endcase
   end
 
@@ -194,7 +222,7 @@ module csr_file (
   assign illegal_csr = csr_we && ((!csr_valid) || csr_read_only);
 
   // Compute CSR write value based on operation
-  reg [31:0] csr_write_value;
+  reg [XLEN-1:0] csr_write_value;
   always @(*) begin
     case (csr_op)
       CSR_RW, CSR_RWI: csr_write_value = csr_wdata;                    // Write
@@ -210,20 +238,20 @@ module csr_file (
       // Reset all CSRs
       mstatus_mie_r  <= 1'b0;
       mstatus_mpie_r <= 1'b0;
-      mstatus_mpp_r  <= 2'b11;      // M-mode
-      mie_r          <= 32'h0;
-      mtvec_r        <= 32'h0;      // Trap vector at address 0
-      mscratch_r     <= 32'h0;
-      mepc_r         <= 32'h0;
-      mcause_r       <= 32'h0;
-      mtval_r        <= 32'h0;
-      mip_r          <= 32'h0;
+      mstatus_mpp_r  <= 2'b11;          // M-mode
+      mie_r          <= {XLEN{1'b0}};
+      mtvec_r        <= {XLEN{1'b0}};   // Trap vector at address 0
+      mscratch_r     <= {XLEN{1'b0}};
+      mepc_r         <= {XLEN{1'b0}};
+      mcause_r       <= {XLEN{1'b0}};
+      mtval_r        <= {XLEN{1'b0}};
+      mip_r          <= {XLEN{1'b0}};
     end else begin
       // Trap entry has priority over CSR writes
       if (trap_entry) begin
         // Save PC and cause
         mepc_r  <= trap_pc;
-        mcause_r <= {27'b0, trap_cause};  // [31]=0 for exception
+        mcause_r <= {{(XLEN-5){1'b0}}, trap_cause};  // [XLEN-1]=0 for exception, lower bits = cause
         mtval_r  <= trap_val;
 
         // Save and update status
@@ -244,9 +272,9 @@ module csr_file (
             mstatus_mpp_r  <= csr_write_value[12:11];
           end
           CSR_MIE:      mie_r      <= csr_write_value;
-          CSR_MTVEC:    mtvec_r    <= {csr_write_value[31:2], 2'b00};  // Align to 4 bytes
+          CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
           CSR_MSCRATCH: mscratch_r <= csr_write_value;
-          CSR_MEPC:     mepc_r     <= {csr_write_value[31:2], 2'b00};  // Align to 4 bytes
+          CSR_MEPC:     mepc_r     <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
           CSR_MIP:      mip_r      <= csr_write_value;

@@ -35,7 +35,7 @@ module tb_core_pipelined;
   `endif
 
   // Instantiate DUT (pipelined core)
-  rv32i_core_pipelined #(
+  rv_core_pipelined #(
     .RESET_VECTOR(RESET_VEC),
     .IMEM_SIZE(16384),  // 16KB instruction memory
     .DMEM_SIZE(16384),  // 16KB data memory
