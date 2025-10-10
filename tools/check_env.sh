@@ -46,7 +46,7 @@ check_cmd "vvp" "VVP (Verilog simulator)" "required" || ALL_GOOD=1
 echo ""
 echo "RISC-V Toolchain:"
 echo "-----------------"
-RISCV_PREFIX=${RISCV_PREFIX:-riscv32-unknown-elf-}
+RISCV_PREFIX=${RISCV_PREFIX:-riscv64-unknown-elf-}
 check_cmd "${RISCV_PREFIX}gcc" "RISC-V GCC" "required" || ALL_GOOD=1
 check_cmd "${RISCV_PREFIX}as" "RISC-V Assembler" "required" || ALL_GOOD=1
 check_cmd "${RISCV_PREFIX}ld" "RISC-V Linker" "required" || ALL_GOOD=1

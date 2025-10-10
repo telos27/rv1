@@ -11,18 +11,18 @@ module instruction_memory #(
   output wire [31:0] instruction  // Instruction output
 );
 
-  // Calculate number of words
-  localparam NUM_WORDS = MEM_SIZE / 4;
-
-  // Memory array (word-addressed)
-  reg [31:0] mem [0:NUM_WORDS-1];
+  // Memory array (byte-addressed for easier hex file loading)
+  reg [7:0] mem [0:MEM_SIZE-1];
 
   // Initialize memory
   initial begin
     integer i;
-    // Initialize to NOP (ADDI x0, x0, 0)
-    for (i = 0; i < NUM_WORDS; i = i + 1) begin
-      mem[i] = 32'h00000013;  // NOP
+    // Initialize to NOP (ADDI x0, x0, 0) = 0x00000013 in little-endian bytes
+    for (i = 0; i < MEM_SIZE; i = i + 4) begin
+      mem[i]   = 8'h13;  // NOP byte 0
+      mem[i+1] = 8'h00;  // NOP byte 1
+      mem[i+2] = 8'h00;  // NOP byte 2
+      mem[i+3] = 8'h00;  // NOP byte 3
     end
 
     // Load from file if specified
@@ -31,8 +31,9 @@ module instruction_memory #(
     end
   end
 
-  // Word-aligned read (ignore lower 2 bits)
-  // addr[31:2] gives the word index
-  assign instruction = mem[addr[31:2]];
+  // Word-aligned read (assemble 4 bytes into 32-bit instruction, little-endian)
+  // addr[31:2] gives the word index, we read 4 bytes starting at that address
+  wire [31:0] word_addr = {addr[31:2], 2'b00};  // Align to word boundary
+  assign instruction = {mem[word_addr+3], mem[word_addr+2], mem[word_addr+1], mem[word_addr]};
 
 endmodule

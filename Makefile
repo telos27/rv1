@@ -4,7 +4,7 @@
 IVERILOG = iverilog
 VVP = vvp
 GTKWAVE = gtkwave
-RISCV_PREFIX = riscv32-unknown-elf-
+RISCV_PREFIX = riscv64-unknown-elf-
 AS = $(RISCV_PREFIX)as
 LD = $(RISCV_PREFIX)ld
 OBJCOPY = $(RISCV_PREFIX)objcopy
@@ -78,7 +78,7 @@ asm-tests: $(HEX_TESTS)
 $(TEST_DIR)/vectors/%.hex: $(TEST_DIR)/asm/%.s | $(SIM_DIR)
 	@echo "Assembling $<..."
 	@$(AS) -march=rv32i -mabi=ilp32 -o $(TEST_DIR)/vectors/$*.o $<
-	@$(LD) -T $(TEST_DIR)/linker.ld -o $(TEST_DIR)/vectors/$*.elf $(TEST_DIR)/vectors/$*.o
+	@$(LD) -m elf32lriscv -T $(TEST_DIR)/linker.ld -o $(TEST_DIR)/vectors/$*.elf $(TEST_DIR)/vectors/$*.o
 	@$(OBJCOPY) -O verilog $(TEST_DIR)/vectors/$*.elf $@
 	@$(OBJDUMP) -D $(TEST_DIR)/vectors/$*.elf > $(TEST_DIR)/vectors/$*.dump
 	@echo "Created $@"

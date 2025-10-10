@@ -21,7 +21,7 @@ _start:
     addi x7, x0, 2       # counter = 2 (start from fib(2))
 
 fib_loop:
-    bge x7, x10, done    # if counter >= n, done
+    bgt x7, x10, done    # if counter > n, done
     add x8, x5, x6       # fib(n) = fib(n-1) + fib(n-2)
     addi x5, x6, 0       # fib(n-2) = fib(n-1)
     addi x6, x8, 0       # fib(n-1) = fib(n)

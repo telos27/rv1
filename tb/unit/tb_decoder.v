@@ -195,8 +195,8 @@ module tb_decoder;
     // Branch offset 8 (aligned to 2 bytes)
     $display("Test 6: B-type instruction (BEQ)...");
     // imm[12|10:5] = 0000000, imm[4:1|11] = 01000
-    // For offset 8: bits are [12]=0, [11]=0, [10:5]=000010, [4:1]=0000
-    instruction = 32'b0_000010_00010_00001_000_0000_0_1100011;
+    // For offset 8: bits are [12]=0, [11]=0, [10:5]=000000, [4:1]=0100
+    instruction = 32'b0_000000_00010_00001_000_0100_0_1100011;
     #1;
     if (imm_b !== 32'd8) begin
       $display("FAIL: B-type immediate (exp=8, got=%0d)", $signed(imm_b));
