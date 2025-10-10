@@ -556,7 +556,7 @@ module rv32i_core_pipelined #(
   exception_unit exception_unit_inst (
     // IF stage - instruction fetch (check misaligned PC)
     .if_pc(pc_current),
-    .if_valid(1'b1),                // IF always produces valid output
+    .if_valid(!flush_ifid),         // IF invalid when flushing
     // ID stage - decode stage exceptions (in EX pipeline stage)
     // Note: Only consider illegal_csr if it's actually a CSR instruction
     .id_illegal_inst((idex_illegal_inst | (ex_illegal_csr && idex_csr_we)) && idex_valid),

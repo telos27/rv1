@@ -1,0 +1,152 @@
+========================================
+RISC-V Compliance Test Runner (Pipelined)
+========================================
+
+Step 1: Converting tests to hex format...
+  Converted: rv32ui-p-add -> rv32ui-p-add.hex
+  Converted: rv32ui-p-addi -> rv32ui-p-addi.hex
+  Converted: rv32ui-p-and -> rv32ui-p-and.hex
+  Converted: rv32ui-p-andi -> rv32ui-p-andi.hex
+  Converted: rv32ui-p-auipc -> rv32ui-p-auipc.hex
+  Converted: rv32ui-p-beq -> rv32ui-p-beq.hex
+  Converted: rv32ui-p-bge -> rv32ui-p-bge.hex
+  Converted: rv32ui-p-bgeu -> rv32ui-p-bgeu.hex
+  Converted: rv32ui-p-blt -> rv32ui-p-blt.hex
+  Converted: rv32ui-p-bltu -> rv32ui-p-bltu.hex
+  Converted: rv32ui-p-bne -> rv32ui-p-bne.hex
+  Converted: rv32ui-p-fence_i -> rv32ui-p-fence_i.hex
+  Converted: rv32ui-p-jal -> rv32ui-p-jal.hex
+  Converted: rv32ui-p-jalr -> rv32ui-p-jalr.hex
+  Converted: rv32ui-p-lb -> rv32ui-p-lb.hex
+  Converted: rv32ui-p-lbu -> rv32ui-p-lbu.hex
+  Converted: rv32ui-p-ld_st -> rv32ui-p-ld_st.hex
+  Converted: rv32ui-p-lh -> rv32ui-p-lh.hex
+  Converted: rv32ui-p-lhu -> rv32ui-p-lhu.hex
+  Converted: rv32ui-p-lui -> rv32ui-p-lui.hex
+  Converted: rv32ui-p-lw -> rv32ui-p-lw.hex
+  Converted: rv32ui-p-ma_data -> rv32ui-p-ma_data.hex
+  Converted: rv32ui-p-or -> rv32ui-p-or.hex
+  Converted: rv32ui-p-ori -> rv32ui-p-ori.hex
+  Converted: rv32ui-p-sb -> rv32ui-p-sb.hex
+  Converted: rv32ui-p-sh -> rv32ui-p-sh.hex
+  Converted: rv32ui-p-simple -> rv32ui-p-simple.hex
+  Converted: rv32ui-p-sll -> rv32ui-p-sll.hex
+  Converted: rv32ui-p-slli -> rv32ui-p-slli.hex
+  Converted: rv32ui-p-slt -> rv32ui-p-slt.hex
+  Converted: rv32ui-p-slti -> rv32ui-p-slti.hex
+  Converted: rv32ui-p-sltiu -> rv32ui-p-sltiu.hex
+  Converted: rv32ui-p-sltu -> rv32ui-p-sltu.hex
+  Converted: rv32ui-p-sra -> rv32ui-p-sra.hex
+  Converted: rv32ui-p-srai -> rv32ui-p-srai.hex
+  Converted: rv32ui-p-srl -> rv32ui-p-srl.hex
+  Converted: rv32ui-p-srli -> rv32ui-p-srli.hex
+  Converted: rv32ui-p-st_ld -> rv32ui-p-st_ld.hex
+  Converted: rv32ui-p-sub -> rv32ui-p-sub.hex
+  Converted: rv32ui-p-sw -> rv32ui-p-sw.hex
+  Converted: rv32ui-p-xor -> rv32ui-p-xor.hex
+  Converted: rv32ui-p-xori -> rv32ui-p-xori.hex
+
+Converted 42 tests to hex format
+
+Step 2: Running compliance tests...
+
+Running rv32ui-p-add... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-addi... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-and... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-andi... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-auipc... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-beq... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-bge... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-bgeu... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-blt... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-bltu... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-bne... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-fence_i... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-jal... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-jalr... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-lb... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-lbu... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-ld_st... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-lh... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-lhu... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-lui... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-lw... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-ma_data... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-or... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-ori... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sb... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sh... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-simple... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sll... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-slli... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-slt... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-slti... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sltiu... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sltu... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sra... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-srai... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-srl... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-srli... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-st_ld... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sub... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-sw... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-xor... [1;33mTIMEOUT/ERROR[0m
+Running rv32ui-p-xori... [1;33mTIMEOUT/ERROR[0m
+
+========================================
+COMPLIANCE TEST SUMMARY
+========================================
+Total tests: 42
+[0;32mPassed: 0[0m
+[0;31mFailed: 42[0m
+
+Failed tests:
+
+  - rv32ui-p-add (timeout or error)
+  - rv32ui-p-addi (timeout or error)
+  - rv32ui-p-and (timeout or error)
+  - rv32ui-p-andi (timeout or error)
+  - rv32ui-p-auipc (timeout or error)
+  - rv32ui-p-beq (timeout or error)
+  - rv32ui-p-bge (timeout or error)
+  - rv32ui-p-bgeu (timeout or error)
+  - rv32ui-p-blt (timeout or error)
+  - rv32ui-p-bltu (timeout or error)
+  - rv32ui-p-bne (timeout or error)
+  - rv32ui-p-fence_i (timeout or error)
+  - rv32ui-p-jal (timeout or error)
+  - rv32ui-p-jalr (timeout or error)
+  - rv32ui-p-lb (timeout or error)
+  - rv32ui-p-lbu (timeout or error)
+  - rv32ui-p-ld_st (timeout or error)
+  - rv32ui-p-lh (timeout or error)
+  - rv32ui-p-lhu (timeout or error)
+  - rv32ui-p-lui (timeout or error)
+  - rv32ui-p-lw (timeout or error)
+  - rv32ui-p-ma_data (timeout or error)
+  - rv32ui-p-or (timeout or error)
+  - rv32ui-p-ori (timeout or error)
+  - rv32ui-p-sb (timeout or error)
+  - rv32ui-p-sh (timeout or error)
+  - rv32ui-p-simple (timeout or error)
+  - rv32ui-p-sll (timeout or error)
+  - rv32ui-p-slli (timeout or error)
+  - rv32ui-p-slt (timeout or error)
+  - rv32ui-p-slti (timeout or error)
+  - rv32ui-p-sltiu (timeout or error)
+  - rv32ui-p-sltu (timeout or error)
+  - rv32ui-p-sra (timeout or error)
+  - rv32ui-p-srai (timeout or error)
+  - rv32ui-p-srl (timeout or error)
+  - rv32ui-p-srli (timeout or error)
+  - rv32ui-p-st_ld (timeout or error)
+  - rv32ui-p-sub (timeout or error)
+  - rv32ui-p-sw (timeout or error)
+  - rv32ui-p-xor (timeout or error)
+  - rv32ui-p-xori (timeout or error)
+
+Pass rate: 0%
+[1;33m⚠ Target not met (≥90%)[0m
+
+Logs saved to: /home/lei/rv1/sim/compliance/
+

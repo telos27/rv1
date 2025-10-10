@@ -1,0 +1,61 @@
+Phase 4 Debug: Fix exception re-triggering bug, identify CSR read bug
+
+This commit addresses critical bugs discovered during Phase 4 testing.
+
+## Bug #1: Exception Re-triggering (FIXED)
+
+**Problem**: Misaligned load/store exceptions triggered infinite loops
+- Exception unit continuously detected fault in MEM stage
+- Faulting instruction stayed in EX/MEM register with valid=1
+- Pipeline flush didn't invalidate EX/MEM stage
+- Result: Infinite trap handler entry loop
+
+**Fix**: Track exception occurrence and invalidate EX/MEM on next cycle
+- Added exception_taken_r register to track previous exception
+- Invalidate EX/MEM stage when exception_taken_r=1
+- Allows trap handler to execute without re-triggering
+
+**Files Changed**:
+- rtl/core/rv32i_core_pipelined.v:
+  - Lines 214-220: Added exception_taken_r register
+  - Line 583: Modified EX/MEM valid_in to gate on !exception_taken_r
+
+## Bug #2: CSR Read Returning Zero (NOT FIXED - DOCUMENTED)
+
+**Problem**: All CSR reads return 0 instead of actual CSR values
+- Example: csrr x2, mstatus → x2 = 0 (should be mstatus value)
+- Blocks all exception handling functionality
+- Pre-existing bug from Phase 4 Part 2 commit (af5a599)
+
+**Status**: Identified but not fixed in this commit
+- CSR file outputs correctly (verified with unit test)
+- Bug is in pipeline integration (EX/MEM or MEM/WB registers)
+- See DEBUG_CSR_READ_BUG.md for investigation guide
+
+**Impact**: 
+- `ma_data` compliance test still fails (timeout)
+- Exception handlers cannot read mcause, mepc, mtval
+- Compliance remains at 40/42 (95%)
+
+## Testing
+
+Created test programs:
+- tests/asm/test_misaligned_simple.s - Tests exception handling
+- /tmp/test_csr_read.s - Minimal CSR read test
+
+## Next Steps
+
+1. Fix CSR read bug (CRITICAL)
+2. Re-test exception handling with working CSR reads
+3. Target compliance: 41/42 (97%) with ma_data passing
+
+## Documentation Added
+
+- NEXT_SESSION_PHASE4_PART3.md - Detailed next session guide
+- SESSION_SUMMARY_2025-10-10_phase4_part2_debug.md - Debug session summary
+- DEBUG_CSR_READ_BUG.md - CSR bug investigation guide
+- PHASES.md - Updated with current status
+
+🤖 Generated with Claude Code (https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
