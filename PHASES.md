@@ -5,10 +5,23 @@ This document tracks the development progress through each phase of the RV1 RISC
 ## Current Status
 
 **Active Phase**: Phase 4 - CSR and Trap Handling 🚧 **IN PROGRESS**
-**Completion**: ~60% 🔄 | **Infrastructure Complete, Integration Pending**
-**Next Milestone**: Complete Phase 4 integration and testing
+**Completion**: ~75% 🔄 | **Integration Done, Critical Bug Found**
+**Next Milestone**: Fix CSR Read Bug, Complete Phase 4 Testing
 
-**Recent Progress (2025-10-10 - Session 5 - Phase 4 Part 1):**
+**Recent Progress (2025-10-10 - Session 6 - Phase 4 Debug):**
+- 🐛 **Bug Investigation**: Analyzed `ma_data` test timeout
+- ✅ **Bug #1 Fixed**: Exception re-triggering in MEM stage
+  - Added `exception_taken_r` register to prevent infinite loops
+  - Invalidate EX/MEM stage after exception occurs
+- ❌ **Bug #2 Found**: CSR reads returning 0 (CRITICAL - NOT FIXED)
+  - All CSR reads return 0 instead of actual values
+  - Blocks all exception handling functionality
+  - Pre-existing bug from Phase 4 Part 2 commit
+  - CSR file works correctly, bug is in pipeline integration
+- 📝 **Test Coverage**: Created misaligned exception and CSR read tests
+- **Compliance**: Still 40/42 (95%) - `ma_data` blocked by CSR bug
+
+**Earlier Progress (2025-10-10 - Session 5 - Phase 4 Part 1):**
 - ✅ **Phase 4 Documentation**: Complete implementation plan created
 - ✅ **CSR Register File**: Implemented and tested (30/30 tests PASSED)
   - 13 Machine-mode CSRs (mstatus, mtvec, mepc, mcause, etc.)

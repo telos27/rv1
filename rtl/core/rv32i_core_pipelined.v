@@ -210,6 +210,15 @@ module rv32i_core_pipelined #(
   assign trap_flush = exception;  // Exception occurred
   assign mret_flush = exmem_is_mret && exmem_valid;  // MRET in MEM stage
 
+  // Track exception from previous cycle to prevent re-triggering
+  reg exception_taken_r;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      exception_taken_r <= 1'b0;
+    else
+      exception_taken_r <= exception;
+  end
+
   // PC selection: priority order - trap > mret > branch/jump > PC+4
   assign pc_next = trap_flush ? trap_vector :
                    mret_flush ? mepc :
@@ -507,11 +516,24 @@ module rv32i_core_pipelined #(
   //==========================================================================
   // CSR File (in EX stage for read/write)
   //==========================================================================
+
+  // CSR Write Data Forwarding
+  // CSR write data comes from rs1 (for register form CSR instructions)
+  // Need to forward from EX/MEM or MEM/WB stages to handle RAW hazards
+  // Only forward for register-form CSR instructions (funct3[2] = 0)
+  wire ex_csr_uses_rs1;
+  assign ex_csr_uses_rs1 = (idex_wb_sel == 2'b11) && !idex_csr_src;  // CSR instruction using rs1
+
+  wire [31:0] ex_csr_wdata_forwarded;
+  assign ex_csr_wdata_forwarded = (ex_csr_uses_rs1 && forward_a == 2'b10) ? exmem_alu_result :  // EX-to-EX forward
+                                  (ex_csr_uses_rs1 && forward_a == 2'b01) ? wb_data :           // MEM-to-EX forward
+                                  idex_csr_wdata;                                                 // No hazard or imm form
+
   csr_file csr_file_inst (
     .clk(clk),
     .reset_n(reset_n),
     .csr_addr(idex_csr_addr),
-    .csr_wdata(idex_csr_wdata),
+    .csr_wdata(ex_csr_wdata_forwarded),  // Use forwarded value
     .csr_op(idex_funct3),           // funct3 encodes CSR operation
     .csr_we(idex_csr_we && idex_valid),
     .csr_rdata(ex_csr_rdata),
@@ -571,7 +593,7 @@ module rv32i_core_pipelined #(
     .mem_write_in(idex_mem_write),
     .reg_write_in(idex_reg_write),
     .wb_sel_in(idex_wb_sel),
-    .valid_in(idex_valid),
+    .valid_in(idex_valid && !exception_taken_r),  // Invalidate if exception occurred last cycle
     // CSR inputs
     .csr_addr_in(idex_csr_addr),
     .csr_we_in(idex_csr_we),
