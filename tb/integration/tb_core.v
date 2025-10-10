@@ -27,11 +27,19 @@ module tb_core;
   // Cycle counter
   integer cycle_count;
 
+  // RISC-V compliance tests start at 0x80000000
+  `ifdef COMPLIANCE_TEST
+    parameter RESET_VEC = 32'h80000000;
+  `else
+    parameter RESET_VEC = 32'h00000000;
+  `endif
+
   // Instantiate DUT
+  // Use larger memory for compliance tests (16KB each)
   rv32i_core #(
-    .RESET_VECTOR(32'h00000000),
-    .IMEM_SIZE(4096),
-    .DMEM_SIZE(4096),
+    .RESET_VECTOR(RESET_VEC),
+    .IMEM_SIZE(16384),  // 16KB instruction memory
+    .DMEM_SIZE(16384),  // 16KB data memory
     .MEM_FILE(MEM_INIT_FILE)
   ) DUT (
     .clk(clk),
@@ -72,7 +80,7 @@ module tb_core;
     $display("Reset released at time %0t", $time);
     $display("");
 
-    // Run for specified cycles or until EBREAK
+    // Run for specified cycles or until EBREAK/ECALL
     repeat(TIMEOUT) begin
       @(posedge clk);
       cycle_count = cycle_count + 1;
@@ -80,7 +88,7 @@ module tb_core;
       // Debug: print PC and instruction every cycle (can be commented out)
       // $display("[%0d] PC=0x%08h, Instr=0x%08h", cycle_count, pc, instruction);
 
-      // Check for EBREAK (0x00100073)
+      // Check for EBREAK (0x00100073) or ECALL (0x00000073)
       if (instruction == 32'h00100073) begin
         $display("EBREAK encountered at cycle %0d", cycle_count);
         $display("Final PC: 0x%08h", pc);
@@ -90,6 +98,34 @@ module tb_core;
         $display("Test PASSED");
         $finish;
       end
+
+      `ifdef COMPLIANCE_TEST
+      // Check for ECALL (0x00000073) - used by RISC-V compliance tests
+      if (instruction == 32'h00000073) begin
+        $display("ECALL encountered at cycle %0d", cycle_count);
+        $display("Final PC: 0x%08h", pc);
+        $display("");
+
+        // Check gp (x3) register for pass/fail
+        if (DUT.regfile.registers[3] == 1) begin
+          $display("========================================");
+          $display("RISC-V COMPLIANCE TEST PASSED");
+          $display("========================================");
+          $display("  Test result (gp/x3): %0d", DUT.regfile.registers[3]);
+          $display("  Cycles: %0d", cycle_count);
+          $finish;
+        end else begin
+          $display("========================================");
+          $display("RISC-V COMPLIANCE TEST FAILED");
+          $display("========================================");
+          $display("  Failed at test number: %0d", DUT.regfile.registers[3]);
+          $display("  Final PC: 0x%08h", pc);
+          $display("  Cycles: %0d", cycle_count);
+          print_results();
+          $finish;
+        end
+      end
+      `endif
     end
 
     // Timeout

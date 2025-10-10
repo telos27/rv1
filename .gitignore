@@ -16,6 +16,9 @@ tests/vectors/*.o
 tests/vectors/*.elf
 tests/vectors/*.dump
 
+# RISC-V compliance tests (auto-generated, can be regenerated)
+tests/riscv-compliance/
+
 # Verilator
 obj_dir/
 *.d

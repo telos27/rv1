@@ -32,8 +32,10 @@ module instruction_memory #(
   end
 
   // Word-aligned read (assemble 4 bytes into 32-bit instruction, little-endian)
-  // addr[31:2] gives the word index, we read 4 bytes starting at that address
-  wire [31:0] word_addr = {addr[31:2], 2'b00};  // Align to word boundary
+  // Mask address to fit within memory size (handles different base addresses)
+  // For 4KB memory, use addr[11:0]; addr[31:2] gives word index, then mask to memory
+  wire [31:0] masked_addr = addr & (MEM_SIZE - 1);  // Mask to memory size
+  wire [31:0] word_addr = {masked_addr[31:2], 2'b00};  // Align to word boundary
   assign instruction = {mem[word_addr+3], mem[word_addr+2], mem[word_addr+1], mem[word_addr]};
 
 endmodule

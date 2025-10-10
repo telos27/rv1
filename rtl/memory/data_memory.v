@@ -19,17 +19,20 @@ module data_memory #(
   reg [7:0] mem [0:MEM_SIZE-1];
 
   // Internal signals
+  wire [31:0] masked_addr;
   wire [31:0] word_addr;
   wire [1:0]  byte_offset;
   wire [7:0]  byte_data;
   wire [15:0] halfword_data;
   wire [31:0] word_data;
 
-  assign word_addr = {addr[31:2], 2'b00};  // Word-aligned address
-  assign byte_offset = addr[1:0];
+  // Mask address to fit within memory size (handles different base addresses)
+  assign masked_addr = addr & (MEM_SIZE - 1);
+  assign word_addr = {masked_addr[31:2], 2'b00};  // Word-aligned address
+  assign byte_offset = masked_addr[1:0];
 
   // Read data from memory
-  assign byte_data = mem[addr];
+  assign byte_data = mem[masked_addr];
   assign halfword_data = {mem[word_addr + 1], mem[word_addr]};
   assign word_data = {mem[word_addr + 3], mem[word_addr + 2],
                       mem[word_addr + 1], mem[word_addr]};
@@ -39,7 +42,7 @@ module data_memory #(
     if (mem_write) begin
       case (funct3)
         3'b000: begin  // SB (store byte)
-          mem[addr] <= write_data[7:0];
+          mem[masked_addr] <= write_data[7:0];
         end
         3'b001: begin  // SH (store halfword)
           mem[word_addr]     <= write_data[7:0];

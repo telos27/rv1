@@ -5,18 +5,29 @@ This document tracks the development progress through each phase of the RV1 RISC
 ## Current Status
 
 **Active Phase**: Phase 1 - Single-Cycle RV32I Core
-**Completion**: ~98%
-**Next Milestone**: RISC-V compliance tests, then performance analysis
+**Completion**: ~75% (compliance testing complete, fixes needed)
+**Next Milestone**: Fix compliance test failures, then performance analysis
 
-**Recent Progress:**
+**Recent Progress (2025-10-09):**
 - ✅ All 9 core RTL modules implemented
 - ✅ Unit testbenches created and PASSED (ALU, RegFile, Decoder)
 - ✅ Integration testbench completed
-- ✅ Sample test programs written and assembled
+- ✅ Comprehensive test coverage expanded from 40% to 85%+
 - ✅ Simulation environment configured and operational
 - ✅ Unit tests: 126/126 PASSED (100%)
-- ✅ Integration tests: 3/3 PASSED (simple_add, fibonacci, load_store)
+- ✅ Integration tests: 7/7 PASSED (100%)
+  - simple_add ✓
+  - fibonacci ✓
+  - load_store ✓
+  - logic_ops ✓
+  - shift_ops ✓
+  - branch_test ✓
+  - jump_test ✓
 - ✅ Load/store issue FIXED (was address out-of-bounds, not timing)
+- ✅ **RISC-V Compliance Tests: 24/42 PASSED (57%)**
+  - Official riscv-tests RV32UI suite executed
+  - Identified 3 main issue areas: right shifts, R-type logical ops, load/store edge cases
+  - See COMPLIANCE_RESULTS.md for detailed analysis
 
 ---
 
@@ -50,11 +61,11 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 **Goal**: Implement a complete single-cycle processor supporting all RV32I instructions
 
-**Status**: NEARLY COMPLETE (~95%)
+**Status**: IN PROGRESS (~75%)
 
 **Start Date**: 2025-10-09
 **Last Updated**: 2025-10-09
-**Estimated Completion**: 1-2 days (pending load/store timing fix)
+**Estimated Completion**: 2-3 days (pending compliance test fixes)
 
 ### Stage 1.1: Basic Infrastructure ✅
 **Status**: COMPLETED
@@ -176,17 +187,19 @@ This document tracks the development progress through each phase of the RV1 RISC
 1. ✅ **simple_add.s**: Basic ADD, ADDI operations - PASSED (result = 15)
 2. ✅ **fibonacci.s**: Tests loops, branches, arithmetic - PASSED (fib(10) = 55)
 3. ✅ **load_store.s**: Tests LW, LH, LB, SW, SH, SB - PASSED (x10=42, x11=100, x12=-1)
-4. ⏳ **Logic operations**: Need AND, OR, XOR test
-5. ⏳ **Shifts**: Need SLL, SRL, SRA test
+4. ✅ **logic_ops.s**: Tests AND, OR, XOR, ANDI, ORI, XORI - PASSED (61 cycles)
+5. ✅ **shift_ops.s**: Tests SLL, SRL, SRA, SLLI, SRLI, SRAI - PASSED (56 cycles)
+6. ✅ **branch_test.s**: Tests all 6 branch types (BEQ, BNE, BLT, BGE, BLTU, BGEU) - PASSED (70 cycles)
+7. ✅ **jump_test.s**: Tests JAL, JALR, LUI, AUIPC - PASSED (49 cycles)
 
 #### Success Criteria
 - ✅ All 47 RV32I instructions implemented in hardware
 - ✅ Unit tests verify core functionality (126/126 PASSED)
-- ✅ Integration tests verify instruction execution (2/3 PASSED)
-- ⏳ Edge cases tested (overflow, zero, etc.)
+- ✅ Integration tests verify instruction execution (7/7 PASSED)
+- ✅ Edge cases tested (overflow, zero, signed/unsigned comparisons, etc.)
 
 ### Stage 1.7: Integration Testing
-**Status**: COMPLETED
+**Status**: IN PROGRESS
 
 #### Tasks
 - [x] Create Fibonacci test program
@@ -194,24 +207,36 @@ This document tracks the development progress through each phase of the RV1 RISC
 - [x] Run simple_add test - PASSED (15 in 5 cycles)
 - [x] Set up simulation environment (Icarus Verilog + RISC-V toolchain)
 - [x] Debug load/store address issue - FIXED
-- [ ] Run bubble sort
-- [ ] Run factorial calculation
-- [ ] Run RISC-V compliance tests (RV32I)
+- [x] Run RISC-V compliance tests (RV32UI) - 24/42 PASSED (57%)
+- [ ] Fix compliance test failures (target: 90%+)
+- [ ] Run bubble sort (optional)
+- [ ] Run factorial calculation (optional)
 - [ ] Performance analysis
 
 #### Test Programs
 ```
-1. ✅ fibonacci.s     - Created (tests loops and conditionals)
-2. ⏳ bubblesort.s    - Not yet created
-3. ⏳ factorial.s     - Not yet created
-4. ⏳ gcd.s           - Not yet created
-5. ⏳ strlen.s        - Not yet created
+1. ✅ simple_add.s    - PASSED (basic arithmetic)
+2. ✅ fibonacci.s     - PASSED (loops and conditionals)
+3. ✅ load_store.s    - PASSED (memory operations)
+4. ✅ logic_ops.s     - PASSED (logical operations)
+5. ✅ shift_ops.s     - PASSED (shift operations)
+6. ✅ branch_test.s   - PASSED (all branch types)
+7. ✅ jump_test.s     - PASSED (jumps and upper immediates)
+8. ⏳ bubblesort.s    - Not yet created (optional)
+9. ⏳ factorial.s     - Not yet created (optional)
 ```
 
 #### Success Criteria
-- ✅ Basic test programs produce correct results (3/3)
-- ⏳ RISC-V compliance tests pass (at least 90%)
-- ✅ All memory operations verified (word, halfword, byte loads/stores)
+- ✅ Basic test programs produce correct results (7/7)
+- ⚠️ RISC-V compliance tests pass (at least 90%) - **24/42 (57%) - NEEDS FIXES**
+  - ✅ Branches, jumps, arithmetic, comparisons passing
+  - ❌ Right shifts, R-type logical ops, load/store edge cases failing
+  - See COMPLIANCE_RESULTS.md for detailed analysis
+- ✅ All memory operations verified (word, halfword, byte loads/stores - in custom tests)
+- ✅ All logical operations verified (AND, OR, XOR and immediate variants - in custom tests)
+- ⚠️ Shift operations verified (left shifts work, right shifts have issues)
+- ✅ All branch types verified (signed and unsigned comparisons)
+- ✅ Jump operations verified (JAL, JALR, LUI, AUIPC)
 - ✅ Waveforms generated and available for analysis
 
 ### Phase 1 Deliverables
@@ -219,30 +244,45 @@ This document tracks the development progress through each phase of the RV1 RISC
 **Completed:**
 1. ✅ Complete single-cycle core (9 modules: ALU, RegFile, PC, Decoder, Control, Branch Unit, IMem, DMem, Core)
 2. ✅ Unit testbenches (ALU, Register File, Decoder)
-3. ✅ Integration testbench (tb_core.v)
-4. ✅ Test programs (simple_add, fibonacci, load_store)
+3. ✅ Integration testbench (tb_core.v) with compliance test support
+4. ✅ Comprehensive test programs (7 programs covering 85%+ of instructions)
+   - simple_add, fibonacci, load_store
+   - logic_ops, shift_ops, branch_test, jump_test
 5. ✅ Build system (Makefile, shell scripts)
 6. ✅ Simulation environment setup (Icarus Verilog + RISC-V toolchain)
 7. ✅ Unit test verification (126/126 tests PASSED)
-8. ✅ Integration test verification (2/3 tests PASSED)
+8. ✅ Integration test verification (7/7 tests PASSED)
+9. ✅ Load/store address issue FIXED (was out-of-bounds access)
+10. ✅ Instruction coverage expanded to 85%+
+11. ✅ RISC-V compliance tests executed (24/42 PASSED, 57%)
+12. ✅ Compliance test infrastructure (conversion scripts, automation)
+13. ✅ Memory expanded to 16KB (for compliance tests)
+14. ✅ Address masking for 0x80000000 base addresses
 
 **Pending:**
-9. ✅ Fix load/store address issue (COMPLETED - was out-of-bounds access)
-10. ⏳ Additional test programs (bubblesort, factorial, gcd, etc.)
-11. ⏳ RISC-V compliance test results
-12. ⏳ Timing analysis report
+15. ⏳ Fix compliance test failures (target: 90%+)
+    - Right shift operations (SRA, SRAI, SRL, SRLI)
+    - R-type logical ops (AND, OR, XOR)
+    - Load/store edge cases
+16. ⏳ Timing analysis report
 13. ⏳ Documentation of any spec deviations
+14. ⏳ Optional: Additional complex programs (bubblesort, factorial, gcd)
 
-**Target Completion**: Ready for compliance testing
+**Target Completion**: 2-3 days (pending compliance test fixes)
 
-**Implementation Summary:**
+**Implementation Summary (Updated 2025-10-09):**
 - **Total RTL lines**: ~705 lines of Verilog
 - **Total testbench lines**: ~450 lines
+- **Total test programs**: 7 custom assembly programs + 42 compliance tests
 - **Instructions supported**: 47/47 RV32I base instructions
-- **Test coverage**: 129 tests total (129 PASSED, 100%)
-- **Unit tests**: 126/126 PASSED (100%)
-- **Integration tests**: 3/3 PASSED (100%)
+- **Instructions tested in integration**: ~40/47 (85%+)
+- **Test coverage**:
+  - **Unit tests**: 126/126 PASSED (100%)
+  - **Custom integration tests**: 7/7 PASSED (100%)
+  - **RISC-V compliance tests**: 24/42 PASSED (57%)
+  - **Overall**: 157/175 tests passed (90%)
 - **Bugs fixed**: 7 (toolchain, testbench, assembly, address bounds)
+- **Known issues**: Right shifts, R-type logical ops, load/store edge cases
 
 ---
 
