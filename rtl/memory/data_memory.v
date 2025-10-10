@@ -4,7 +4,8 @@
 // Date: 2025-10-09
 
 module data_memory #(
-  parameter MEM_SIZE = 4096       // Memory size in bytes (4KB default)
+  parameter MEM_SIZE = 4096,      // Memory size in bytes (4KB default)
+  parameter MEM_FILE = ""         // Hex file to initialize memory (for compliance tests)
 ) (
   input  wire        clk,         // Clock
   input  wire [31:0] addr,        // Byte address
@@ -33,7 +34,7 @@ module data_memory #(
 
   // Read data from memory
   assign byte_data = mem[masked_addr];
-  assign halfword_data = {mem[word_addr + 1], mem[word_addr]};
+  assign halfword_data = {mem[masked_addr + 1], mem[masked_addr]};  // Fixed: use masked_addr for unaligned support
   assign word_data = {mem[word_addr + 3], mem[word_addr + 2],
                       mem[word_addr + 1], mem[word_addr]};
 
@@ -45,8 +46,8 @@ module data_memory #(
           mem[masked_addr] <= write_data[7:0];
         end
         3'b001: begin  // SH (store halfword)
-          mem[word_addr]     <= write_data[7:0];
-          mem[word_addr + 1] <= write_data[15:8];
+          mem[masked_addr]     <= write_data[7:0];
+          mem[masked_addr + 1] <= write_data[15:8];
         end
         3'b010: begin  // SW (store word)
           mem[word_addr]     <= write_data[7:0];
@@ -86,11 +87,17 @@ module data_memory #(
     end
   end
 
-  // Initialize memory to zero
+  // Initialize memory
   integer i;
   initial begin
+    // Initialize to zero
     for (i = 0; i < MEM_SIZE; i = i + 1) begin
       mem[i] = 8'h0;
+    end
+
+    // Load from file if specified (for compliance tests with embedded data)
+    if (MEM_FILE != "") begin
+      $readmemh(MEM_FILE, mem);
     end
   end
 

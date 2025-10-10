@@ -422,7 +422,8 @@ module rv32i_core_pipelined #(
 
   // Data Memory
   data_memory #(
-    .MEM_SIZE(DMEM_SIZE)
+    .MEM_SIZE(DMEM_SIZE),
+    .MEM_FILE(MEM_FILE)  // Load same file as instruction memory (for compliance tests)
   ) dmem (
     .clk(clk),
     .addr(exmem_alu_result),
