@@ -159,10 +159,10 @@ module rv32i_core #(
   //==========================================================================
   // ALU Operand Selection
   //==========================================================================
-  // For AUIPC, operand_a should be PC, otherwise rs1_data
-  assign alu_operand_a = (opcode == 7'b0010111) ? pc_current : rs1_data;
-
-  // For LUI, operand_a should be 0
+  // For AUIPC, operand_a should be PC; for LUI, operand_a should be 0; otherwise rs1_data
+  assign alu_operand_a = (opcode == 7'b0010111) ? pc_current :    // AUIPC
+                         (opcode == 7'b0110111) ? 32'h0 :           // LUI
+                         rs1_data;                                  // Others
   // Operand B: immediate or rs2
   assign alu_operand_b = alu_src ? immediate : rs2_data;
 

@@ -342,7 +342,10 @@ module rv32i_core_pipelined #(
   );
 
   // ALU Operand A selection (with forwarding)
-  assign ex_alu_operand_a = (idex_opcode == 7'b0010111) ? idex_pc : idex_rs1_data;
+  // AUIPC uses PC, LUI uses 0, others use rs1
+  assign ex_alu_operand_a = (idex_opcode == 7'b0010111) ? idex_pc :     // AUIPC
+                            (idex_opcode == 7'b0110111) ? 32'h0 :        // LUI
+                            idex_rs1_data;                                // Others
 
   assign ex_alu_operand_a_forwarded = (forward_a == 2'b10) ? exmem_alu_result :    // EX hazard
                                       (forward_a == 2'b01) ? wb_data :              // MEM hazard

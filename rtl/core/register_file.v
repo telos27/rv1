@@ -35,9 +35,14 @@ module register_file (
     end
   end
 
-  // Read operations (combinational)
+  // Read operations (combinational with internal forwarding)
   // x0 always reads as zero
-  assign rs1_data = (rs1_addr == 5'h0) ? 32'h0 : registers[rs1_addr];
-  assign rs2_data = (rs2_addr == 5'h0) ? 32'h0 : registers[rs2_addr];
+  // Internal forwarding: if reading the register being written, return write data
+  assign rs1_data = (rs1_addr == 5'h0) ? 32'h0 :
+                    (rd_wen && (rd_addr == rs1_addr) && (rd_addr != 5'h0)) ? rd_data :
+                    registers[rs1_addr];
+  assign rs2_data = (rs2_addr == 5'h0) ? 32'h0 :
+                    (rd_wen && (rd_addr == rs2_addr) && (rd_addr != 5'h0)) ? rd_data :
+                    registers[rs2_addr];
 
 endmodule
