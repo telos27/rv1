@@ -4,24 +4,30 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 3 - 5-Stage Pipeline (Phases 3.1-3.5 Complete)
-**Completion**: Phases 3.1-3.5: 100% ✅ | Overall Phase 3: ~85%
-**Next Milestone**: Phase 3.6 - Debug data forwarding and load-use hazards
+**Active Phase**: Phase 3 - 5-Stage Pipeline ✅ **COMPLETE**
+**Completion**: 100% ✅ | **40/42 Compliance Tests PASSING (95%)**
+**Next Milestone**: Phase 4 - CSR and Trap Handling (recommended)
 
-**Recent Progress (2025-10-10 - Session 3):**
-- ✅ **CRITICAL FIX**: Control hazard bug in pipeline flush logic
+**Recent Progress (2025-10-10 - Session 4):**
+- ✅ **CRITICAL FIX #2**: LUI/AUIPC forwarding bug ("1-NOP anomaly")
+  - Fixed garbage rs1 forwarding from immediate field
+  - Disabled forwarding for LUI/AUIPC instructions
+  - Pass rate: 57% → 78% (+8 tests)
+  - Fixed: and, or, xor, sra, srai, sw, st_ld, ld_st
+- ✅ **CRITICAL FIX #3**: Harvard architecture data memory initialization
+  - Load compliance test data into data memory
+  - Fixed unaligned halfword access support
+  - Pass rate: 78% → **95% (+7 tests)**
+  - Fixed: lb, lbu, lh, lhu, lw, sb, sh
+- ✅ **RISC-V Compliance Tests**: **40/42 PASSED (95%)** 🎉
+  - Only 2 expected failures: fence_i (not implemented), ma_data (needs trap handling)
+  - **TARGET EXCEEDED** (goal was 90%+)
+
+**Earlier Progress (2025-10-10 - Session 3):**
+- ✅ **CRITICAL FIX #1**: Control hazard bug in pipeline flush logic
   - Fixed missing ID/EX flush when branches/jumps taken
-  - All 7 branch/jump tests now PASS (beq, bne, blt, bge, bltu, bgeu, jalr)
-  - Recovered from 45% to 57% pass rate
-- ✅ **RISC-V Compliance Tests**: 24/42 PASSED (57%)
-  - Built and ran full RV32UI compliance test suite
-  - Matches Phase 1 baseline (no regression)
-  - Identified data forwarding not working as expected
-  - Load-use hazards still causing failures
-- ⚠️ **Data forwarding investigation needed**:
-  - R-type logical (and, or, xor) still failing - forwarding not eliminating RAW hazards
-  - Shift operations (sra, srai, srl, srli) still failing
-  - Load instructions (lb, lbu, lh, lhu, lw) failing - load-use hazard handling issue
+  - All 7 branch/jump tests now PASS
+  - Pass rate: 45% → 57%
 
 **Earlier Progress (2025-10-10 - Session 2):**
 - ✅ **WB-to-ID forwarding**: Added register file bypass (3rd forwarding level)
