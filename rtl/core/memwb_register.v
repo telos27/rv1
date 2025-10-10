@@ -17,6 +17,9 @@ module memwb_register (
   input  wire [1:0]  wb_sel_in,          // Write-back source select
   input  wire        valid_in,
 
+  // CSR signals from MEM stage
+  input  wire [31:0] csr_rdata_in,       // CSR read data
+
   // Outputs to WB stage
   output reg  [31:0] alu_result_out,
   output reg  [31:0] mem_read_data_out,
@@ -26,7 +29,10 @@ module memwb_register (
   // Control signals to WB stage
   output reg         reg_write_out,
   output reg  [1:0]  wb_sel_out,
-  output reg         valid_out
+  output reg         valid_out,
+
+  // CSR signals to WB stage
+  output reg  [31:0] csr_rdata_out
 );
 
   always @(posedge clk or negedge reset_n) begin
@@ -40,6 +46,8 @@ module memwb_register (
       reg_write_out      <= 1'b0;
       wb_sel_out         <= 2'b0;
       valid_out          <= 1'b0;
+
+      csr_rdata_out      <= 32'h0;
     end else begin
       // Normal operation: latch all values
       alu_result_out     <= alu_result_in;
@@ -50,6 +58,8 @@ module memwb_register (
       reg_write_out      <= reg_write_in;
       wb_sel_out         <= wb_sel_in;
       valid_out          <= valid_in;
+
+      csr_rdata_out      <= csr_rdata_in;
     end
   end
 

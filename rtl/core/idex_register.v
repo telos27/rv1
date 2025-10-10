@@ -30,6 +30,19 @@ module idex_register (
   input  wire [1:0]  wb_sel_in,       // Write-back source select
   input  wire        valid_in,
 
+  // CSR signals from ID stage
+  input  wire [11:0] csr_addr_in,
+  input  wire        csr_we_in,
+  input  wire        csr_src_in,      // 0=rs1, 1=uimm
+  input  wire [31:0] csr_wdata_in,    // rs1 data or uimm
+
+  // Exception signals from ID stage
+  input  wire        is_ecall_in,
+  input  wire        is_ebreak_in,
+  input  wire        is_mret_in,
+  input  wire        illegal_inst_in,
+  input  wire [31:0] instruction_in,  // For exception value
+
   // Outputs to EX stage
   output reg  [31:0] pc_out,
   output reg  [31:0] rs1_data_out,
@@ -51,7 +64,20 @@ module idex_register (
   output reg         mem_write_out,
   output reg         reg_write_out,
   output reg  [1:0]  wb_sel_out,
-  output reg         valid_out
+  output reg         valid_out,
+
+  // CSR signals to EX stage
+  output reg  [11:0] csr_addr_out,
+  output reg         csr_we_out,
+  output reg         csr_src_out,
+  output reg  [31:0] csr_wdata_out,
+
+  // Exception signals to EX stage
+  output reg         is_ecall_out,
+  output reg         is_ebreak_out,
+  output reg         is_mret_out,
+  output reg         illegal_inst_out,
+  output reg  [31:0] instruction_out
 );
 
   always @(posedge clk or negedge reset_n) begin
@@ -77,6 +103,17 @@ module idex_register (
       reg_write_out   <= 1'b0;
       wb_sel_out      <= 2'b0;
       valid_out       <= 1'b0;
+
+      csr_addr_out    <= 12'h0;
+      csr_we_out      <= 1'b0;
+      csr_src_out     <= 1'b0;
+      csr_wdata_out   <= 32'h0;
+
+      is_ecall_out    <= 1'b0;
+      is_ebreak_out   <= 1'b0;
+      is_mret_out     <= 1'b0;
+      illegal_inst_out <= 1'b0;
+      instruction_out <= 32'h0;
     end else if (flush) begin
       // Flush: insert NOP bubble (clear control signals, keep data)
       pc_out          <= pc_in;         // Keep PC for debugging
@@ -100,6 +137,17 @@ module idex_register (
       reg_write_out   <= 1'b0;          // Critical: no register write
       wb_sel_out      <= 2'b0;
       valid_out       <= 1'b0;          // Mark as invalid
+
+      csr_addr_out    <= 12'h0;
+      csr_we_out      <= 1'b0;          // Critical: no CSR write
+      csr_src_out     <= 1'b0;
+      csr_wdata_out   <= 32'h0;
+
+      is_ecall_out    <= 1'b0;          // Critical: clear exceptions
+      is_ebreak_out   <= 1'b0;
+      is_mret_out     <= 1'b0;
+      illegal_inst_out <= 1'b0;
+      instruction_out <= 32'h0;
     end else begin
       // Normal operation: latch all values
       pc_out          <= pc_in;
@@ -122,6 +170,17 @@ module idex_register (
       reg_write_out   <= reg_write_in;
       wb_sel_out      <= wb_sel_in;
       valid_out       <= valid_in;
+
+      csr_addr_out    <= csr_addr_in;
+      csr_we_out      <= csr_we_in;
+      csr_src_out     <= csr_src_in;
+      csr_wdata_out   <= csr_wdata_in;
+
+      is_ecall_out    <= is_ecall_in;
+      is_ebreak_out   <= is_ebreak_in;
+      is_mret_out     <= is_mret_in;
+      illegal_inst_out <= illegal_inst_in;
+      instruction_out <= instruction_in;
     end
   end
 
