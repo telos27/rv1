@@ -104,6 +104,38 @@ module tb_core_pipelined;
         $finish;
       end
 
+      `ifdef COMPLIANCE_TEST
+      // Check for ECALL (0x00000073) - used by RISC-V compliance tests
+      if (instruction == 32'h00000073) begin
+        // Wait for pipeline to complete (5 cycles)
+        repeat(5) @(posedge clk);
+        cycle_count = cycle_count + 5;
+
+        $display("ECALL encountered at cycle %0d", cycle_count);
+        $display("Final PC: 0x%08h", pc);
+        $display("");
+
+        // Check gp (x3) register for pass/fail
+        if (DUT.regfile.registers[3] == 1) begin
+          $display("========================================");
+          $display("RISC-V COMPLIANCE TEST PASSED");
+          $display("========================================");
+          $display("  Test result (gp/x3): %0d", DUT.regfile.registers[3]);
+          $display("  Cycles: %0d", cycle_count);
+          $finish;
+        end else begin
+          $display("========================================");
+          $display("RISC-V COMPLIANCE TEST FAILED");
+          $display("========================================");
+          $display("  Failed at test number: %0d", DUT.regfile.registers[3]);
+          $display("  Final PC: 0x%08h", pc);
+          $display("  Cycles: %0d", cycle_count);
+          print_results();
+          $finish;
+        end
+      end
+      `endif
+
       // Timeout check
       if (cycle_count >= TIMEOUT - 1) begin
         $display("WARNING: Timeout reached (%0d cycles)", TIMEOUT);

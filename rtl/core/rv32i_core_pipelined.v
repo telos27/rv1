@@ -22,7 +22,8 @@ module rv32i_core_pipelined #(
   wire stall_pc;           // Stall PC (from hazard detection)
   wire stall_ifid;         // Stall IF/ID register
   wire flush_ifid;         // Flush IF/ID register (branch misprediction)
-  wire flush_idex;         // Flush ID/EX register (bubble insertion)
+  wire flush_idex;         // Flush ID/EX register (bubble insertion or branch)
+  wire flush_idex_hazard;  // Flush from hazard detection (load-use)
   wire [1:0] forward_a;    // Forwarding select for ALU operand A
   wire [1:0] forward_b;    // Forwarding select for ALU operand B
 
@@ -157,8 +158,9 @@ module rv32i_core_pipelined #(
   // PC selection: branch/jump target or PC+4
   assign pc_next = ex_take_branch ? (idex_jump ? ex_jump_target : ex_branch_target) : pc_plus_4;
 
-  // Branch/jump causes flush
+  // Branch/jump causes flush of IF/ID and ID/EX stages
   assign flush_ifid = ex_take_branch;
+  assign flush_idex = flush_idex_hazard | ex_take_branch;  // Flush for load-use OR branch
 
   // Program Counter
   pc #(
@@ -269,7 +271,7 @@ module rv32i_core_pipelined #(
     .ifid_rs2(id_rs2),
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
-    .bubble_idex(flush_idex)
+    .bubble_idex(flush_idex_hazard)
   );
 
   // ID/EX Pipeline Register
