@@ -4,11 +4,44 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 5 - Parameterization ✅ **COMPLETE (100%)**
-**Completion**: 100% ✅ | **All Modules Parameterized, Build System Ready**
-**Next Milestone**: RV64I testing and validation
+**Active Phase**: Phase 7 - A Extension (Atomics) 🚧 **IN PROGRESS (60%)**
+**Completion**: 60% 🚧 | **Core modules complete, pipeline integration in progress**
+**Next Milestone**: Complete EX stage integration and memory interface
 
-**Recent Progress (2025-10-10 - Session 9 - Phase 5 Parameterization COMPLETE):**
+**Recent Progress (2025-10-10 - Session 12 - Phase 7 A Extension Started):**
+- ✅ **Design Documentation**: Complete A extension specification
+  - `docs/A_EXTENSION_DESIGN.md` (400+ lines)
+  - All 22 atomic instructions documented (11 RV32A + 11 RV64A)
+  - LR/SC and AMO instruction encoding tables
+  - Microarchitecture design and integration plan
+- ✅ **Atomic Unit Module**: State machine-based atomic operations
+  - `rtl/core/atomic_unit.v` (250+ lines)
+  - Implements all 11 atomic operations (LR, SC, SWAP, ADD, XOR, AND, OR, MIN, MAX, MINU, MAXU)
+  - 3-4 cycle atomic operation latency
+  - Memory interface for read-modify-write
+- ✅ **Reservation Station**: LR/SC tracking
+  - `rtl/core/reservation_station.v` (80+ lines)
+  - Address-based reservation validation
+  - Automatic invalidation on exceptions/interrupts
+- ✅ **Control Unit Updates**: A extension decode
+  - Added OP_AMO opcode (0x2F)
+  - New control signals: atomic_en, atomic_funct5
+  - Write-back selector extended (wb_sel = 3'b101 for atomic results)
+- ✅ **Decoder Updates**: Atomic field extraction
+  - Extract funct5, aq, rl fields from instruction
+  - is_atomic detection signal
+- ✅ **Pipeline Integration (Partial)**: ID stage complete
+  - IDEX pipeline register updated with A extension ports
+  - Decoder and control instantiations updated
+- ⏳ **Remaining Work** (Next Session):
+  - Instantiate atomic_unit and reservation_station in EX stage
+  - Update EXMEM and MEMWB pipeline registers for atomic results
+  - Extend writeback multiplexer (wb_sel = 3'b101)
+  - Add hazard detection for atomic stalls
+  - Update data memory interface for atomic operations
+  - Create test programs and verify functionality
+
+**Earlier Progress (2025-10-10 - Session 9 - Phase 5 Parameterization COMPLETE):**
 - ✅ **CSR File Parameterized**: XLEN-wide CSRs with RV32/RV64 support
   - misa: Different MXL values for RV32 (01) and RV64 (10)
   - mstatus, mepc, mcause, mtval, mtvec: All XLEN-wide
@@ -953,19 +986,39 @@ Parameterize the RV1 processor to support:
 - Nested traps handled
 
 ### Stage 4.4: A Extension (Atomics)
-**Status**: NOT STARTED
+**Status**: 🚧 **IN PROGRESS (60%)**
 
 #### Tasks
-- [ ] Implement LR.W (load reserved)
-- [ ] Implement SC.W (store conditional)
-- [ ] Implement AMO instructions (AMOADD, AMOSWAP, etc.)
-- [ ] Add reservation station
+- [x] Design A extension architecture
+- [x] Implement atomic unit module (all 11 operations)
+- [x] Implement reservation station (LR/SC tracking)
+- [x] Update decoder for A extension fields (funct5, aq, rl)
+- [x] Update control unit for AMO opcode
+- [x] Update IDEX pipeline register
+- [ ] Instantiate atomic unit and reservation station in core
+- [ ] Update EXMEM and MEMWB pipeline registers
+- [ ] Extend writeback multiplexer for atomic results
+- [ ] Add atomic operation stall logic
+- [ ] Update data memory for atomic operations
+- [ ] Implement LR.W/LR.D (load reserved)
+- [ ] Implement SC.W/SC.D (store conditional)
+- [ ] Implement all 9 AMO operations (.W and .D variants)
 - [ ] Test atomic sequences
+- [ ] Compliance testing
+
+#### Completed
+- ✅ Design documentation (`docs/A_EXTENSION_DESIGN.md`)
+- ✅ Atomic unit with state machine (`rtl/core/atomic_unit.v`)
+- ✅ Reservation station (`rtl/core/reservation_station.v`)
+- ✅ Control and decoder updates
+- ✅ ID stage pipeline integration
 
 #### Success Criteria
-- LR/SC primitives work
-- AMO instructions atomic
-- Useful for synchronization
+- LR/SC primitives work correctly
+- AMO instructions are atomic (read-modify-write appears indivisible)
+- Reservation tracking validates SC operations
+- All 22 atomic instructions functional (11 RV32A + 11 RV64A)
+- Useful for synchronization primitives (locks, semaphores)
 
 ### Stage 4.5: Caching
 **Status**: NOT STARTED

@@ -66,6 +66,10 @@ module rv_core_pipelined #(
   wire            id_is_mul_div_dec; // M extension instruction from decoder
   wire [3:0]      id_mul_div_op_dec; // M extension operation from decoder
   wire            id_is_word_op_dec; // RV64M word operation from decoder
+  wire            id_is_atomic_dec;  // A extension instruction from decoder
+  wire [4:0]      id_funct5_dec;     // funct5 field from decoder (atomic op)
+  wire            id_aq_dec;         // Acquire bit from decoder
+  wire            id_rl_dec;         // Release bit from decoder
 
   // Control signals
   wire        id_reg_write;
@@ -122,6 +126,10 @@ module rv_core_pipelined #(
   wire            idex_is_mul_div;
   wire [3:0]      idex_mul_div_op;
   wire            idex_is_word_op;
+  wire            idex_is_atomic;
+  wire [4:0]      idex_funct5;
+  wire            idex_aq;
+  wire            idex_rl;
   wire [11:0]     idex_csr_addr;
   wire            idex_csr_we;
   wire            idex_csr_src;
@@ -318,13 +326,22 @@ module rv_core_pipelined #(
     .is_mret(id_is_mret_dec),
     .is_mul_div(id_is_mul_div_dec),
     .mul_div_op(id_mul_div_op_dec),
-    .is_word_op(id_is_word_op_dec)
+    .is_word_op(id_is_word_op_dec),
+    // A extension outputs
+    .is_atomic(id_is_atomic_dec),
+    .funct5(id_funct5_dec),
+    .aq(id_aq_dec),
+    .rl(id_rl_dec)
   );
 
   // M extension control signals from control unit (not used directly, but available)
   wire        id_mul_div_en;       // M unit enable from control
   wire [3:0]  id_mul_div_op_ctrl;  // M operation from control (pass-through)
   wire        id_is_word_op_ctrl;  // Word-op from control (pass-through)
+
+  // A extension control signals from control unit
+  wire        id_atomic_en;        // A unit enable from control
+  wire [4:0]  id_atomic_funct5;    // Atomic operation from control (pass-through)
 
   // Control Unit
   control #(
@@ -341,6 +358,8 @@ module rv_core_pipelined #(
     .is_mul_div(id_is_mul_div_dec),
     .mul_div_op(id_mul_div_op_dec),
     .is_word_op(id_is_word_op_dec),
+    .is_atomic(id_is_atomic_dec),
+    .funct5(id_funct5_dec),
     // Standard outputs
     .reg_write(id_reg_write),
     .mem_read(id_mem_read),
@@ -357,6 +376,9 @@ module rv_core_pipelined #(
     .mul_div_en(id_mul_div_en),
     .mul_div_op_out(id_mul_div_op_ctrl),
     .is_word_op_out(id_is_word_op_ctrl),
+    // A extension outputs
+    .atomic_en(id_atomic_en),
+    .atomic_funct5(id_atomic_funct5),
     .illegal_inst(id_illegal_inst)
   );
 
@@ -459,6 +481,11 @@ module rv_core_pipelined #(
     .is_mul_div_in(id_is_mul_div_dec),
     .mul_div_op_in(id_mul_div_op_dec),
     .is_word_op_in(id_is_word_op_dec),
+    // A extension inputs
+    .is_atomic_in(id_is_atomic_dec),
+    .funct5_in(id_funct5_dec),
+    .aq_in(id_aq_dec),
+    .rl_in(id_rl_dec),
     // CSR inputs
     .csr_addr_in(id_csr_addr),
     .csr_we_in(id_csr_we_actual),
@@ -495,6 +522,11 @@ module rv_core_pipelined #(
     .is_mul_div_out(idex_is_mul_div),
     .mul_div_op_out(idex_mul_div_op),
     .is_word_op_out(idex_is_word_op),
+    // A extension outputs
+    .is_atomic_out(idex_is_atomic),
+    .funct5_out(idex_funct5),
+    .aq_out(idex_aq),
+    .rl_out(idex_rl),
     // CSR outputs
     .csr_addr_out(idex_csr_addr),
     .csr_we_out(idex_csr_we),

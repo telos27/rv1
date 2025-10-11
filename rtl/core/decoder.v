@@ -34,7 +34,13 @@ module decoder #(
   // M extension outputs
   output wire            is_mul_div,    // M extension instruction
   output wire [3:0]      mul_div_op,    // M extension operation (funct3 + type)
-  output wire            is_word_op     // RV64M: W-suffix instruction
+  output wire            is_word_op,    // RV64M: W-suffix instruction
+
+  // A extension outputs
+  output wire            is_atomic,     // A extension instruction
+  output wire [4:0]      funct5,        // Atomic operation type (funct5 field)
+  output wire            aq,            // Acquire ordering bit
+  output wire            rl             // Release ordering bit
 );
 
   // Extract instruction fields
@@ -141,5 +147,27 @@ module decoder #(
   // RV64M word operations (32-bit operations with sign-extension)
   // OP_32 opcode indicates W-suffix instructions (MULW, DIVW, etc.)
   assign is_word_op = (opcode == OPCODE_OP_32);
+
+  // =========================================================================
+  // A Extension Detection (RV32A / RV64A)
+  // =========================================================================
+
+  // A extension opcode
+  localparam OPCODE_AMO = 7'b0101111;  // Atomic operations
+
+  // A extension detection
+  assign is_atomic = (opcode == OPCODE_AMO);
+
+  // Extract A extension specific fields
+  // funct5: bits [31:27] - atomic operation type
+  // aq: bit [26] - acquire ordering
+  // rl: bit [25] - release ordering
+  assign funct5 = instruction[31:27];
+  assign aq = instruction[26];
+  assign rl = instruction[25];
+
+  // Note: rs2 field is used differently:
+  // - For LR: rs2 must be 0 (reserved)
+  // - For SC and AMO: rs2 is source data register
 
 endmodule

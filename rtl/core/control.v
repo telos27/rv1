@@ -22,6 +22,8 @@ module control #(
   input  wire       is_mul_div,  // M extension instruction
   input  wire [3:0] mul_div_op,  // M extension operation (from decoder)
   input  wire       is_word_op,  // RV64M: W-suffix instruction
+  input  wire       is_atomic,   // A extension instruction
+  input  wire [4:0] funct5,      // funct5 field for atomic instructions
 
   // Standard control outputs
   output reg        reg_write,   // Register file write enable
@@ -43,6 +45,10 @@ module control #(
   output reg [3:0]  mul_div_op_out, // M extension operation (passed through)
   output reg        is_word_op_out,  // RV64M: W-suffix instruction (passed through)
 
+  // A extension control outputs
+  output reg        atomic_en,   // A extension unit enable
+  output reg [4:0]  atomic_funct5, // Atomic operation (funct5)
+
   // Exception/trap outputs
   output reg        illegal_inst // Illegal instruction detected
 );
@@ -63,6 +69,9 @@ module control #(
   // RV64I-specific opcodes
   localparam OP_IMM_32 = 7'b0011011;  // ADDIW, SLLIW, SRLIW, SRAIW
   localparam OP_OP_32  = 7'b0111011;  // ADDW, SUBW, SLLW, SRLW, SRAW
+
+  // A extension opcode
+  localparam OP_AMO    = 7'b0101111;  // Atomic operations (LR, SC, AMO)
 
   // Immediate format select
   localparam IMM_I = 3'b000;
@@ -117,6 +126,8 @@ module control #(
     mul_div_en = 1'b0;
     mul_div_op_out = 4'b0000;
     is_word_op_out = 1'b0;
+    atomic_en = 1'b0;
+    atomic_funct5 = 5'b00000;
     illegal_inst = 1'b0;
 
     case (opcode)
@@ -251,6 +262,21 @@ module control #(
           end
         end else begin
           // Illegal in RV32
+          illegal_inst = 1'b1;
+        end
+      end
+
+      OP_AMO: begin
+        // A extension: Atomic operations (LR, SC, AMO)
+        if (is_atomic) begin
+          reg_write = 1'b1;          // Atomic ops write result to rd
+          atomic_en = 1'b1;          // Enable atomic unit
+          atomic_funct5 = funct5;    // Pass atomic operation type
+          wb_sel = 3'b101;           // Write-back from atomic unit (new wb_sel value)
+          alu_src = 1'b1;            // Use immediate (0) for address calculation
+          alu_control = 4'b0000;     // ADD (rs1 + 0 = rs1)
+          imm_sel = IMM_I;
+        end else begin
           illegal_inst = 1'b1;
         end
       end

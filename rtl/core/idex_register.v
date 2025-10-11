@@ -41,6 +41,12 @@ module idex_register #(
   input  wire [3:0]  mul_div_op_in,
   input  wire        is_word_op_in,
 
+  // A extension signals from ID stage
+  input  wire        is_atomic_in,
+  input  wire [4:0]  funct5_in,
+  input  wire        aq_in,
+  input  wire        rl_in,
+
   // CSR signals from ID stage
   input  wire [11:0]      csr_addr_in,
   input  wire             csr_we_in,
@@ -81,6 +87,12 @@ module idex_register #(
   output reg         is_mul_div_out,
   output reg  [3:0]  mul_div_op_out,
   output reg         is_word_op_out,
+
+  // A extension signals to EX stage
+  output reg         is_atomic_out,
+  output reg  [4:0]  funct5_out,
+  output reg         aq_out,
+  output reg         rl_out,
 
   // CSR signals to EX stage
   output reg  [11:0]      csr_addr_out,
@@ -124,6 +136,11 @@ module idex_register #(
       mul_div_op_out  <= 4'h0;
       is_word_op_out  <= 1'b0;
 
+      is_atomic_out   <= 1'b0;
+      funct5_out      <= 5'h0;
+      aq_out          <= 1'b0;
+      rl_out          <= 1'b0;
+
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;
       csr_src_out     <= 1'b0;
@@ -163,6 +180,11 @@ module idex_register #(
       mul_div_op_out  <= 4'h0;
       is_word_op_out  <= 1'b0;
 
+      is_atomic_out   <= 1'b0;
+      funct5_out      <= 5'h0;
+      aq_out          <= 1'b0;
+      rl_out          <= 1'b0;
+
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;          // Critical: no CSR write
       csr_src_out     <= 1'b0;
@@ -199,6 +221,11 @@ module idex_register #(
       is_mul_div_out  <= is_mul_div_in;
       mul_div_op_out  <= mul_div_op_in;
       is_word_op_out  <= is_word_op_in;
+
+      is_atomic_out   <= is_atomic_in;
+      funct5_out      <= funct5_in;
+      aq_out          <= aq_in;
+      rl_out          <= rl_in;
 
       csr_addr_out    <= csr_addr_in;
       csr_we_out      <= csr_we_in;
