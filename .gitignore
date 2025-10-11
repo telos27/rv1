@@ -6,6 +6,8 @@
 sim/*.vvp
 sim/*.log
 sim/waves/
+sim/test_*
+sim/*.out
 
 # Compiled objects
 *.o
