@@ -19,6 +19,7 @@ module control #(
   input  wire       is_ecall,    // ECALL instruction
   input  wire       is_ebreak,   // EBREAK instruction
   input  wire       is_mret,     // MRET instruction
+  input  wire       is_mul_div,  // M extension instruction
 
   // Standard control outputs
   output reg        reg_write,   // Register file write enable
@@ -28,7 +29,7 @@ module control #(
   output reg        jump,        // Jump instruction
   output reg  [3:0] alu_control, // ALU operation
   output reg        alu_src,     // ALU source: 0=rs2, 1=immediate
-  output reg  [1:0] wb_sel,      // Write-back select: 00=ALU, 01=MEM, 10=PC+4, 11=CSR
+  output reg  [2:0] wb_sel,      // Write-back select: 000=ALU, 001=MEM, 010=PC+4, 011=CSR, 100=M_UNIT
   output reg  [2:0] imm_sel,     // Immediate format select
 
   // CSR control outputs
@@ -102,7 +103,7 @@ module control #(
     jump = 1'b0;
     alu_control = 4'b0000;
     alu_src = 1'b0;
-    wb_sel = 2'b00;
+    wb_sel = 3'b000;
     imm_sel = IMM_I;
     csr_we = 1'b0;
     csr_src = 1'b0;
@@ -114,7 +115,7 @@ module control #(
         reg_write = 1'b1;
         alu_src = 1'b1;
         alu_control = 4'b0000;  // Pass through (0 + imm)
-        wb_sel = 2'b00;
+        wb_sel = 3'b000;
         imm_sel = IMM_U;
       end
 
@@ -123,7 +124,7 @@ module control #(
         reg_write = 1'b1;
         alu_src = 1'b1;
         alu_control = 4'b0000;  // ADD
-        wb_sel = 2'b00;
+        wb_sel = 3'b000;
         imm_sel = IMM_U;
       end
 
@@ -131,7 +132,7 @@ module control #(
         // JAL: rd = PC + 4, PC = PC + imm_j
         reg_write = 1'b1;
         jump = 1'b1;
-        wb_sel = 2'b10;  // Write PC+4
+        wb_sel = 3'b010;  // Write PC+4
         imm_sel = IMM_J;
       end
 
@@ -141,7 +142,7 @@ module control #(
         jump = 1'b1;
         alu_src = 1'b1;
         alu_control = 4'b0000;  // ADD
-        wb_sel = 2'b10;  // Write PC+4
+        wb_sel = 3'b010;  // Write PC+4
         imm_sel = IMM_I;
       end
 
@@ -158,7 +159,7 @@ module control #(
         mem_read = 1'b1;
         alu_src = 1'b1;
         alu_control = 4'b0000;  // ADD (rs1 + offset)
-        wb_sel = 2'b01;  // Write from memory
+        wb_sel = 3'b001;  // Write from memory
         imm_sel = IMM_I;
       end
 
@@ -175,16 +176,24 @@ module control #(
         reg_write = 1'b1;
         alu_src = 1'b1;
         alu_control = get_alu_control(funct3, funct7, 1'b0);
-        wb_sel = 2'b00;
+        wb_sel = 3'b000;
         imm_sel = IMM_I;
       end
 
       OP_OP: begin
-        // Register-register ALU operations
+        // Register-register ALU operations (or M extension)
         reg_write = 1'b1;
         alu_src = 1'b0;  // Use rs2
-        alu_control = get_alu_control(funct3, funct7, 1'b1);
-        wb_sel = 2'b00;
+
+        if (is_mul_div) begin
+          // M extension instruction
+          wb_sel = 3'b100;  // Select M unit result
+          alu_control = 4'b0000;  // ALU not used, but pass rs1 and rs2 through
+        end else begin
+          // Standard ALU operation
+          alu_control = get_alu_control(funct3, funct7, 1'b1);
+          wb_sel = 3'b000;
+        end
       end
 
       OP_FENCE: begin
@@ -199,7 +208,7 @@ module control #(
           reg_write = 1'b1;
           alu_src = 1'b1;
           alu_control = get_alu_control(funct3, funct7, 1'b0);
-          wb_sel = 2'b00;
+          wb_sel = 3'b000;
           imm_sel = IMM_I;
         end else begin
           // Illegal in RV32
@@ -209,12 +218,21 @@ module control #(
 
       OP_OP_32: begin
         // RV64I: 32-bit register operations (ADDW, SUBW, SLLW, SRLW, SRAW)
+        // RV64M: 32-bit M extension (MULW, DIVW, DIVUW, REMW, REMUW)
         // These operate on lower 32 bits and sign-extend result to 64 bits
         if (XLEN == 64) begin
           reg_write = 1'b1;
           alu_src = 1'b0;  // Use rs2
-          alu_control = get_alu_control(funct3, funct7, 1'b1);
-          wb_sel = 2'b00;
+
+          if (is_mul_div) begin
+            // RV64M word operation
+            wb_sel = 3'b100;  // Select M unit result
+            alu_control = 4'b0000;  // ALU not used
+          end else begin
+            // RV64I word operation
+            alu_control = get_alu_control(funct3, funct7, 1'b1);
+            wb_sel = 3'b000;
+          end
         end else begin
           // Illegal in RV32
           illegal_inst = 1'b1;
@@ -226,7 +244,7 @@ module control #(
         if (is_csr) begin
           // CSR instructions
           reg_write = 1'b1;        // Write CSR read value to rd
-          wb_sel = 2'b11;          // Write-back from CSR
+          wb_sel = 3'b011;         // Write-back from CSR
 
           // Determine CSR write enable
           // For CSRRW/CSRRWI: always write (unless rd=x0, but that's handled in core)

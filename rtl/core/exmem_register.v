@@ -10,6 +10,7 @@ module exmem_register #(
 ) (
   input  wire             clk,
   input  wire             reset_n,
+  input  wire             hold,           // Hold register (don't update)
 
   // Inputs from EX stage
   input  wire [XLEN-1:0]  alu_result_in,
@@ -22,8 +23,11 @@ module exmem_register #(
   input  wire        mem_read_in,
   input  wire        mem_write_in,
   input  wire        reg_write_in,
-  input  wire [1:0]  wb_sel_in,
+  input  wire [2:0]  wb_sel_in,
   input  wire        valid_in,
+
+  // M extension result from EX stage
+  input  wire [XLEN-1:0] mul_div_result_in,
 
   // CSR signals from EX stage
   input  wire [11:0]      csr_addr_in,
@@ -46,8 +50,11 @@ module exmem_register #(
   output reg         mem_read_out,
   output reg         mem_write_out,
   output reg         reg_write_out,
-  output reg  [1:0]  wb_sel_out,
+  output reg  [2:0]  wb_sel_out,
   output reg         valid_out,
+
+  // M extension result to MEM stage
+  output reg  [XLEN-1:0] mul_div_result_out,
 
   // CSR signals to MEM stage
   output reg  [11:0]      csr_addr_out,
@@ -72,8 +79,10 @@ module exmem_register #(
       mem_read_out       <= 1'b0;
       mem_write_out      <= 1'b0;
       reg_write_out      <= 1'b0;
-      wb_sel_out         <= 2'b0;
+      wb_sel_out         <= 3'b0;
       valid_out          <= 1'b0;
+
+      mul_div_result_out <= {XLEN{1'b0}};
 
       csr_addr_out       <= 12'h0;
       csr_we_out         <= 1'b0;
@@ -82,8 +91,8 @@ module exmem_register #(
       is_mret_out        <= 1'b0;
       instruction_out    <= 32'h0;
       pc_out             <= {XLEN{1'b0}};
-    end else begin
-      // Normal operation: latch all values
+    end else if (!hold) begin
+      // Only update if not held (M extension may need to hold instruction in EX)
       alu_result_out     <= alu_result_in;
       mem_write_data_out <= mem_write_data_in;
       rd_addr_out        <= rd_addr_in;
@@ -96,6 +105,8 @@ module exmem_register #(
       wb_sel_out         <= wb_sel_in;
       valid_out          <= valid_in;
 
+      mul_div_result_out <= mul_div_result_in;
+
       csr_addr_out       <= csr_addr_in;
       csr_we_out         <= csr_we_in;
       csr_rdata_out      <= csr_rdata_in;
@@ -104,6 +115,7 @@ module exmem_register #(
       instruction_out    <= instruction_in;
       pc_out             <= pc_in;
     end
+    // If hold is asserted, keep previous values (register holds in place)
   end
 
 endmodule

@@ -63,6 +63,9 @@ module rv_core_pipelined #(
   wire            id_is_ecall_dec; // ECALL from decoder
   wire            id_is_ebreak_dec; // EBREAK from decoder
   wire            id_is_mret_dec;   // MRET from decoder
+  wire            id_is_mul_div_dec; // M extension instruction from decoder
+  wire [3:0]      id_mul_div_op_dec; // M extension operation from decoder
+  wire            id_is_word_op_dec; // RV64M word operation from decoder
 
   // Control signals
   wire        id_reg_write;
@@ -72,7 +75,7 @@ module rv_core_pipelined #(
   wire        id_jump;
   wire [3:0]  id_alu_control;
   wire        id_alu_src;
-  wire [1:0]  id_wb_sel;
+  wire [2:0]  id_wb_sel;
   wire [2:0]  id_imm_sel;
 
   // CSR signals
@@ -114,8 +117,11 @@ module rv_core_pipelined #(
   wire            idex_mem_read;
   wire            idex_mem_write;
   wire            idex_reg_write;
-  wire [1:0]      idex_wb_sel;
+  wire [2:0]      idex_wb_sel;
   wire            idex_valid;
+  wire            idex_is_mul_div;
+  wire [3:0]      idex_mul_div_op;
+  wire            idex_is_word_op;
   wire [11:0]     idex_csr_addr;
   wire            idex_csr_we;
   wire            idex_csr_src;
@@ -144,6 +150,20 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] ex_csr_rdata;       // CSR read data
   wire            ex_illegal_csr;     // Illegal CSR access
 
+  // M extension signals
+  wire [XLEN-1:0] ex_mul_div_result;
+  wire            ex_mul_div_busy;
+  wire            ex_mul_div_ready;
+
+  // Hold EX/MEM register when M instruction is executing
+  wire            hold_exmem;
+  assign hold_exmem = idex_is_mul_div && idex_valid && !ex_mul_div_ready;
+
+  // M unit start signal: pulse once when M instruction first enters EX
+  // Only start if not already busy or ready (prevents restarting)
+  wire            m_unit_start;
+  assign m_unit_start = idex_is_mul_div && idex_valid && !ex_mul_div_busy && !ex_mul_div_ready;
+
   //==========================================================================
   // EX/MEM Pipeline Register Outputs
   //==========================================================================
@@ -155,8 +175,9 @@ module rv_core_pipelined #(
   wire            exmem_mem_read;
   wire            exmem_mem_write;
   wire            exmem_reg_write;
-  wire [1:0]      exmem_wb_sel;
+  wire [2:0]      exmem_wb_sel;
   wire            exmem_valid;
+  wire [XLEN-1:0] exmem_mul_div_result;
   wire [11:0]     exmem_csr_addr;
   wire            exmem_csr_we;
   wire [XLEN-1:0] exmem_csr_rdata;
@@ -177,8 +198,9 @@ module rv_core_pipelined #(
   wire [4:0]      memwb_rd_addr;
   wire [XLEN-1:0] memwb_pc_plus_4;
   wire            memwb_reg_write;
-  wire [1:0]      memwb_wb_sel;
+  wire [2:0]      memwb_wb_sel;
   wire            memwb_valid;
+  wire [XLEN-1:0] memwb_mul_div_result;
   wire [XLEN-1:0] memwb_csr_rdata;
 
   //==========================================================================
@@ -293,7 +315,10 @@ module rv_core_pipelined #(
     .is_csr(id_is_csr_dec),
     .is_ecall(id_is_ecall_dec),
     .is_ebreak(id_is_ebreak_dec),
-    .is_mret(id_is_mret_dec)
+    .is_mret(id_is_mret_dec),
+    .is_mul_div(id_is_mul_div_dec),
+    .mul_div_op(id_mul_div_op_dec),
+    .is_word_op(id_is_word_op_dec)
   );
 
   // Control Unit
@@ -308,6 +333,7 @@ module rv_core_pipelined #(
     .is_ecall(id_is_ecall_dec),
     .is_ebreak(id_is_ebreak_dec),
     .is_mret(id_is_mret_dec),
+    .is_mul_div(id_is_mul_div_dec),
     // Standard outputs
     .reg_write(id_reg_write),
     .mem_read(id_mem_read),
@@ -382,6 +408,7 @@ module rv_core_pipelined #(
     .idex_rd(idex_rd_addr),
     .ifid_rs1(id_rs1),
     .ifid_rs2(id_rs2),
+    .mul_div_busy(ex_mul_div_busy),
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
     .bubble_idex(flush_idex_hazard)
@@ -393,6 +420,7 @@ module rv_core_pipelined #(
   ) idex_reg (
     .clk(clk),
     .reset_n(reset_n),
+    .hold(hold_exmem),
     .flush(flush_idex),
     // Data inputs
     .pc_in(ifid_pc),
@@ -415,6 +443,10 @@ module rv_core_pipelined #(
     .reg_write_in(id_reg_write),
     .wb_sel_in(id_wb_sel),
     .valid_in(ifid_valid),
+    // M extension inputs
+    .is_mul_div_in(id_is_mul_div_dec),
+    .mul_div_op_in(id_mul_div_op_dec),
+    .is_word_op_in(id_is_word_op_dec),
     // CSR inputs
     .csr_addr_in(id_csr_addr),
     .csr_we_in(id_csr_we_actual),
@@ -447,6 +479,10 @@ module rv_core_pipelined #(
     .reg_write_out(idex_reg_write),
     .wb_sel_out(idex_wb_sel),
     .valid_out(idex_valid),
+    // M extension outputs
+    .is_mul_div_out(idex_is_mul_div),
+    .mul_div_op_out(idex_mul_div_op),
+    .is_word_op_out(idex_is_word_op),
     // CSR outputs
     .csr_addr_out(idex_csr_addr),
     .csr_we_out(idex_csr_we),
@@ -511,6 +547,22 @@ module rv_core_pipelined #(
     .zero(ex_alu_zero),
     .less_than(ex_alu_lt),
     .less_than_unsigned(ex_alu_ltu)
+  );
+
+  // M Extension Unit
+  mul_div_unit #(
+    .XLEN(XLEN)
+  ) m_unit (
+    .clk(clk),
+    .reset_n(reset_n),
+    .start(m_unit_start),
+    .operation(idex_mul_div_op),
+    .is_word_op(idex_is_word_op),
+    .operand_a(ex_alu_operand_a_forwarded),
+    .operand_b(ex_rs2_data_forwarded),
+    .result(ex_mul_div_result),
+    .busy(ex_mul_div_busy),
+    .ready(ex_mul_div_ready)
   );
 
   // Branch Unit
@@ -611,6 +663,7 @@ module rv_core_pipelined #(
   ) exmem_reg (
     .clk(clk),
     .reset_n(reset_n),
+    .hold(hold_exmem),
     .alu_result_in(ex_alu_result),
     .mem_write_data_in(ex_rs2_data_forwarded),
     .rd_addr_in(idex_rd_addr),
@@ -621,6 +674,7 @@ module rv_core_pipelined #(
     .reg_write_in(idex_reg_write),
     .wb_sel_in(idex_wb_sel),
     .valid_in(idex_valid && !exception_taken_r),  // Invalidate if exception occurred last cycle
+    .mul_div_result_in(ex_mul_div_result),
     // CSR inputs
     .csr_addr_in(idex_csr_addr),
     .csr_we_in(idex_csr_we),
@@ -640,6 +694,7 @@ module rv_core_pipelined #(
     .reg_write_out(exmem_reg_write),
     .wb_sel_out(exmem_wb_sel),
     .valid_out(exmem_valid),
+    .mul_div_result_out(exmem_mul_div_result),
     // CSR outputs
     .csr_addr_out(exmem_csr_addr),
     .csr_we_out(exmem_csr_we),
@@ -686,6 +741,7 @@ module rv_core_pipelined #(
     .reg_write_in(reg_write_gated),     // Gated to prevent write on exception
     .wb_sel_in(exmem_wb_sel),
     .valid_in(exmem_valid && !exception),  // Mark invalid on exception
+    .mul_div_result_in(exmem_mul_div_result),
     // CSR input
     .csr_rdata_in(exmem_csr_rdata),
     // Outputs
@@ -696,6 +752,7 @@ module rv_core_pipelined #(
     .reg_write_out(memwb_reg_write),
     .wb_sel_out(memwb_wb_sel),
     .valid_out(memwb_valid),
+    .mul_div_result_out(memwb_mul_div_result),
     // CSR output
     .csr_rdata_out(memwb_csr_rdata)
   );
@@ -705,10 +762,11 @@ module rv_core_pipelined #(
   //==========================================================================
 
   // Write-Back Data Selection
-  assign wb_data = (memwb_wb_sel == 2'b00) ? memwb_alu_result :      // ALU result
-                   (memwb_wb_sel == 2'b01) ? memwb_mem_read_data :   // Memory data
-                   (memwb_wb_sel == 2'b10) ? memwb_pc_plus_4 :       // PC + 4 (JAL/JALR)
-                   (memwb_wb_sel == 2'b11) ? memwb_csr_rdata :       // CSR data
+  assign wb_data = (memwb_wb_sel == 3'b000) ? memwb_alu_result :      // ALU result
+                   (memwb_wb_sel == 3'b001) ? memwb_mem_read_data :   // Memory data
+                   (memwb_wb_sel == 3'b010) ? memwb_pc_plus_4 :       // PC + 4 (JAL/JALR)
+                   (memwb_wb_sel == 3'b011) ? memwb_csr_rdata :       // CSR data
+                   (memwb_wb_sel == 3'b100) ? memwb_mul_div_result :  // M extension result
                    {XLEN{1'b0}};
 
 endmodule

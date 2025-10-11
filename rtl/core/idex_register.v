@@ -10,6 +10,7 @@ module idex_register #(
 ) (
   input  wire             clk,
   input  wire             reset_n,
+  input  wire             hold,            // Hold register (don't update)
   input  wire             flush,           // Clear to NOP (for load-use or branch)
 
   // Inputs from ID stage
@@ -32,8 +33,13 @@ module idex_register #(
   input  wire        mem_read_in,
   input  wire        mem_write_in,
   input  wire        reg_write_in,
-  input  wire [1:0]  wb_sel_in,       // Write-back source select
+  input  wire [2:0]  wb_sel_in,       // Write-back source select
   input  wire        valid_in,
+
+  // M extension signals from ID stage
+  input  wire        is_mul_div_in,
+  input  wire [3:0]  mul_div_op_in,
+  input  wire        is_word_op_in,
 
   // CSR signals from ID stage
   input  wire [11:0]      csr_addr_in,
@@ -68,8 +74,13 @@ module idex_register #(
   output reg         mem_read_out,
   output reg         mem_write_out,
   output reg         reg_write_out,
-  output reg  [1:0]  wb_sel_out,
+  output reg  [2:0]  wb_sel_out,
   output reg         valid_out,
+
+  // M extension signals to EX stage
+  output reg         is_mul_div_out,
+  output reg  [3:0]  mul_div_op_out,
+  output reg         is_word_op_out,
 
   // CSR signals to EX stage
   output reg  [11:0]      csr_addr_out,
@@ -106,8 +117,12 @@ module idex_register #(
       mem_read_out    <= 1'b0;
       mem_write_out   <= 1'b0;
       reg_write_out   <= 1'b0;
-      wb_sel_out      <= 2'b0;
+      wb_sel_out      <= 3'b0;
       valid_out       <= 1'b0;
+
+      is_mul_div_out  <= 1'b0;
+      mul_div_op_out  <= 4'h0;
+      is_word_op_out  <= 1'b0;
 
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;
@@ -119,8 +134,9 @@ module idex_register #(
       is_mret_out     <= 1'b0;
       illegal_inst_out <= 1'b0;
       instruction_out <= 32'h0;
-    end else if (flush) begin
+    end else if (flush && !hold) begin
       // Flush: insert NOP bubble (clear control signals, keep data)
+      // Note: hold takes priority over flush (M instructions must stay in place)
       pc_out          <= pc_in;         // Keep PC for debugging
       rs1_data_out    <= rs1_data_in;
       rs2_data_out    <= rs2_data_in;
@@ -140,8 +156,12 @@ module idex_register #(
       mem_read_out    <= 1'b0;
       mem_write_out   <= 1'b0;
       reg_write_out   <= 1'b0;          // Critical: no register write
-      wb_sel_out      <= 2'b0;
+      wb_sel_out      <= 3'b0;
       valid_out       <= 1'b0;          // Mark as invalid
+
+      is_mul_div_out  <= 1'b0;
+      mul_div_op_out  <= 4'h0;
+      is_word_op_out  <= 1'b0;
 
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;          // Critical: no CSR write
@@ -153,8 +173,8 @@ module idex_register #(
       is_mret_out     <= 1'b0;
       illegal_inst_out <= 1'b0;
       instruction_out <= 32'h0;
-    end else begin
-      // Normal operation: latch all values
+    end else if (!hold) begin
+      // Normal operation: latch all values (only if not held)
       pc_out          <= pc_in;
       rs1_data_out    <= rs1_data_in;
       rs2_data_out    <= rs2_data_in;
@@ -176,6 +196,10 @@ module idex_register #(
       wb_sel_out      <= wb_sel_in;
       valid_out       <= valid_in;
 
+      is_mul_div_out  <= is_mul_div_in;
+      mul_div_op_out  <= mul_div_op_in;
+      is_word_op_out  <= is_word_op_in;
+
       csr_addr_out    <= csr_addr_in;
       csr_we_out      <= csr_we_in;
       csr_src_out     <= csr_src_in;
@@ -187,6 +211,7 @@ module idex_register #(
       illegal_inst_out <= illegal_inst_in;
       instruction_out <= instruction_in;
     end
+    // If hold is asserted, keep previous values (register holds in place)
   end
 
 endmodule

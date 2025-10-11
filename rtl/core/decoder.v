@@ -29,7 +29,12 @@ module decoder #(
   output wire            is_csr,        // CSR instruction
   output wire            is_ecall,      // ECALL instruction
   output wire            is_ebreak,     // EBREAK instruction
-  output wire            is_mret        // MRET instruction
+  output wire            is_mret,       // MRET instruction
+
+  // M extension outputs
+  output wire            is_mul_div,    // M extension instruction
+  output wire [3:0]      mul_div_op,    // M extension operation (funct3 + type)
+  output wire            is_word_op     // RV64M: W-suffix instruction
 );
 
   // Extract instruction fields
@@ -106,5 +111,35 @@ module decoder #(
   assign is_mret = (opcode == OPCODE_SYSTEM) &&
                    (funct3 == 3'b000) &&
                    (instruction[31:20] == 12'h302);
+
+  // =========================================================================
+  // M Extension Detection (RV32M / RV64M)
+  // =========================================================================
+
+  // M extension opcodes
+  localparam OPCODE_OP     = 7'b0110011;  // R-type instructions
+  localparam OPCODE_OP_32  = 7'b0111011;  // RV64: W-suffix instructions
+
+  // M extension uses OP opcode with funct7 = 0000001
+  // RV32M: MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU
+  // RV64M adds: MULW, DIVW, DIVUW, REMW, REMUW
+  assign is_mul_div = ((opcode == OPCODE_OP) || (opcode == OPCODE_OP_32)) &&
+                      (funct7 == 7'b0000001);
+
+  // M extension operation is encoded in funct3
+  // funct3[2:0]:
+  //   000: MUL/MULW
+  //   001: MULH
+  //   010: MULHSU
+  //   011: MULHU
+  //   100: DIV/DIVW
+  //   101: DIVU/DIVUW
+  //   110: REM/REMW
+  //   111: REMU/REMUW
+  assign mul_div_op = {1'b0, funct3};
+
+  // RV64M word operations (32-bit operations with sign-extension)
+  // OP_32 opcode indicates W-suffix instructions (MULW, DIVW, etc.)
+  assign is_word_op = (opcode == OPCODE_OP_32);
 
 endmodule

@@ -12,6 +12,9 @@ module hazard_detection_unit (
   input  wire [4:0]  ifid_rs1,         // Source register 1
   input  wire [4:0]  ifid_rs2,         // Source register 2
 
+  // M extension signals
+  input  wire        mul_div_busy,     // M unit is busy
+
   // Hazard control outputs
   output wire        stall_pc,         // Stall program counter
   output wire        stall_ifid,       // Stall IF/ID register
@@ -45,9 +48,16 @@ module hazard_detection_unit (
   // Load-use hazard exists if there's a load and either source has a hazard
   assign load_use_hazard = idex_mem_read && (rs1_hazard || rs2_hazard);
 
+  // M extension hazard: stall IF/ID stages when M unit is busy
+  // The M instruction is held in EX stage by hold signals on IDEX and EXMEM registers.
+  // We also need to stall IF/ID to prevent new instructions from entering the pipeline.
+  wire m_extension_stall;
+  assign m_extension_stall = mul_div_busy;
+
   // Generate control signals
-  assign stall_pc    = load_use_hazard;
-  assign stall_ifid  = load_use_hazard;
-  assign bubble_idex = load_use_hazard;
+  // Stall if either load-use hazard or M extension dependency
+  assign stall_pc    = load_use_hazard || m_extension_stall;
+  assign stall_ifid  = load_use_hazard || m_extension_stall;
+  assign bubble_idex = load_use_hazard || m_extension_stall;
 
 endmodule

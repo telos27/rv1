@@ -19,8 +19,11 @@ module memwb_register #(
 
   // Control signals from MEM stage
   input  wire        reg_write_in,
-  input  wire [1:0]  wb_sel_in,          // Write-back source select
+  input  wire [2:0]  wb_sel_in,          // Write-back source select
   input  wire        valid_in,
+
+  // M extension result from MEM stage
+  input  wire [XLEN-1:0] mul_div_result_in,
 
   // CSR signals from MEM stage
   input  wire [XLEN-1:0] csr_rdata_in,       // CSR read data
@@ -33,8 +36,11 @@ module memwb_register #(
 
   // Control signals to WB stage
   output reg         reg_write_out,
-  output reg  [1:0]  wb_sel_out,
+  output reg  [2:0]  wb_sel_out,
   output reg         valid_out,
+
+  // M extension result to WB stage
+  output reg  [XLEN-1:0] mul_div_result_out,
 
   // CSR signals to WB stage
   output reg  [XLEN-1:0] csr_rdata_out
@@ -49,8 +55,10 @@ module memwb_register #(
       pc_plus_4_out      <= {XLEN{1'b0}};
 
       reg_write_out      <= 1'b0;
-      wb_sel_out         <= 2'b0;
+      wb_sel_out         <= 3'b0;
       valid_out          <= 1'b0;
+
+      mul_div_result_out <= {XLEN{1'b0}};
 
       csr_rdata_out      <= {XLEN{1'b0}};
     end else begin
@@ -63,6 +71,8 @@ module memwb_register #(
       reg_write_out      <= reg_write_in;
       wb_sel_out         <= wb_sel_in;
       valid_out          <= valid_in;
+
+      mul_div_result_out <= mul_div_result_in;
 
       csr_rdata_out      <= csr_rdata_in;
     end
