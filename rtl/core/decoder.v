@@ -40,7 +40,17 @@ module decoder #(
   output wire            is_atomic,     // A extension instruction
   output wire [4:0]      funct5,        // Atomic operation type (funct5 field)
   output wire            aq,            // Acquire ordering bit
-  output wire            rl             // Release ordering bit
+  output wire            rl,            // Release ordering bit
+
+  // F/D extension outputs
+  output wire            is_fp,         // Floating-point instruction
+  output wire            is_fp_load,    // FLW/FLD
+  output wire            is_fp_store,   // FSW/FSD
+  output wire            is_fp_op,      // FP computational operation
+  output wire            is_fp_fma,     // FP fused multiply-add
+  output wire [4:0]      rs3,           // Third source register (for FMA)
+  output wire [2:0]      fp_rm,         // FP rounding mode (from instruction)
+  output wire            fp_fmt         // FP format: 0=single, 1=double
 );
 
   // Extract instruction fields
@@ -169,5 +179,60 @@ module decoder #(
   // Note: rs2 field is used differently:
   // - For LR: rs2 must be 0 (reserved)
   // - For SC and AMO: rs2 is source data register
+
+  // =========================================================================
+  // F/D Extension Detection (RV32F/D / RV64F/D)
+  // =========================================================================
+
+  // F/D extension opcodes
+  localparam OPCODE_LOAD_FP  = 7'b0000111;  // FLW, FLD
+  localparam OPCODE_STORE_FP = 7'b0100111;  // FSW, FSD
+  localparam OPCODE_MADD     = 7'b1000011;  // FMADD.S/D
+  localparam OPCODE_MSUB     = 7'b1000111;  // FMSUB.S/D
+  localparam OPCODE_NMSUB    = 7'b1001011;  // FNMSUB.S/D
+  localparam OPCODE_NMADD    = 7'b1001111;  // FNMADD.S/D
+  localparam OPCODE_OP_FP    = 7'b1010011;  // All other FP operations
+
+  // FP instruction detection
+  assign is_fp_load  = (opcode == OPCODE_LOAD_FP);
+  assign is_fp_store = (opcode == OPCODE_STORE_FP);
+  assign is_fp_fma   = (opcode == OPCODE_MADD)  ||
+                       (opcode == OPCODE_MSUB)  ||
+                       (opcode == OPCODE_NMSUB) ||
+                       (opcode == OPCODE_NMADD);
+  assign is_fp_op    = (opcode == OPCODE_OP_FP);
+
+  // Any floating-point instruction
+  assign is_fp = is_fp_load || is_fp_store || is_fp_fma || is_fp_op;
+
+  // R4-type format (FMA instructions)
+  // rs3 is in bits [31:27]
+  // funct2 (fmt) is in bits [26:25]
+  assign rs3 = instruction[31:27];
+
+  // Floating-point format (in funct7[1:0] for OP-FP, or funct2 for FMA)
+  // 00 = single-precision (S)
+  // 01 = double-precision (D)
+  // 10 = reserved (H - half-precision in Zfh)
+  // 11 = reserved (Q - quad-precision)
+  wire [1:0] fmt_field = is_fp_fma ? instruction[26:25] : instruction[26:25];
+  assign fp_fmt = fmt_field[0];  // 0=single, 1=double (simplified for F/D)
+
+  // Floating-point rounding mode
+  // For most FP instructions, rm is in bits [14:12] (same position as funct3)
+  // rm encoding:
+  //   000: RNE (Round to Nearest, ties to Even)
+  //   001: RTZ (Round Towards Zero)
+  //   010: RDN (Round Down)
+  //   011: RUP (Round Up)
+  //   100: RMM (Round to Nearest, ties to Max Magnitude)
+  //   111: DYN (Dynamic - use frm from fcsr)
+  assign fp_rm = funct3;
+
+  // Note on FP instruction formats:
+  // - R4-type (FMA): rs3[31:27] | fmt[26:25] | rs2[24:20] | rs1[19:15] | rm[14:12] | rd[11:7] | opcode[6:0]
+  // - R-type (FP):   funct7[31:25] (includes fmt) | rs2[24:20] | rs1[19:15] | rm[14:12] | rd[11:7] | opcode[6:0]
+  // - I-type (FP Load): imm[31:20] | rs1[19:15] | width[14:12] | rd[11:7] | opcode[6:0]
+  // - S-type (FP Store): imm[31:25] | rs2[24:20] | rs1[19:15] | width[14:12] | imm[11:7] | opcode[6:0]
 
 endmodule

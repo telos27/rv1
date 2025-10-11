@@ -58,6 +58,11 @@ module csr_file #(
   localparam CSR_MTVAL     = 12'h343;
   localparam CSR_MIP       = 12'h344;
 
+  // Floating-Point CSRs (F/D extension)
+  localparam CSR_FFLAGS    = 12'h001;  // Floating-point exception flags
+  localparam CSR_FRM       = 12'h002;  // Floating-point rounding mode
+  localparam CSR_FCSR      = 12'h003;  // Full floating-point CSR
+
   // CSR Operation Encodings (funct3)
   localparam CSR_RW  = 3'b001;  // CSRRW
   localparam CSR_RS  = 3'b010;  // CSRRS
@@ -108,6 +113,10 @@ module csr_file #(
 
   // Machine Interrupt Pending (mip) - not fully implemented yet
   reg [XLEN-1:0] mip_r;
+
+  // Floating-Point CSRs
+  reg [4:0] fflags_r;  // Floating-point exception flags: [4] NV, [3] DZ, [2] OF, [1] UF, [0] NX
+  reg [2:0] frm_r;     // Floating-point rounding mode
 
   // =========================================================================
   // Read-Only CSRs (hardwired)
@@ -172,6 +181,9 @@ module csr_file #(
       CSR_MARCHID:   csr_rdata = {{(XLEN-32){1'b0}}, marchid};    // Zero-extend to XLEN
       CSR_MIMPID:    csr_rdata = {{(XLEN-32){1'b0}}, mimpid};     // Zero-extend to XLEN
       CSR_MHARTID:   csr_rdata = {{(XLEN-32){1'b0}}, mhartid};    // Zero-extend to XLEN
+      CSR_FFLAGS:    csr_rdata = {{(XLEN-5){1'b0}}, fflags_r};    // Zero-extend to XLEN
+      CSR_FRM:       csr_rdata = {{(XLEN-3){1'b0}}, frm_r};       // Zero-extend to XLEN
+      CSR_FCSR:      csr_rdata = {{(XLEN-8){1'b0}}, frm_r, fflags_r};  // {frm[7:5], fflags[4:0]}
       default:       csr_rdata = {XLEN{1'b0}};  // Return 0 for unknown CSRs
     endcase
   end
@@ -246,6 +258,9 @@ module csr_file #(
       mcause_r       <= {XLEN{1'b0}};
       mtval_r        <= {XLEN{1'b0}};
       mip_r          <= {XLEN{1'b0}};
+      // Reset floating-point CSRs
+      fflags_r       <= 5'b0;            // No exceptions
+      frm_r          <= 3'b000;          // RNE (Round to Nearest, ties to Even)
     end else begin
       // Trap entry has priority over CSR writes
       if (trap_entry) begin
@@ -278,6 +293,13 @@ module csr_file #(
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
           CSR_MIP:      mip_r      <= csr_write_value;
+          // Floating-point CSRs
+          CSR_FFLAGS:   fflags_r   <= csr_write_value[4:0];  // Write exception flags
+          CSR_FRM:      frm_r      <= csr_write_value[2:0];  // Write rounding mode
+          CSR_FCSR: begin
+            frm_r    <= csr_write_value[7:5];  // Upper 3 bits = rounding mode
+            fflags_r <= csr_write_value[4:0];  // Lower 5 bits = exception flags
+          end
           default: begin
             // No write for unknown or read-only CSRs
           end

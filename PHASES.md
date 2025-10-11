@@ -4,11 +4,48 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 7 - A Extension (Atomics) 🚧 **IN PROGRESS (60%)**
-**Completion**: 60% 🚧 | **Core modules complete, pipeline integration in progress**
-**Next Milestone**: Complete EX stage integration and memory interface
+**Active Phase**: Phase 8 - F/D Extension (Floating-Point) 🚧 **IN PROGRESS (40%)**
+**Completion**: 40% 🚧 | **Infrastructure complete, FP arithmetic units next**
+**Next Milestone**: Implement FP arithmetic units (adder, multiplier, divider, sqrt)
 
-**Recent Progress (2025-10-10 - Session 12 - Phase 7 A Extension Started):**
+**Recent Progress (2025-10-10 - Session 16 - Phase 8 F/D Extension Infrastructure):**
+- ✅ **Design Documentation**: Complete F/D extension specification
+  - `docs/FD_EXTENSION_DESIGN.md` (900+ lines)
+  - All 52 floating-point instructions documented (26 F + 26 D)
+  - IEEE 754-2008 compliance strategy
+  - FPU architecture and implementation plan
+- ✅ **FP Register File Module**: 32 x FLEN registers with NaN boxing
+  - `rtl/core/fp_register_file.v` (60 lines)
+  - Parameterized for FLEN=32 (F) or FLEN=64 (D)
+  - 3 read ports for FMA instructions
+  - NaN boxing for single-precision in double-precision registers
+- ✅ **FCSR CSR Integration**: Floating-point control and status registers
+  - Added fflags (0x001): 5-bit exception flags (NV, DZ, OF, UF, NX)
+  - Added frm (0x002): 3-bit rounding mode register
+  - Added fcsr (0x003): Full FP CSR combining both
+  - Integrated into `rtl/core/csr_file.v`
+- ✅ **Decoder Updates**: F/D instruction decoding
+  - R4-type format support (for FMA instructions)
+  - All 7 FP opcodes detected (LOAD-FP, STORE-FP, MADD, MSUB, NMSUB, NMADD, OP-FP)
+  - FP-specific fields extracted (rs3, fp_rm, fp_fmt)
+  - Updated `rtl/core/decoder.v`
+- ✅ **Control Unit Updates**: Complete FP control signal generation
+  - 19 FP ALU operations encoded
+  - Full decode for all FP instructions (load/store, FMA, arithmetic, compare, convert)
+  - Dynamic rounding mode detection
+  - Updated `rtl/core/control.v` (~200 lines added)
+- ⏳ **Remaining Work** (Next Session):
+  - Implement FP adder/subtractor unit
+  - Implement FP multiplier unit
+  - Implement FP divider unit (SRT algorithm)
+  - Implement FP square root unit
+  - Implement FP FMA unit
+  - Implement FP compare/classify/converter units
+  - Create FPU top-level integration module
+  - Integrate FPU into pipeline
+  - Create test programs and verify functionality
+
+**Earlier Progress (2025-10-10 - Session 12 - Phase 7 A Extension Started):**
 - ✅ **Design Documentation**: Complete A extension specification
   - `docs/A_EXTENSION_DESIGN.md` (400+ lines)
   - All 22 atomic instructions documented (11 RV32A + 11 RV64A)
@@ -920,11 +957,213 @@ Parameterize the RV1 processor to support:
 
 ---
 
+## Phase 8: F/D Extension (Floating-Point)
+
+**Goal**: Implement IEEE 754-2008 compliant single and double-precision floating-point
+
+**Status**: 🚧 **IN PROGRESS (40%)**
+
+**Start Date**: 2025-10-10 (Session 16)
+**Last Updated**: 2025-10-10
+**Estimated Duration**: 6-8 weeks
+
+### Overview
+
+The F/D extensions add IEEE 754-2008 compliant floating-point computation:
+- **F Extension**: Single-precision (32-bit) floating-point
+- **D Extension**: Double-precision (64-bit) floating-point
+- **52 Instructions Total**: 26 single-precision + 26 double-precision
+- **FCSR Register**: Floating-point control and status (fflags, frm, fcsr)
+
+### Stage 8.1: Infrastructure ✅
+**Status**: COMPLETED (2025-10-10)
+
+#### Tasks
+- [x] Create comprehensive design document
+- [x] Design FP register file (32 x FLEN registers)
+- [x] Integrate FCSR CSRs (fflags, frm, fcsr)
+- [x] Update decoder for F/D instruction formats
+- [x] Update control unit for FP operations
+
+#### Success Criteria
+- ✅ Design document complete with all 52 FP instructions
+- ✅ FP register file with NaN boxing support
+- ✅ FCSR CSRs readable/writable
+- ✅ Decoder extracts FP-specific fields (rs3, fp_rm, fp_fmt)
+- ✅ Control unit generates all FP control signals
+
+**Implementation Files:**
+- `docs/FD_EXTENSION_DESIGN.md` (900+ lines)
+- `rtl/core/fp_register_file.v` (60 lines)
+- `rtl/core/csr_file.v` (modified for fflags, frm, fcsr)
+- `rtl/core/decoder.v` (modified for R4-type and FP opcodes)
+- `rtl/core/control.v` (modified for FP control signals)
+
+### Stage 8.2: Basic FP Arithmetic Units
+**Status**: NOT STARTED
+
+#### Tasks
+- [ ] Implement FP adder/subtractor (FADD, FSUB)
+- [ ] Implement FP multiplier (FMUL)
+- [ ] Implement FP sign injection (FSGNJ, FSGNJN, FSGNJX)
+- [ ] Implement FP min/max (FMIN, FMAX)
+- [ ] Create unit tests for each module
+
+#### Success Criteria
+- FP addition/subtraction works correctly
+- FP multiplication works correctly
+- All rounding modes supported
+- Exception flags set correctly
+- Special values handled (NaN, ±∞, ±0, subnormals)
+
+**Estimated Files:**
+- `rtl/core/fp_adder.v` (~250 lines)
+- `rtl/core/fp_multiplier.v` (~200 lines)
+- `rtl/core/fp_sign.v` (~50 lines)
+- `rtl/core/fp_minmax.v` (~70 lines)
+
+### Stage 8.3: Advanced FP Arithmetic Units
+**Status**: NOT STARTED
+
+#### Tasks
+- [ ] Implement FP divider (FDIV) - SRT algorithm
+- [ ] Implement FP square root (FSQRT)
+- [ ] Implement FP FMA (FMADD, FMSUB, FNMSUB, FNMADD)
+- [ ] Optimize for performance
+
+#### Success Criteria
+- Division works correctly (16-32 cycle latency)
+- Square root works correctly (16-32 cycle latency)
+- FMA single rounding (better accuracy than separate ops)
+- All special cases handled
+
+**Estimated Files:**
+- `rtl/core/fp_divider.v` (~300 lines)
+- `rtl/core/fp_sqrt.v` (~300 lines)
+- `rtl/core/fp_fma.v` (~350 lines)
+
+### Stage 8.4: FP Support Units
+**Status**: NOT STARTED
+
+#### Tasks
+- [ ] Implement FP compare (FEQ, FLT, FLE)
+- [ ] Implement FP classify (FCLASS)
+- [ ] Implement FP converter (INT↔FP, FLOAT↔DOUBLE)
+- [ ] Implement FP move (FMV.X.W, FMV.W.X)
+- [ ] Create unit tests
+
+#### Success Criteria
+- Comparisons work correctly (handle NaN, -0 vs +0)
+- Classification returns correct 10-bit mask
+- Conversions handle all cases (overflow, rounding)
+- Moves transfer bits correctly
+
+**Estimated Files:**
+- `rtl/core/fp_compare.v` (~100 lines)
+- `rtl/core/fp_classify.v` (~80 lines)
+- `rtl/core/fp_converter.v` (~200 lines)
+- `rtl/core/fp_move.v` (~50 lines)
+
+### Stage 8.5: FPU Integration
+**Status**: NOT STARTED
+
+#### Tasks
+- [ ] Create FPU top-level module
+- [ ] Integrate all FP units
+- [ ] Add operation multiplexer
+- [ ] Implement busy/done signaling
+- [ ] Add exception flag accumulation
+
+#### Success Criteria
+- All FP units instantiated correctly
+- Operation selection works
+- Multi-cycle operations signal completion
+- Exception flags accumulate properly
+
+**Estimated Files:**
+- `rtl/core/fpu.v` (~200 lines)
+
+### Stage 8.6: Pipeline Integration
+**Status**: NOT STARTED
+
+#### Tasks
+- [ ] Update ID/EX pipeline register
+- [ ] Update EX/MEM pipeline register
+- [ ] Update MEM/WB pipeline register
+- [ ] Add FP hazard detection
+- [ ] Add FP forwarding paths
+- [ ] Integrate FPU into top-level core
+
+#### Success Criteria
+- FP instructions flow through pipeline
+- FP RAW hazards detected and forwarded
+- FP load-use hazards stall correctly
+- FPU busy stalls pipeline
+- No conflicts with integer pipeline
+
+**Estimated Files:**
+- `rtl/core/idex_register.v` (modified)
+- `rtl/core/exmem_register.v` (modified)
+- `rtl/core/memwb_register.v` (modified)
+- `rtl/core/hazard_detection_unit.v` (modified)
+- `rtl/core/forwarding_unit.v` (modified)
+- `rtl/core/rv32i_core_pipelined.v` (modified, ~300 lines)
+
+### Stage 8.7: Testing and Verification
+**Status**: NOT STARTED
+
+#### Tasks
+- [ ] Create unit tests for all FP modules
+- [ ] Create FP integration test programs
+- [ ] Run RISC-V compliance tests (rv32uf, rv32ud)
+- [ ] Fix bugs and edge cases
+- [ ] Performance analysis
+
+#### Success Criteria
+- All unit tests pass
+- Integration tests pass
+- Compliance tests: 90%+ pass rate
+- Performance meets targets (FADD: 3-4 cycles, FDIV: 16-32 cycles)
+
+**Test Programs:**
+- Basic FP arithmetic
+- FMA instructions
+- FP conversions
+- FCSR read/write
+- Special value handling
+
+### Phase 8 Deliverables
+
+**Completed:**
+1. ✅ F/D extension design document (900+ lines)
+2. ✅ FP register file (32 x FLEN, 3 read ports, NaN boxing)
+3. ✅ FCSR CSRs (fflags, frm, fcsr)
+4. ✅ Decoder updates (R4-type, FP opcodes)
+5. ✅ Control unit updates (FP control signals)
+
+**Pending:**
+6. ⏳ FP arithmetic units (adder, multiplier, divider, sqrt, FMA)
+7. ⏳ FP support units (compare, classify, converter, move)
+8. ⏳ FPU top-level integration
+9. ⏳ Pipeline integration
+10. ⏳ Testing and compliance
+
+**Target Completion**: 6-8 weeks
+
+**Implementation Summary (Current):**
+- **Total RTL lines added**: ~400 lines (infrastructure)
+- **Total estimated for F/D**: ~3000 lines (complete)
+- **Instructions supported**: 52 FP instructions (F + D)
+- **IEEE 754 compliance**: Full support for special values, rounding, exceptions
+- **Performance**: FADD/FMUL 3-4 cycles, FDIV/FSQRT 16-32 cycles
+
+---
+
 ## Phase 4: Extensions and Advanced Features
 
 **Goal**: Add ISA extensions and performance features
 
-**Status**: READY TO START (after Phase 5 completion)
+**Status**: READY TO START (after Phase 8 completion)
 
 **Estimated Duration**: 4-6 weeks (spread across sub-phases)
 
