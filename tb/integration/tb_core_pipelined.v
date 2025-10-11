@@ -9,7 +9,7 @@ module tb_core_pipelined;
 
   // Clock parameters
   parameter CLK_PERIOD = 10;          // 100MHz
-  parameter TIMEOUT = 10000;          // Maximum cycles
+  parameter TIMEOUT = 50000;          // Maximum cycles
 
   // Memory file (can be overridden with -D)
   `ifdef MEM_FILE

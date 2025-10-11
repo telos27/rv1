@@ -29,6 +29,9 @@ module exmem_register #(
   // M extension result from EX stage
   input  wire [XLEN-1:0] mul_div_result_in,
 
+  // A extension result from EX stage
+  input  wire [XLEN-1:0] atomic_result_in,
+
   // CSR signals from EX stage
   input  wire [11:0]      csr_addr_in,
   input  wire             csr_we_in,
@@ -55,6 +58,9 @@ module exmem_register #(
 
   // M extension result to MEM stage
   output reg  [XLEN-1:0] mul_div_result_out,
+
+  // A extension result to MEM stage
+  output reg  [XLEN-1:0] atomic_result_out,
 
   // CSR signals to MEM stage
   output reg  [11:0]      csr_addr_out,
@@ -84,6 +90,8 @@ module exmem_register #(
 
       mul_div_result_out <= {XLEN{1'b0}};
 
+      atomic_result_out  <= {XLEN{1'b0}};
+
       csr_addr_out       <= 12'h0;
       csr_we_out         <= 1'b0;
       csr_rdata_out      <= {XLEN{1'b0}};
@@ -106,6 +114,8 @@ module exmem_register #(
       valid_out          <= valid_in;
 
       mul_div_result_out <= mul_div_result_in;
+
+      atomic_result_out  <= atomic_result_in;
 
       csr_addr_out       <= csr_addr_in;
       csr_we_out         <= csr_we_in;

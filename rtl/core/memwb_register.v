@@ -25,6 +25,9 @@ module memwb_register #(
   // M extension result from MEM stage
   input  wire [XLEN-1:0] mul_div_result_in,
 
+  // A extension result from MEM stage
+  input  wire [XLEN-1:0] atomic_result_in,
+
   // CSR signals from MEM stage
   input  wire [XLEN-1:0] csr_rdata_in,       // CSR read data
 
@@ -41,6 +44,9 @@ module memwb_register #(
 
   // M extension result to WB stage
   output reg  [XLEN-1:0] mul_div_result_out,
+
+  // A extension result to WB stage
+  output reg  [XLEN-1:0] atomic_result_out,
 
   // CSR signals to WB stage
   output reg  [XLEN-1:0] csr_rdata_out
@@ -60,6 +66,8 @@ module memwb_register #(
 
       mul_div_result_out <= {XLEN{1'b0}};
 
+      atomic_result_out  <= {XLEN{1'b0}};
+
       csr_rdata_out      <= {XLEN{1'b0}};
     end else begin
       // Normal operation: latch all values
@@ -73,6 +81,8 @@ module memwb_register #(
       valid_out          <= valid_in;
 
       mul_div_result_out <= mul_div_result_in;
+
+      atomic_result_out  <= atomic_result_in;
 
       csr_rdata_out      <= csr_rdata_in;
     end

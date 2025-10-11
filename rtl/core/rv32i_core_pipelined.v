@@ -163,9 +163,10 @@ module rv_core_pipelined #(
   wire            ex_mul_div_busy;
   wire            ex_mul_div_ready;
 
-  // Hold EX/MEM register when M instruction is executing
+  // Hold EX/MEM register when M instruction or A instruction is executing
   wire            hold_exmem;
-  assign hold_exmem = idex_is_mul_div && idex_valid && !ex_mul_div_ready;
+  assign hold_exmem = (idex_is_mul_div && idex_valid && !ex_mul_div_ready) ||
+                      (idex_is_atomic && idex_valid && !ex_atomic_done);
 
   // M unit start signal: pulse once when M instruction first enters EX
   // Only start if not already busy or ready (prevents restarting)
@@ -186,6 +187,7 @@ module rv_core_pipelined #(
   wire [2:0]      exmem_wb_sel;
   wire            exmem_valid;
   wire [XLEN-1:0] exmem_mul_div_result;
+  wire [XLEN-1:0] exmem_atomic_result;
   wire [11:0]     exmem_csr_addr;
   wire            exmem_csr_we;
   wire [XLEN-1:0] exmem_csr_rdata;
@@ -209,6 +211,7 @@ module rv_core_pipelined #(
   wire [2:0]      memwb_wb_sel;
   wire            memwb_valid;
   wire [XLEN-1:0] memwb_mul_div_result;
+  wire [XLEN-1:0] memwb_atomic_result;
   wire [XLEN-1:0] memwb_csr_rdata;
 
   //==========================================================================
@@ -443,6 +446,9 @@ module rv_core_pipelined #(
     .ifid_rs2(id_rs2),
     .mul_div_busy(ex_mul_div_busy),
     .idex_is_mul_div(idex_is_mul_div),
+    .atomic_busy(ex_atomic_busy),
+    .atomic_done(ex_atomic_done),
+    .idex_is_atomic(idex_is_atomic),
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
     .bubble_idex(flush_idex_hazard)
@@ -609,6 +615,76 @@ module rv_core_pipelined #(
     .ready(ex_mul_div_ready)
   );
 
+  // A Extension - Atomic Operations Unit
+  wire [XLEN-1:0] ex_atomic_result;
+  wire            ex_atomic_done;
+  wire            ex_atomic_busy;
+  wire            ex_atomic_mem_req;
+  wire            ex_atomic_mem_we;
+  wire [XLEN-1:0] ex_atomic_mem_addr;
+  wire [XLEN-1:0] ex_atomic_mem_wdata;
+  wire [2:0]      ex_atomic_mem_size;
+  wire            ex_atomic_mem_ready;
+
+  // A unit start signal: pulse once when A instruction first enters EX
+  wire            a_unit_start;
+  assign a_unit_start = idex_is_atomic && idex_valid && !ex_atomic_busy && !ex_atomic_done;
+
+  // Reservation station signals
+  wire            ex_lr_valid;
+  wire [XLEN-1:0] ex_lr_addr;
+  wire            ex_sc_valid;
+  wire [XLEN-1:0] ex_sc_addr;
+  wire            ex_sc_success;
+
+  atomic_unit #(
+    .XLEN(XLEN)
+  ) atomic_unit_inst (
+    .clk(clk),
+    .reset(!reset_n),
+    .start(a_unit_start),
+    .funct5(idex_funct5),
+    .funct3(idex_funct3),
+    .aq(idex_aq),
+    .rl(idex_rl),
+    .addr(ex_alu_operand_a_forwarded),
+    .src_data(ex_rs2_data_forwarded),
+    // Memory interface (connects to data memory via MUX)
+    .mem_req(ex_atomic_mem_req),
+    .mem_we(ex_atomic_mem_we),
+    .mem_addr(ex_atomic_mem_addr),
+    .mem_wdata(ex_atomic_mem_wdata),
+    .mem_size(ex_atomic_mem_size),
+    .mem_rdata(mem_read_data),
+    .mem_ready(ex_atomic_mem_ready),
+    // Reservation station interface
+    .lr_valid(ex_lr_valid),
+    .lr_addr(ex_lr_addr),
+    .sc_valid(ex_sc_valid),
+    .sc_addr(ex_sc_addr),
+    .sc_success(ex_sc_success),
+    // Outputs
+    .result(ex_atomic_result),
+    .done(ex_atomic_done),
+    .busy(ex_atomic_busy)
+  );
+
+  reservation_station #(
+    .XLEN(XLEN)
+  ) reservation_station_inst (
+    .clk(clk),
+    .reset(!reset_n),
+    .lr_valid(ex_lr_valid),
+    .lr_addr(ex_lr_addr),
+    .sc_valid(ex_sc_valid),
+    .sc_addr(ex_sc_addr),
+    .sc_success(ex_sc_success),
+    .invalidate(1'b0),              // TODO: invalidation on intervening writes
+    .inv_addr({XLEN{1'b0}}),
+    .exception(exception),
+    .interrupt(1'b0)                // TODO: connect to interrupt signal when implemented
+  );
+
   // Branch Unit
   branch_unit #(
     .XLEN(XLEN)
@@ -719,6 +795,7 @@ module rv_core_pipelined #(
     .wb_sel_in(idex_wb_sel),
     .valid_in(idex_valid && !exception_taken_r),  // Invalidate if exception occurred last cycle
     .mul_div_result_in(ex_mul_div_result),
+    .atomic_result_in(ex_atomic_result),
     // CSR inputs
     .csr_addr_in(idex_csr_addr),
     .csr_we_in(idex_csr_we),
@@ -739,6 +816,7 @@ module rv_core_pipelined #(
     .wb_sel_out(exmem_wb_sel),
     .valid_out(exmem_valid),
     .mul_div_result_out(exmem_mul_div_result),
+    .atomic_result_out(exmem_atomic_result),
     // CSR outputs
     .csr_addr_out(exmem_csr_addr),
     .csr_we_out(exmem_csr_we),
@@ -757,6 +835,25 @@ module rv_core_pipelined #(
   wire mem_write_gated = exmem_mem_write && !exception;
   wire reg_write_gated = exmem_reg_write && !exception;
 
+  // Memory Arbitration: Atomic unit gets priority when it's active
+  // When atomic operation is executing, atomic unit controls memory
+  // Otherwise, normal load/store path from MEM stage controls memory
+  wire [XLEN-1:0] dmem_addr;
+  wire [XLEN-1:0] dmem_write_data;
+  wire            dmem_mem_read;
+  wire            dmem_mem_write;
+  wire [2:0]      dmem_funct3;
+
+  // Use atomic unit's memory interface when atomic unit is busy
+  assign dmem_addr       = ex_atomic_busy ? ex_atomic_mem_addr : exmem_alu_result;
+  assign dmem_write_data = ex_atomic_busy ? ex_atomic_mem_wdata : exmem_mem_write_data;
+  assign dmem_mem_read   = ex_atomic_busy ? ex_atomic_mem_req && !ex_atomic_mem_we : exmem_mem_read;
+  assign dmem_mem_write  = ex_atomic_busy ? ex_atomic_mem_req && ex_atomic_mem_we : mem_write_gated;
+  assign dmem_funct3     = ex_atomic_busy ? ex_atomic_mem_size : exmem_funct3;
+
+  // Atomic unit sees memory as always ready (synchronous memory, 1-cycle latency)
+  assign ex_atomic_mem_ready = 1'b1;
+
   // Data Memory
   data_memory #(
     .XLEN(XLEN),
@@ -764,11 +861,11 @@ module rv_core_pipelined #(
     .MEM_FILE(MEM_FILE)  // Load same file as instruction memory (for compliance tests)
   ) dmem (
     .clk(clk),
-    .addr(exmem_alu_result),
-    .write_data(exmem_mem_write_data),
-    .mem_read(exmem_mem_read),
-    .mem_write(mem_write_gated),         // Gated to prevent write on exception
-    .funct3(exmem_funct3),
+    .addr(dmem_addr),
+    .write_data(dmem_write_data),
+    .mem_read(dmem_mem_read),
+    .mem_write(dmem_mem_write),
+    .funct3(dmem_funct3),
     .read_data(mem_read_data)
   );
 
@@ -786,6 +883,7 @@ module rv_core_pipelined #(
     .wb_sel_in(exmem_wb_sel),
     .valid_in(exmem_valid && !exception),  // Mark invalid on exception
     .mul_div_result_in(exmem_mul_div_result),
+    .atomic_result_in(exmem_atomic_result),
     // CSR input
     .csr_rdata_in(exmem_csr_rdata),
     // Outputs
@@ -797,6 +895,7 @@ module rv_core_pipelined #(
     .wb_sel_out(memwb_wb_sel),
     .valid_out(memwb_valid),
     .mul_div_result_out(memwb_mul_div_result),
+    .atomic_result_out(memwb_atomic_result),
     // CSR output
     .csr_rdata_out(memwb_csr_rdata)
   );
@@ -811,6 +910,7 @@ module rv_core_pipelined #(
                    (memwb_wb_sel == 3'b010) ? memwb_pc_plus_4 :       // PC + 4 (JAL/JALR)
                    (memwb_wb_sel == 3'b011) ? memwb_csr_rdata :       // CSR data
                    (memwb_wb_sel == 3'b100) ? memwb_mul_div_result :  // M extension result
+                   (memwb_wb_sel == 3'b101) ? memwb_atomic_result :   // A extension result
                    {XLEN{1'b0}};
 
 endmodule

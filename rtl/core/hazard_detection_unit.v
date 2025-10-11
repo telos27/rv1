@@ -16,6 +16,11 @@ module hazard_detection_unit (
   input  wire        mul_div_busy,     // M unit is busy
   input  wire        idex_is_mul_div,  // M instruction in EX stage
 
+  // A extension signals
+  input  wire        atomic_busy,      // A unit is busy
+  input  wire        atomic_done,      // A unit operation complete
+  input  wire        idex_is_atomic,   // A instruction in EX stage
+
   // Hazard control outputs
   output wire        stall_pc,         // Stall program counter
   output wire        stall_ifid,       // Stall IF/ID register
@@ -57,12 +62,19 @@ module hazard_detection_unit (
   wire m_extension_stall;
   assign m_extension_stall = mul_div_busy || idex_is_mul_div;
 
+  // A extension hazard: stall IF/ID stages when A unit is busy OR when A instruction just entered EX
+  // Similar to M extension, atomic operations are multi-cycle and hold the pipeline.
+  // BUT: Do not stall when operation is done - this allows the atomic instruction to leave ID/EX
+  // and prevents infinite stall loop on back-to-back atomic operations.
+  wire a_extension_stall;
+  assign a_extension_stall = (atomic_busy || idex_is_atomic) && !atomic_done;
+
   // Generate control signals
-  // Stall if either load-use hazard or M extension dependency
-  assign stall_pc    = load_use_hazard || m_extension_stall;
-  assign stall_ifid  = load_use_hazard || m_extension_stall;
-  // Note: Only bubble for load-use hazard, NOT for M stall
-  // (M stall uses hold signals on IDEX and EXMEM to keep instruction in place)
+  // Stall if load-use hazard, M extension dependency, or A extension dependency
+  assign stall_pc    = load_use_hazard || m_extension_stall || a_extension_stall;
+  assign stall_ifid  = load_use_hazard || m_extension_stall || a_extension_stall;
+  // Note: Only bubble for load-use hazard, NOT for M/A stall
+  // (M/A stall uses hold signals on IDEX and EXMEM to keep instruction in place)
   assign bubble_idex = load_use_hazard;
 
 endmodule

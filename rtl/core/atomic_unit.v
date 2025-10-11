@@ -222,14 +222,14 @@ module atomic_unit #(
     end
 
     // AMO computation logic
+    // Sign-extended operands for signed comparisons (declared as wires)
+    wire signed [XLEN-1:0] loaded_signed;
+    wire signed [XLEN-1:0] src_signed;
+    assign loaded_signed = loaded_value;
+    assign src_signed = current_src;
+
     always @(*) begin
         computed_value = loaded_value;  // Default: no change
-
-        // Sign-extended operands for signed comparisons
-        reg signed [XLEN-1:0] loaded_signed;
-        reg signed [XLEN-1:0] src_signed;
-        loaded_signed = loaded_value;
-        src_signed = current_src;
 
         case (current_op)
             ATOMIC_SWAP: begin
