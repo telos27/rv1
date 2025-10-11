@@ -64,6 +64,25 @@ module fp_converter #(
   reg guard, round, sticky;
   reg round_up;
 
+  // Temporary signals for FP component extraction
+  reg sign_fp;
+  reg [EXP_WIDTH-1:0] exp_fp;
+  reg [MAN_WIDTH-1:0] man_fp;
+  reg is_nan, is_inf, is_zero;
+  reg signed [15:0] int_exp;
+  reg [63:0] shifted_man;
+
+  // Double precision extraction
+  reg sign_d, sign_s;
+  reg [10:0] exp_d, adjusted_exp_11;
+  reg [51:0] man_d;
+  reg [7:0] exp_s;
+  reg [22:0] man_s;
+  reg is_nan_d, is_inf_d, is_zero_d;
+  reg is_nan_s, is_inf_s, is_zero_s;
+  reg [10:0] adjusted_exp;
+  reg [7:0] adjusted_exp_8;
+
   // State machine
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
@@ -110,14 +129,14 @@ module fp_converter #(
             // --------------------------------------------------------
             FCVT_W_S, FCVT_WU_S, FCVT_L_S, FCVT_LU_S: begin
               // Extract FP components
-              wire sign_fp = fp_operand[FLEN-1];
-              wire [EXP_WIDTH-1:0] exp_fp = fp_operand[FLEN-2:MAN_WIDTH];
-              wire [MAN_WIDTH-1:0] man_fp = fp_operand[MAN_WIDTH-1:0];
+              sign_fp = fp_operand[FLEN-1];
+              exp_fp = fp_operand[FLEN-2:MAN_WIDTH];
+              man_fp = fp_operand[MAN_WIDTH-1:0];
 
               // Check for special values
-              wire is_nan = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp != 0);
-              wire is_inf = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp == 0);
-              wire is_zero = (fp_operand[FLEN-2:0] == 0);
+              is_nan = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp != 0);
+              is_inf = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp == 0);
+              is_zero = (fp_operand[FLEN-2:0] == 0);
 
               if (is_nan || is_inf) begin
                 // NaN or Inf: return max/min integer, set invalid flag
@@ -134,7 +153,6 @@ module fp_converter #(
               end else begin
                 // Normal conversion
                 // Compute integer exponent
-                reg signed [15:0] int_exp;
                 int_exp = exp_fp - BIAS;
 
                 // Check if exponent is too large (overflow)
@@ -155,7 +173,6 @@ module fp_converter #(
                   flag_nx <= (man_fp != 0);  // Inexact if non-zero mantissa
                 end else begin
                   // Normal conversion: shift mantissa
-                  reg [63:0] shifted_man;
                   shifted_man = {1'b1, man_fp, 40'b0} >> (63 - int_exp);
 
                   // Apply sign for signed conversions
@@ -205,12 +222,13 @@ module fp_converter #(
                 exp_result <= BIAS + (63 - leading_zeros);
 
                 // Normalize mantissa (shift to align MSB)
-                man_result <= (int_abs << (leading_zeros + 1))[63:63-MAN_WIDTH];
+                shifted_man = int_abs << (leading_zeros + 1);
+                man_result <= shifted_man[63:63-MAN_WIDTH];
 
                 // Extract GRS bits for rounding
-                guard <= (int_abs << (leading_zeros + 1))[63-MAN_WIDTH-1];
-                round <= (int_abs << (leading_zeros + 1))[63-MAN_WIDTH-2];
-                sticky <= |(int_abs << (leading_zeros + 1))[63-MAN_WIDTH-3:0];
+                guard <= shifted_man[63-MAN_WIDTH-1];
+                round <= shifted_man[63-MAN_WIDTH-2];
+                sticky <= |shifted_man[63-MAN_WIDTH-3:0];
               end
             end
 
@@ -220,14 +238,14 @@ module fp_converter #(
             FCVT_S_D: begin
               // Double to single (may lose precision)
               // Extract double components
-              wire sign_d = fp_operand[63];
-              wire [10:0] exp_d = fp_operand[62:52];
-              wire [51:0] man_d = fp_operand[51:0];
+              sign_d = fp_operand[63];
+              exp_d = fp_operand[62:52];
+              man_d = fp_operand[51:0];
 
               // Check for special values
-              wire is_nan_d = (exp_d == 11'h7FF) && (man_d != 0);
-              wire is_inf_d = (exp_d == 11'h7FF) && (man_d == 0);
-              wire is_zero_d = (fp_operand[62:0] == 0);
+              is_nan_d = (exp_d == 11'h7FF) && (man_d != 0);
+              is_inf_d = (exp_d == 11'h7FF) && (man_d == 0);
+              is_zero_d = (fp_operand[62:0] == 0);
 
               if (is_nan_d) begin
                 fp_result <= 32'h7FC00000;  // Canonical NaN
@@ -237,19 +255,18 @@ module fp_converter #(
                 fp_result <= {sign_d, 31'b0};  // ±0
               end else begin
                 // Normal conversion: adjust exponent bias (1023 → 127)
-                reg [10:0] adjusted_exp;
                 adjusted_exp = exp_d - 1023 + 127;
 
                 // Check for overflow
                 if (adjusted_exp >= 255) begin
                   fp_result <= {sign_d, 8'hFF, 23'b0};  // ±Infinity
-                  flag_of <= 1'b1;
+                  // flag_of <= 1'b1;  // TODO: Add flag_of output
                   flag_nx <= 1'b1;
                 end
                 // Check for underflow
                 else if (adjusted_exp < 1) begin
                   fp_result <= {sign_d, 31'b0};  // ±0
-                  flag_uf <= 1'b1;
+                  // flag_uf <= 1'b1;  // TODO: Add flag_uf output
                   flag_nx <= 1'b1;
                 end else begin
                   // Truncate mantissa (52 bits → 23 bits)
@@ -262,14 +279,14 @@ module fp_converter #(
             FCVT_D_S: begin
               // Single to double (no precision loss)
               // Extract single components
-              wire sign_s = fp_operand[31];
-              wire [7:0] exp_s = fp_operand[30:23];
-              wire [22:0] man_s = fp_operand[22:0];
+              sign_s = fp_operand[31];
+              exp_s = fp_operand[30:23];
+              man_s = fp_operand[22:0];
 
               // Check for special values
-              wire is_nan_s = (exp_s == 8'hFF) && (man_s != 0);
-              wire is_inf_s = (exp_s == 8'hFF) && (man_s == 0);
-              wire is_zero_s = (fp_operand[30:0] == 0);
+              is_nan_s = (exp_s == 8'hFF) && (man_s != 0);
+              is_inf_s = (exp_s == 8'hFF) && (man_s == 0);
+              is_zero_s = (fp_operand[30:0] == 0);
 
               if (is_nan_s) begin
                 fp_result <= 64'h7FF8000000000000;  // Canonical NaN

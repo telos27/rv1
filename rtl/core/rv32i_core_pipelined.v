@@ -307,6 +307,10 @@ module rv_core_pipelined #(
   wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
   wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
 
+  // TODO: Connect to CSR file when FP CSR support is added
+  assign csr_frm = 3'b000;       // Default: Round to Nearest, ties to Even
+  assign csr_fflags = 5'b00000;  // Default: No flags set
+
   //==========================================================================
   // WB Stage Signals
   //==========================================================================
@@ -417,7 +421,16 @@ module rv_core_pipelined #(
     .is_atomic(id_is_atomic_dec),
     .funct5(id_funct5_dec),
     .aq(id_aq_dec),
-    .rl(id_rl_dec)
+    .rl(id_rl_dec),
+    // F/D extension outputs
+    .rs3(id_rs3),
+    .is_fp(id_is_fp),
+    .is_fp_load(id_is_fp_load),
+    .is_fp_store(id_is_fp_store),
+    .is_fp_op(id_is_fp_op),
+    .is_fp_fma(id_is_fp_fma),
+    .fp_rm(id_fp_rm),
+    .fp_fmt(id_fp_fmt)
   );
 
   // M extension control signals from control unit (not used directly, but available)
@@ -446,6 +459,13 @@ module rv_core_pipelined #(
     .is_word_op(id_is_word_op_dec),
     .is_atomic(id_is_atomic_dec),
     .funct5(id_funct5_dec),
+    // F/D extension inputs
+    .is_fp(id_is_fp),
+    .is_fp_load(id_is_fp_load),
+    .is_fp_store(id_is_fp_store),
+    .is_fp_op(id_is_fp_op),
+    .is_fp_fma(id_is_fp_fma),
+    // Note: fp_rm comes from decoder, not control
     // Standard outputs
     .reg_write(id_reg_write),
     .mem_read(id_mem_read),
@@ -465,6 +485,13 @@ module rv_core_pipelined #(
     // A extension outputs
     .atomic_en(id_atomic_en),
     .atomic_funct5(id_atomic_funct5),
+    // F/D extension outputs
+    .fp_reg_write(id_fp_reg_write),
+    .int_reg_write_fp(id_int_reg_write_fp),
+    .fp_mem_op(id_fp_mem_op),
+    .fp_alu_en(id_fp_alu_en),
+    .fp_alu_op(id_fp_alu_op),
+    .fp_use_dynamic_rm(id_fp_use_dynamic_rm),
     .illegal_inst(id_illegal_inst)
   );
 
@@ -499,6 +526,32 @@ module rv_core_pipelined #(
   assign id_rs2_data = (memwb_reg_write && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs2))
                        ? wb_data : id_rs2_data_raw;
 
+  // FP Register File
+  fp_register_file #(
+    .FLEN(XLEN)  // 32 for RV32, 64 for RV64
+  ) fp_regfile (
+    .clk(clk),
+    .reset_n(reset_n),
+    .rs1_addr(id_rs1),
+    .rs2_addr(id_rs2),
+    .rs3_addr(id_rs3),
+    .rs1_data(id_fp_rs1_data_raw),
+    .rs2_data(id_fp_rs2_data_raw),
+    .rs3_data(id_fp_rs3_data_raw),
+    .wr_en(memwb_fp_reg_write),
+    .rd_addr(memwb_fp_rd_addr),
+    .rd_data(wb_fp_data),
+    .write_single(1'b0)  // TODO: Implement based on fp_fmt
+  );
+
+  // WB-to-ID FP Forwarding (FP Register File Bypass)
+  assign id_fp_rs1_data = (memwb_fp_reg_write && (memwb_fp_rd_addr == id_rs1))
+                          ? wb_fp_data : id_fp_rs1_data_raw;
+  assign id_fp_rs2_data = (memwb_fp_reg_write && (memwb_fp_rd_addr == id_rs2))
+                          ? wb_fp_data : id_fp_rs2_data_raw;
+  assign id_fp_rs3_data = (memwb_fp_reg_write && (memwb_fp_rd_addr == id_rs3))
+                          ? wb_fp_data : id_fp_rs3_data_raw;
+
   // Immediate Selection
   assign id_immediate = (id_imm_sel == 3'b000) ? id_imm_i :
                         (id_imm_sel == 3'b001) ? id_imm_s :
@@ -532,6 +585,8 @@ module rv_core_pipelined #(
     .atomic_busy(ex_atomic_busy),
     .atomic_done(ex_atomic_done),
     .idex_is_atomic(idex_is_atomic),
+    .fpu_busy(ex_fpu_busy),
+    .idex_fp_alu_en(idex_fp_alu_en),
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
     .bubble_idex(flush_idex_hazard)
@@ -575,6 +630,20 @@ module rv_core_pipelined #(
     .funct5_in(id_funct5_dec),
     .aq_in(id_aq_dec),
     .rl_in(id_rl_dec),
+    // F/D extension inputs
+    .fp_rs1_data_in(id_fp_rs1_data),
+    .fp_rs2_data_in(id_fp_rs2_data),
+    .fp_rs3_data_in(id_fp_rs3_data),
+    .fp_rs1_addr_in(id_rs1),
+    .fp_rs2_addr_in(id_rs2),
+    .fp_rs3_addr_in(id_rs3),
+    .fp_rd_addr_in(id_rd),
+    .fp_reg_write_in(id_fp_reg_write),
+    .int_reg_write_fp_in(id_int_reg_write_fp),
+    .fp_alu_en_in(id_fp_alu_en),
+    .fp_alu_op_in(id_fp_alu_op),
+    .fp_rm_in(id_fp_rm),
+    .fp_use_dynamic_rm_in(id_fp_use_dynamic_rm),
     // CSR inputs
     .csr_addr_in(id_csr_addr),
     .csr_we_in(id_csr_we_actual),
@@ -616,6 +685,20 @@ module rv_core_pipelined #(
     .funct5_out(idex_funct5),
     .aq_out(idex_aq),
     .rl_out(idex_rl),
+    // F/D extension outputs
+    .fp_rs1_data_out(idex_fp_rs1_data),
+    .fp_rs2_data_out(idex_fp_rs2_data),
+    .fp_rs3_data_out(idex_fp_rs3_data),
+    .fp_rs1_addr_out(idex_fp_rs1_addr),
+    .fp_rs2_addr_out(idex_fp_rs2_addr),
+    .fp_rs3_addr_out(idex_fp_rs3_addr),
+    .fp_rd_addr_out(idex_fp_rd_addr),
+    .fp_reg_write_out(idex_fp_reg_write),
+    .int_reg_write_fp_out(idex_int_reg_write_fp),
+    .fp_alu_en_out(idex_fp_alu_en),
+    .fp_alu_op_out(idex_fp_alu_op),
+    .fp_rm_out(idex_fp_rm),
+    .fp_use_dynamic_rm_out(idex_fp_use_dynamic_rm),
     // CSR outputs
     .csr_addr_out(idex_csr_addr),
     .csr_we_out(idex_csr_we),
@@ -637,6 +720,7 @@ module rv_core_pipelined #(
 
   // Forwarding Unit
   forwarding_unit forward_unit (
+    // Integer forwarding
     .idex_rs1(idex_rs1_addr),
     .idex_rs2(idex_rs2_addr),
     .exmem_rd(exmem_rd_addr),
@@ -644,7 +728,18 @@ module rv_core_pipelined #(
     .memwb_rd(memwb_rd_addr),
     .memwb_reg_write(memwb_reg_write),
     .forward_a(forward_a),
-    .forward_b(forward_b)
+    .forward_b(forward_b),
+    // FP forwarding
+    .idex_fp_rs1(idex_fp_rs1_addr),
+    .idex_fp_rs2(idex_fp_rs2_addr),
+    .idex_fp_rs3(idex_fp_rs3_addr),
+    .exmem_fp_rd(exmem_fp_rd_addr),
+    .exmem_fp_reg_write(exmem_fp_reg_write),
+    .memwb_fp_rd(memwb_fp_rd_addr),
+    .memwb_fp_reg_write(memwb_fp_reg_write),
+    .fp_forward_a(fp_forward_a),
+    .fp_forward_b(fp_forward_b),
+    .fp_forward_c(fp_forward_c)
   );
 
   // ALU Operand A selection (with forwarding)
@@ -824,6 +919,11 @@ module rv_core_pipelined #(
     .mepc_out(mepc),
     .mstatus_mie(mstatus_mie),
     .illegal_csr(ex_illegal_csr)
+    // TODO: F/D extension: Add FP CSR connections when csr_file is extended
+    // .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx}),
+    // .fflags_we(memwb_fp_reg_write && memwb_valid),
+    // .frm(csr_frm),
+    // .fflags(csr_fflags)
   );
 
   //==========================================================================
@@ -860,7 +960,54 @@ module rv_core_pipelined #(
     .exception_val(exception_val)
   );
 
+  //==========================================================================
+  // FPU (Floating-Point Unit) - F/D Extension
+  //==========================================================================
+
+  // FP Operand Forwarding Muxes
+  assign ex_fp_operand_a = (fp_forward_a == 2'b10) ? exmem_fp_result :
+                           (fp_forward_a == 2'b01) ? memwb_fp_result :
+                           idex_fp_rs1_data;
+
+  assign ex_fp_operand_b = (fp_forward_b == 2'b10) ? exmem_fp_result :
+                           (fp_forward_b == 2'b01) ? memwb_fp_result :
+                           idex_fp_rs2_data;
+
+  assign ex_fp_operand_c = (fp_forward_c == 2'b10) ? exmem_fp_result :
+                           (fp_forward_c == 2'b01) ? memwb_fp_result :
+                           idex_fp_rs3_data;
+
+  // FP Rounding Mode Selection (dynamic from frm CSR or static from instruction)
+  assign ex_fp_rounding_mode = idex_fp_use_dynamic_rm ? csr_frm : idex_fp_rm;
+
+  // FPU Instantiation
+  fpu #(
+    .FLEN(XLEN),
+    .XLEN(XLEN)
+  ) fpu_inst (
+    .clk(clk),
+    .reset_n(reset_n),
+    .start(fpu_start),
+    .fp_alu_op(idex_fp_alu_op),
+    .rounding_mode(ex_fp_rounding_mode),
+    .busy(ex_fpu_busy),
+    .done(ex_fpu_done),
+    .operand_a(ex_fp_operand_a),
+    .operand_b(ex_fp_operand_b),
+    .operand_c(ex_fp_operand_c),
+    .int_operand(ex_alu_operand_a_forwarded),  // For INT→FP conversions (use forwarded rs1)
+    .fp_result(ex_fp_result),
+    .int_result(ex_int_result_fp),
+    .flag_nv(ex_fp_flag_nv),
+    .flag_dz(ex_fp_flag_dz),
+    .flag_of(ex_fp_flag_of),
+    .flag_uf(ex_fp_flag_uf),
+    .flag_nx(ex_fp_flag_nx)
+  );
+
+  //==========================================================================
   // EX/MEM Pipeline Register
+  //==========================================================================
   exmem_register #(
     .XLEN(XLEN)
   ) exmem_reg (
@@ -868,7 +1015,10 @@ module rv_core_pipelined #(
     .reset_n(reset_n),
     .hold(hold_exmem),
     .alu_result_in(ex_alu_result),
-    .mem_write_data_in(ex_rs2_data_forwarded),
+    // For FP stores, use FP register data; for integer stores, use integer register data
+    // FP stores are detected by mem_write && fp_mem_op (Note: fp_mem_op not yet in IDEX, TODO)
+    // For now, use integer path - FP load/store will be added in refinement
+    .mem_write_data_in(ex_rs2_data_forwarded),  // TODO: Mux with ex_fp_operand_b for FP stores
     .rd_addr_in(idex_rd_addr),
     .pc_plus_4_in(ex_pc_plus_4),
     .funct3_in(idex_funct3),
@@ -900,6 +1050,28 @@ module rv_core_pipelined #(
     .valid_out(exmem_valid),
     .mul_div_result_out(exmem_mul_div_result),
     .atomic_result_out(exmem_atomic_result),
+    // FP inputs
+    .fp_result_in(ex_fp_result),
+    .int_result_fp_in(ex_int_result_fp),
+    .fp_rd_addr_in(idex_fp_rd_addr),
+    .fp_reg_write_in(idex_fp_reg_write),
+    .int_reg_write_fp_in(idex_int_reg_write_fp),
+    .fp_flag_nv_in(ex_fp_flag_nv),
+    .fp_flag_dz_in(ex_fp_flag_dz),
+    .fp_flag_of_in(ex_fp_flag_of),
+    .fp_flag_uf_in(ex_fp_flag_uf),
+    .fp_flag_nx_in(ex_fp_flag_nx),
+    // FP outputs
+    .fp_result_out(exmem_fp_result),
+    .int_result_fp_out(exmem_int_result_fp),
+    .fp_rd_addr_out(exmem_fp_rd_addr),
+    .fp_reg_write_out(exmem_fp_reg_write),
+    .int_reg_write_fp_out(exmem_int_reg_write_fp),
+    .fp_flag_nv_out(exmem_fp_flag_nv),
+    .fp_flag_dz_out(exmem_fp_flag_dz),
+    .fp_flag_of_out(exmem_fp_flag_of),
+    .fp_flag_uf_out(exmem_fp_flag_uf),
+    .fp_flag_nx_out(exmem_fp_flag_nx),
     // CSR outputs
     .csr_addr_out(exmem_csr_addr),
     .csr_we_out(exmem_csr_we),
@@ -967,6 +1139,17 @@ module rv_core_pipelined #(
     .valid_in(exmem_valid && !exception),  // Mark invalid on exception
     .mul_div_result_in(exmem_mul_div_result),
     .atomic_result_in(exmem_atomic_result),
+    // F/D extension inputs
+    .fp_result_in(exmem_fp_result),
+    .int_result_fp_in(exmem_int_result_fp),
+    .fp_rd_addr_in(exmem_fp_rd_addr),
+    .fp_reg_write_in(exmem_fp_reg_write),
+    .int_reg_write_fp_in(exmem_int_reg_write_fp),
+    .fp_flag_nv_in(exmem_fp_flag_nv),
+    .fp_flag_dz_in(exmem_fp_flag_dz),
+    .fp_flag_of_in(exmem_fp_flag_of),
+    .fp_flag_uf_in(exmem_fp_flag_uf),
+    .fp_flag_nx_in(exmem_fp_flag_nx),
     // CSR input
     .csr_rdata_in(exmem_csr_rdata),
     // Outputs
@@ -979,6 +1162,17 @@ module rv_core_pipelined #(
     .valid_out(memwb_valid),
     .mul_div_result_out(memwb_mul_div_result),
     .atomic_result_out(memwb_atomic_result),
+    // F/D extension outputs
+    .fp_result_out(memwb_fp_result),
+    .int_result_fp_out(memwb_int_result_fp),
+    .fp_rd_addr_out(memwb_fp_rd_addr),
+    .fp_reg_write_out(memwb_fp_reg_write),
+    .int_reg_write_fp_out(memwb_int_reg_write_fp),
+    .fp_flag_nv_out(memwb_fp_flag_nv),
+    .fp_flag_dz_out(memwb_fp_flag_dz),
+    .fp_flag_of_out(memwb_fp_flag_of),
+    .fp_flag_uf_out(memwb_fp_flag_uf),
+    .fp_flag_nx_out(memwb_fp_flag_nx),
     // CSR output
     .csr_rdata_out(memwb_csr_rdata)
   );
@@ -987,7 +1181,7 @@ module rv_core_pipelined #(
   // WB STAGE: Write Back
   //==========================================================================
 
-  // Write-Back Data Selection
+  // Write-Back Data Selection (Integer Register File)
   assign wb_data = (memwb_wb_sel == 3'b000) ? memwb_alu_result :      // ALU result
                    (memwb_wb_sel == 3'b001) ? memwb_mem_read_data :   // Memory data
                    (memwb_wb_sel == 3'b010) ? memwb_pc_plus_4 :       // PC + 4 (JAL/JALR)
@@ -995,5 +1189,17 @@ module rv_core_pipelined #(
                    (memwb_wb_sel == 3'b100) ? memwb_mul_div_result :  // M extension result
                    (memwb_wb_sel == 3'b101) ? memwb_atomic_result :   // A extension result
                    {XLEN{1'b0}};
+
+  // F/D Extension: FP Write-Back Data Selection
+  // FP results go to FP register file, INT-to-FP conversions also go to FP register file
+  // FP loads (FLW/FLD) also write to FP register file through mem_read_data
+  // Detect FP load by checking wb_sel == 001 (memory data) and fp_reg_write is set
+  assign wb_fp_data = (memwb_wb_sel == 3'b001) ? memwb_mem_read_data :  // FP load
+                      memwb_fp_result;                                    // FP ALU result
+
+  // FP-to-INT conversion results go to integer register file
+  // (handled through memwb_int_result_fp which is already part of wb_sel muxing if needed)
+  // Note: Current design assumes FP ops write to FP regfile, INT ops to INT regfile
+  // FMV.X.W/FCLASS.S write to integer regfile via int_result_fp path
 
 endmodule
