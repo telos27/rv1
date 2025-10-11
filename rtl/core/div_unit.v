@@ -103,7 +103,9 @@ module div_unit #(
       end
 
       COMPUTE: begin
-        if (cycle_count >= op_width || div_by_zero || overflow)
+        // Transition to DONE after op_width cycles (0 to op_width-1)
+        // Check if next cycle will be >= op_width
+        if ((cycle_count + 1) >= op_width || div_by_zero || overflow)
           state_next = DONE;
       end
 
@@ -137,8 +139,11 @@ module div_unit #(
 
           if (start) begin
             // Initialize for division
-            quotient           <= {XLEN{1'b0}};
-            remainder          <= {{1'b0}, abs_dividend};
+            // For non-restoring division:
+            //   - quotient (Q) starts with dividend
+            //   - remainder (A) starts at 0
+            quotient           <= abs_dividend;
+            remainder          <= {(XLEN+1){1'b0}};
             divisor_reg        <= abs_divisor;
             cycle_count        <= 7'd0;
             op_reg             <= div_op;
@@ -155,18 +160,33 @@ module div_unit #(
         COMPUTE: begin
           if (!div_by_zero && !overflow) begin
             // Non-restoring division algorithm
-            // Shift remainder left by 1
-            remainder <= {remainder[XLEN-1:0], 1'b0};
+            // A = remainder[XLEN-1:0] (upper part)
+            // Q = quotient[XLEN-1:0] (lower part)
 
-            // Conditional subtract/add based on remainder sign
-            if (remainder[XLEN]) begin  // Remainder is negative
-              remainder <= remainder + {1'b0, divisor_reg};
-              quotient  <= {quotient[XLEN-2:0], 1'b0};
-            end else begin              // Remainder is positive
-              remainder <= remainder - {1'b0, divisor_reg};
-              quotient  <= {quotient[XLEN-2:0], 1'b1};
+            reg [XLEN-1:0] shifted_A;
+            reg [XLEN-1:0] new_A;
+            reg [XLEN-1:0] Q_shifted;
+            reg q_bit;
+
+            // Step 1: Shift {A, Q} left by 1
+            // A = {A[XLEN-2:0], Q[XLEN-1]}
+            // Q = {Q[XLEN-2:0], 0}
+            shifted_A = {remainder[XLEN-2:0], quotient[XLEN-1]};
+            Q_shifted = {quotient[XLEN-2:0], 1'b0};
+
+            // Step 2: Add/subtract based on OLD A sign (before shift)
+            if (remainder[XLEN-1]) begin  // A was negative
+              new_A = shifted_A + divisor_reg;
+            end else begin                 // A was positive/zero
+              new_A = shifted_A - divisor_reg;
             end
 
+            // Step 3: Set Q[0] based on new A sign
+            q_bit = ~new_A[XLEN-1];  // 1 if positive, 0 if negative
+
+            // Update registers
+            remainder <= {1'b0, new_A};  // Extend to XLEN+1 with leading 0
+            quotient  <= Q_shifted | {{(XLEN-1){1'b0}}, q_bit};
             cycle_count <= cycle_count + 1;
           end
         end

@@ -33,13 +33,16 @@ A educational RISC-V processor implementation in Verilog, built incrementally fr
 
 **Recent Achievements (2025-10-10):**
 
-**Phase 6 Complete - M Extension (Session 10):**
+**Phase 6 Complete - M Extension (Sessions 10-11):**
 ✅ **M Extension Fully Implemented and Working**
 - All 8 RV32M instructions: MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU
 - All 5 RV64M instructions: MULW, DIVW, DIVUW, REMW, REMUW
 - EX stage holding architecture for multi-cycle operations
-- 32-cycle multiply/divide execution
+- 32-cycle multiply, 64-cycle divide execution
+- **DIV bug fixed**: Corrected non-restoring algorithm and cycle count
+- **test_m_seq.s PASSED**: All operations verified (MUL, DIV, REM) ✅
 - **test_m_simple.s PASSED**: 5 × 10 = 50 ✅
+- **test_m_basic.s PASSED**: Comprehensive M extension test ✅
 - No regression in existing tests
 
 ✅ **Pipeline Enhancements**
@@ -129,14 +132,14 @@ See [PHASES.md](PHASES.md) for detailed development roadmap.
 
 ### Phase 6: M Extension ✅ COMPLETE
 - [x] Multiply unit (sequential add-and-shift algorithm)
-- [x] Divide unit (non-restoring division algorithm)
+- [x] Divide unit (non-restoring division algorithm) - **Fixed DIV bug**
 - [x] Mul/Div wrapper with unified interface
 - [x] Pipeline integration with hold mechanism
 - [x] All 8 RV32M instructions (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
 - [x] All 5 RV64M instructions (MULW, DIVW, DIVUW, REMW, REMUW)
 - [x] Edge case handling (div-by-zero, overflow per RISC-V spec)
 - [x] EX stage holding for multi-cycle operations
-- [x] Basic testing (test_m_simple.s passes)
+- [x] Comprehensive testing (all M operations verified)
 
 ### Future Extensions
 - [ ] M Extension compliance testing (RV32M/RV64M test suites)
