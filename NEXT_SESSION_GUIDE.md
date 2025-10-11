@@ -1,449 +1,181 @@
-# Next Session Quick Start Guide
+# Next Session Guide: M Extension Pipeline Integration
 
-**Date Created**: 2025-10-10
-**Current Status**: Phase 5 Parameterization COMPLETE ✅
-**Next Phase**: Testing, Validation, and Future Extensions
-
----
-
-## What Was Just Completed
-
-**Phase 5 - Parameterization (100% Complete)**
-- ✅ All 16 modules parameterized for RV32/RV64 support
-- ✅ Build system with 5 configuration targets
-- ✅ RV64 instruction support (LD, SD, LWU)
-- ✅ Comprehensive documentation created
-- ✅ Both RV32I and RV64I compile successfully
-
-See `SESSION_SUMMARY_2025-10-10_phase5_complete.md` for full details.
+**Date**: 2025-10-10
+**Status**: Memory loading bug FIXED ✓, M extension modules complete, pipeline integration pending
+**Git**: Committed to main
 
 ---
 
-## Current State of the Project
+## What Was Accomplished This Session
 
-### What's Working
-- ✅ **RV32I**: 40/42 compliance tests passing (95%)
-- ✅ **Build System**: 5 configurations ready (rv32i, rv32im, rv32imc, rv64i, rv64gc)
-- ✅ **CSR Support**: 13 Machine-mode CSRs implemented
-- ✅ **Exception Handling**: 6 exception types with trap support
-- ✅ **Pipeline**: 5-stage with 3-level forwarding and hazard detection
-- ✅ **Parameterization**: All modules support XLEN=32 or XLEN=64
+### ✅ Critical Bug Fix: Instruction Memory Loading
+**Problem**: PC was running away to 0x9c3c instead of executing programs correctly
+**Root Cause**: `instruction_memory.v` was using `$readmemh` to load 32-bit word hex files directly into an 8-bit byte array
+**Solution**:
+- Added temporary 32-bit word array for loading
+- Convert words to little-endian byte array
+- Added debug output to verify loading
 
-### What Needs Testing
-- ⏳ **RV32I Regression**: Verify 40/42 compliance tests still pass after parameterization
-- ⏳ **RV64I Functionality**: Test RV64-specific instructions (LD, SD, LWU)
-- ⏳ **RV64I Compliance**: Run RV64I compliance suite
+**Testing**: test_nop.s now completes in 11 cycles with correct register values (a0=0x600d)
 
-### What's Not Implemented Yet
-- ❌ **M Extension**: Multiply/divide instructions
-- ❌ **A Extension**: Atomic instructions
-- ❌ **C Extension**: Compressed instructions
-- ❌ **Cache**: I-cache and D-cache
-- ❌ **RV64M**: 64-bit multiply/divide
+### ✅ M Extension Core Modules (Complete but Not Integrated)
+- `rtl/core/mul_unit.v` - Sequential multiplier (32 cycles)
+- `rtl/core/div_unit.v` - Non-restoring divider (32 cycles)
+- `rtl/core/mul_div_unit.v` - Wrapper module
+- All committed to git and tested individually
 
 ---
 
-## Quick Start Commands
+## Next Session: M Extension Pipeline Integration
 
-### Build and Run RV32I
+### The Challenge
+The M extension requires **multi-cycle operations** that must properly integrate with the 5-stage pipeline. The key issue is **timing**: ensuring the M unit result is available when the instruction reaches the write-back stage.
+
+### Problem Analysis (from this session)
+When trying to integrate, we encountered:
+1. **Stall timing issue**: M instruction leaves EX stage before busy signal goes high (busy is registered, has 1-cycle delay)
+2. **Result capture issue**: Result becomes ready in EX stage but instruction has already advanced to WB
+3. **Writeback timing**: Need to coordinate when reg_write happens with when result is valid
+
+### Recommended Approach for Next Session
+
+**Option 1: Result Bypass Architecture** (Recommended)
+- M unit result stays in EX stage in dedicated registers
+- When ready signal goes high, result is forwarded directly to WB stage
+- Gate reg_write in WB stage to only write when M result is valid
+- This avoids complex multi-stage stalling
+
+**Option 2: Full Pipeline Stall** (More complex)
+- Stall ID/EX, EX/MEM, and MEM/WB registers while M unit is busy
+- Ensure M instruction stays in EX stage for entire operation
+- Key: Must prevent instruction from advancing BEFORE busy goes high
+- Requires careful handling of stall signal timing
+
+**Option 3: Scoreboarding**
+- Let M instruction advance through pipeline normally
+- Mark register as "pending" in scoreboard
+- Stall dependent instructions until M result is ready
+- Write result when ready, even if instruction is out of pipeline
+
+### Files That Need Modification
+
+**For Pipeline Integration**:
+1. `rtl/core/control.v` - Add M extension control signals (wb_sel = 3'b100)
+2. `rtl/core/decoder.v` - Already has M extension detection
+3. `rtl/core/rv32i_core_pipelined.v` - Instantiate M unit, wire signals
+4. `rtl/core/hazard_detection_unit.v` - Add M extension stall logic
+5. `rtl/core/idex_register.v` - Propagate M extension signals
+6. `rtl/core/exmem_register.v` - Propagate M results
+7. `rtl/core/memwb_register.v` - Propagate M results
+
+**Key Signals to Add**:
+- `is_mul_div` - M instruction flag (from decoder, through pipeline)
+- `mul_div_op[3:0]` - Operation select (MUL, MULH, DIV, etc.)
+- `mul_div_result[XLEN-1:0]` - Result from M unit
+- `mul_div_busy` - M unit busy signal
+- `mul_div_ready` - Result ready signal (1-cycle pulse)
+
+### Test Programs Ready
+- `tests/asm/test_m_simple.s` - Single MUL (5 × 10 = 50)
+- `tests/asm/test_m_basic.s` - 12 comprehensive tests
+- `tests/asm/test_nop.s` - Control test (no M instructions)
+
+### Expected Behavior
+```
+test_m_simple.s should produce:
+- a0 = 5
+- a1 = 10
+- a2 = 0x32 (50 decimal) ← This is the MUL result
+- Final a0 = 0x600D (pass indicator)
+```
+
+### Debug Strategy
+1. Start with `test_nop.s` to ensure no regression
+2. Use waveforms to trace M instruction through pipeline
+3. Monitor signals: `busy`, `ready`, `result`, `wb_sel`, `reg_write`
+4. Check that stall prevents instruction from advancing too early
+5. Verify result is captured at correct pipeline stage
+
+### Quick Start Commands
 ```bash
 cd /home/lei/rv1
 
-# Build RV32I pipelined core
-make pipelined-rv32i
+# Verify memory fix still works
+iverilog -g2005-sv -I rtl -o sim/test_nop -DXLEN=32 \
+  -DMEM_FILE=\"tests/asm/test_nop.hex\" \
+  tb/integration/tb_core_pipelined.v rtl/core/*.v rtl/memory/*.v
+timeout 5 vvp sim/test_nop
 
-# Run simulation
-make run-rv32i
-
-# Run compliance tests
-make compliance
-```
-
-### Build and Run RV64I
-```bash
-# Build RV64I pipelined core
-make pipelined-rv64i
-
-# Run simulation
-make run-rv64i
-
-# Note: RV64I compliance tests not yet set up
-```
-
-### Run Unit Tests
-```bash
-make test-unit       # All unit tests
-make test-alu        # Just ALU
-make test-regfile    # Just register file
-make test-decoder    # Just decoder
-```
-
-### Build System
-```bash
-make help            # Show all available targets
-make info            # Show configuration details
-make clean           # Clean build artifacts
+# After integration, test M extension
+iverilog -g2005-sv -I rtl -o sim/test_m_simple -DXLEN=32 \
+  -DMEM_FILE=\"tests/asm/test_m_simple.hex\" \
+  tb/integration/tb_core_pipelined.v rtl/core/*.v rtl/memory/*.v
+timeout 10 vvp sim/test_m_simple
 ```
 
 ---
 
-## Recommended Next Steps
+## Reference Materials
 
-### Option 1: Verification & Testing (Recommended First)
+### Documentation Available
+- `docs/M_EXTENSION_DESIGN.md` - Full M extension specification
+- `M_EXTENSION_PROGRESS.md` - Implementation status
+- This session explored multiple integration approaches
 
-**Priority**: HIGH - Ensure parameterization didn't break anything
+### M Extension Modules
+All three modules are complete and tested:
+- Support RV32M and RV64M (XLEN parameter)
+- Handle all RISC-V spec edge cases
+- 32-cycle latency for both multiply and divide
+- Proper busy/ready handshaking
 
-1. **RV32I Regression Testing**
-   ```bash
-   # Run compliance tests to verify 40/42 still pass
-   make compliance
-
-   # Check for any new failures
-   # Expected: 40/42 passing (fence_i and ma_data fail)
-   ```
-
-2. **Create RV64I Test Programs**
-   - Simple RV64 test using LD/SD/LWU
-   - Test XLEN-wide arithmetic
-   - Verify sign-extension works correctly
-
-3. **Validate Build System**
-   - Try all 5 configuration targets
-   - Verify each builds cleanly
-   - Document any warnings or issues
-
-**Estimated Time**: 2-3 hours
-
-**Deliverables**:
-- Regression test results
-- RV64 test programs
-- Validation report
-
-### Option 2: M Extension Implementation
-
-**Priority**: MEDIUM - Next major feature
-
-1. **Design Phase**
-   - Read RISC-V M extension spec
-   - Design multiplier (iterative or Booth)
-   - Design divider (restoring or non-restoring)
-   - Plan pipeline integration
-
-2. **Implementation**
-   - Create `multiply_unit.v` module
-   - Create `divide_unit.v` module
-   - Integrate with pipeline (multi-cycle execution)
-   - Add pipeline stalling for M instructions
-
-3. **Testing**
-   - Unit tests for multiply/divide
-   - RV32M compliance tests
-   - Edge cases (overflow, divide by zero)
-
-**Estimated Time**: 1-2 weeks
-
-**Deliverables**:
-- Multiply and divide units
-- Pipeline integration
-- M extension compliance tests passing
-
-### Option 3: Cache Implementation
-
-**Priority**: MEDIUM - Performance enhancement
-
-1. **I-Cache**
-   - Direct-mapped design
-   - Parameterized size
-   - Miss handling
-
-2. **D-Cache**
-   - Set-associative design
-   - Write-back or write-through
-   - Cache coherency (if multicore)
-
-3. **Integration**
-   - Replace direct memory with cache
-   - Add miss penalty
-   - Performance measurement
-
-**Estimated Time**: 2-3 weeks
-
-**Deliverables**:
-- I-cache and D-cache modules
-- Cache controller
-- Performance analysis report
-
-### Option 4: RV64M Support
-
-**Priority**: LOW - Depends on M extension
-
-1. **64-bit Multiply/Divide**
-   - MULW, DIVW, REMW, etc.
-   - Sign-extension of 32-bit results
-
-2. **Testing**
-   - RV64M compliance tests
-   - Edge cases
-
-**Estimated Time**: 1 week (after M extension done)
-
----
-
-## Files to Review Before Starting
-
-### Critical Files
-1. **PHASES.md** - Current status and roadmap
-2. **ARCHITECTURE.md** - Design decisions and constraints
-3. **docs/PARAMETERIZATION_GUIDE.md** - How parameterization works
-4. **Makefile** - Build system targets
-5. **rtl/config/rv_config.vh** - Configuration file
-
-### Implementation Files
-6. **rtl/core/rv_core_pipelined.v** - Top-level integration (715 lines)
-7. **rtl/core/csr_file.v** - CSR implementation
-8. **rtl/core/exception_unit.v** - Exception handling
-9. **rtl/core/control.v** - Control signals with RV64 support
-
-### Testing Infrastructure
-10. **tb/integration/tb_core_pipelined.v** - Main testbench
-11. **tools/run_compliance_pipelined.sh** - Compliance test script
-12. **tests/riscv-tests/** - Official RISC-V test suite
-
----
-
-## Common Workflows
-
-### Workflow 1: Run Compliance Tests
-```bash
-cd /home/lei/rv1
-
-# Make sure compliance tests are available
-if [ -d "tests/riscv-tests" ]; then
-  echo "Compliance tests ready"
-else
-  echo "Need to clone riscv-tests"
-fi
-
-# Run compliance suite
-make compliance
-
-# View results
-cat sim/compliance_results.log
+### RISC-V M Extension Instructions
 ```
+MUL    rd, rs1, rs2  # Lower 32/64 bits of product
+MULH   rd, rs1, rs2  # Upper bits (signed × signed)
+MULHSU rd, rs1, rs2  # Upper bits (signed × unsigned)
+MULHU  rd, rs1, rs2  # Upper bits (unsigned × unsigned)
+DIV    rd, rs1, rs2  # Quotient (signed)
+DIVU   rd, rs1, rs2  # Quotient (unsigned)
+REM    rd, rs1, rs2  # Remainder (signed)
+REMU   rd, rs1, rs2  # Remainder (unsigned)
 
-### Workflow 2: Create New Test Program
-```bash
-# 1. Create assembly file
-cat > tests/asm/my_test.s << 'EOF'
-.section .text
-.globl _start
-
-_start:
-    # Your test code here
-    addi x10, x0, 42
-
-    # End with EBREAK
-    ebreak
-EOF
-
-# 2. Assemble test
-./tools/assemble.sh tests/asm/my_test.s
-
-# 3. Run test
-make run-test TEST=my_test
-
-# 4. Check results
-# Look for "Test PASSED" in output
-```
-
-### Workflow 3: Add New Module
-```bash
-# 1. Create module file
-cat > rtl/core/new_module.v << 'EOF'
-`include "config/rv_config.vh"
-
-module new_module #(
-  parameter XLEN = `XLEN
-) (
-  input  wire             clk,
-  input  wire             reset_n,
-  input  wire [XLEN-1:0]  data_in,
-  output wire [XLEN-1:0]  data_out
-);
-
-// Implementation here
-
-endmodule
-EOF
-
-# 2. Create testbench
-cat > tb/unit/tb_new_module.v << 'EOF'
-`timescale 1ns/1ps
-
-module tb_new_module;
-  // Test implementation
-endmodule
-EOF
-
-# 3. Update Makefile
-# Add test target for new module
-
-# 4. Test
-make test-new-module
-```
-
-### Workflow 4: Debug with Waveforms
-```bash
-# 1. Run simulation (generates VCD)
-make run-rv32i
-
-# 2. Open waveform viewer
-gtkwave sim/waves/core_pipelined.vcd &
-
-# 3. Load signals of interest
-# - Add: pc_out
-# - Add: instr_out
-# - Add: DUT.regfile.registers[10] (x10/a0 return value)
-# - Add pipeline stage signals
+RV64M adds: MULW, DIVW, DIVUW, REMW, REMUW (32-bit operations)
 ```
 
 ---
 
-## Known Issues & Limitations
+## Success Criteria
 
-### Expected Test Failures
-1. **fence_i** - Expected failure (no instruction cache implemented)
-2. **ma_data** - Timeout (needs investigation)
+### Minimum Goal
+- test_nop.s still passes (no regression)
+- test_m_simple.s completes without timeout
+- a2 = 0x32 (correct MUL result)
 
-### RV64 Limitations
-- No RV64 test programs created yet
-- No RV64 compliance tests run yet
-- RV64M extension not implemented
-
-### Performance
-- No caching (memory access is slow)
-- No branch prediction (predict-not-taken only)
-- Multiply/divide not implemented (would be multi-cycle)
-
-### Extensions Not Implemented
-- M: Multiply/divide
-- A: Atomics
-- C: Compressed instructions
-- F/D: Floating point
+### Full Success
+- All 12 tests in test_m_basic.s pass
+- M unit stalls pipeline for correct duration
+- Results are correctly written to destination registers
+- No spurious writes or data hazards
 
 ---
 
-## Testing Checklist
+## Notes
 
-When you start the next session, verify:
+### What NOT to Do
+- Don't try to use the partially-working integration code from this session
+- Start fresh with a clear architecture decision (Option 1, 2, or 3 above)
+- Don't commit broken integration code
 
-- [ ] All files committed to git
-- [ ] Working directory is `/home/lei/rv1`
-- [ ] Can build RV32I: `make pipelined-rv32i`
-- [ ] Can build RV64I: `make pipelined-rv64i`
-- [ ] Can run tests: `make test-unit`
-- [ ] Compliance tests ready: `ls tests/riscv-tests/`
+### Architecture Decision
+The key architectural question is: **Where should the M result live while waiting for writeback?**
+- In EX stage (requires complex forwarding)
+- In dedicated result registers (simpler)
+- Advancing through pipeline (requires timing coordination)
 
----
-
-## Git Status
-
-Before starting next session, check:
-
-```bash
-cd /home/lei/rv1
-
-# Check current branch
-git branch
-
-# Check for uncommitted changes
-git status
-
-# See recent commits
-git log --oneline -10
-```
-
-**Expected**: Phase 5 changes committed, working directory clean
-
----
-
-## Resource Links
-
-### Documentation
-- [RISC-V ISA Manual](https://riscv.org/technical/specifications/)
-- [RV64I Spec](https://github.com/riscv/riscv-isa-manual/releases)
-- [M Extension](https://github.com/riscv/riscv-isa-manual) (Chapter 7)
-- [Compliance Tests](https://github.com/riscv/riscv-compliance)
-
-### Project Docs
-- `PHASES.md` - Development roadmap
-- `ARCHITECTURE.md` - Design details
-- `docs/PARAMETERIZATION_GUIDE.md` - Parameterization guide
-- `SESSION_SUMMARY_2025-10-10_phase5_complete.md` - Latest session summary
-
-### Tools
-- Icarus Verilog: `man iverilog`
-- RISC-V Toolchain: `riscv64-unknown-elf-gcc --version`
-- GTKWave: `gtkwave --help`
-
----
-
-## Quick Reference
-
-### Configuration Defines
-- `CONFIG_RV32I` - RV32I base ISA
-- `CONFIG_RV32IM` - RV32I + M extension
-- `CONFIG_RV32IMC` - RV32I + M + C extensions
-- `CONFIG_RV64I` - RV64I base ISA
-- `CONFIG_RV64GC` - RV64 full-featured
-
-### Important Parameters
-- `XLEN` - 32 or 64 (architecture width)
-- `RESET_VECTOR` - Initial PC value
-- `IMEM_SIZE` - Instruction memory size (default 16KB)
-- `DMEM_SIZE` - Data memory size (default 16KB)
-
-### Key Signals
-- `pc_out` - Current program counter
-- `instr_out` - Current instruction
-- `DUT.regfile.registers[N]` - Register file contents
-- `DUT.csr_file.mepc_r` - Exception PC
-- `DUT.exception_unit.exception_valid` - Exception occurred
-
----
-
-## Contact & Support
-
-For questions or issues:
-1. Check documentation in `docs/`
-2. Review `PHASES.md` for roadmap
-3. Look at session summaries for recent changes
-4. Consult `ARCHITECTURE.md` for design decisions
-
----
-
-## Summary
-
-**You are here**: ✅ Phase 5 Complete - Fully parameterized processor
-
-**Next logical steps**:
-1. 🧪 Verify RV32I regression (recommended first)
-2. 🧪 Test RV64I functionality
-3. 🔧 Implement M extension
-4. 🚀 Add caching for performance
-
-**Build system ready**: 5 configurations available via Makefile
-
-**Documentation complete**: Comprehensive guides and summaries created
-
-**Ready to proceed**: All tools and infrastructure in place
-
----
-
-*Good luck with the next session!* 🚀
+I recommend Option 1 (Result Bypass) for simplicity.
 
 ---
 
 **Last Updated**: 2025-10-10
-**Phase**: 5 (Parameterization) - COMPLETE
-**Next Phase**: Testing & Validation, then Extensions
+**Status**: Ready for M extension pipeline integration
