@@ -70,6 +70,14 @@ module rv_core_pipelined #(
   wire [4:0]      id_funct5_dec;     // funct5 field from decoder (atomic op)
   wire            id_aq_dec;         // Acquire bit from decoder
   wire            id_rl_dec;         // Release bit from decoder
+  wire [4:0]      id_rs3;            // Third source register (FMA)
+  wire            id_is_fp;          // F/D extension instruction from decoder
+  wire            id_is_fp_load;     // FP load instruction
+  wire            id_is_fp_store;    // FP store instruction
+  wire            id_is_fp_op;       // FP computational operation
+  wire            id_is_fp_fma;      // FP FMA instruction
+  wire [2:0]      id_fp_rm;          // FP rounding mode from instruction
+  wire            id_fp_fmt;         // FP format: 0=single, 1=double
 
   // Control signals
   wire        id_reg_write;
@@ -97,6 +105,22 @@ module rv_core_pipelined #(
   // Register file outputs
   wire [XLEN-1:0] id_rs1_data;
   wire [XLEN-1:0] id_rs2_data;
+
+  // FP control signals from control unit
+  wire            id_fp_reg_write;    // FP register write enable
+  wire            id_int_reg_write_fp;// Integer register write (FP compare/classify/FMV.X.W)
+  wire            id_fp_mem_op;       // FP memory operation
+  wire            id_fp_alu_en;       // FP ALU enable
+  wire [4:0]      id_fp_alu_op;       // FP ALU operation
+  wire            id_fp_use_dynamic_rm; // Use dynamic rounding mode from frm CSR
+
+  // FP register file outputs
+  wire [XLEN-1:0] id_fp_rs1_data;
+  wire [XLEN-1:0] id_fp_rs2_data;
+  wire [XLEN-1:0] id_fp_rs3_data;
+  wire [XLEN-1:0] id_fp_rs1_data_raw; // Raw FP register file output
+  wire [XLEN-1:0] id_fp_rs2_data_raw;
+  wire [XLEN-1:0] id_fp_rs3_data_raw;
 
   // Immediate selection
   wire [XLEN-1:0] id_immediate;
@@ -130,6 +154,19 @@ module rv_core_pipelined #(
   wire [4:0]      idex_funct5;
   wire            idex_aq;
   wire            idex_rl;
+  wire [XLEN-1:0] idex_fp_rs1_data;
+  wire [XLEN-1:0] idex_fp_rs2_data;
+  wire [XLEN-1:0] idex_fp_rs3_data;
+  wire [4:0]      idex_fp_rs1_addr;
+  wire [4:0]      idex_fp_rs2_addr;
+  wire [4:0]      idex_fp_rs3_addr;
+  wire [4:0]      idex_fp_rd_addr;
+  wire            idex_fp_reg_write;
+  wire            idex_int_reg_write_fp;
+  wire            idex_fp_alu_en;
+  wire [4:0]      idex_fp_alu_op;
+  wire [2:0]      idex_fp_rm;
+  wire            idex_fp_use_dynamic_rm;
   wire [11:0]     idex_csr_addr;
   wire            idex_csr_we;
   wire            idex_csr_src;
@@ -163,15 +200,38 @@ module rv_core_pipelined #(
   wire            ex_mul_div_busy;
   wire            ex_mul_div_ready;
 
-  // Hold EX/MEM register when M instruction or A instruction is executing
+  // F/D extension signals
+  wire [XLEN-1:0] ex_fp_operand_a;        // FP operand A (potentially forwarded)
+  wire [XLEN-1:0] ex_fp_operand_b;        // FP operand B (potentially forwarded)
+  wire [XLEN-1:0] ex_fp_operand_c;        // FP operand C (potentially forwarded, for FMA)
+  wire [XLEN-1:0] ex_fp_result;           // FP result from FPU
+  wire [XLEN-1:0] ex_int_result_fp;       // Integer result from FP ops (compare/classify/FMV.X.W)
+  wire            ex_fpu_busy;             // FPU busy signal
+  wire            ex_fpu_done;             // FPU done signal
+  wire [2:0]      ex_fp_rounding_mode;     // Final rounding mode (from instruction or frm CSR)
+  wire            ex_fp_flag_nv;           // FP exception flags
+  wire            ex_fp_flag_dz;
+  wire            ex_fp_flag_of;
+  wire            ex_fp_flag_uf;
+  wire            ex_fp_flag_nx;
+  wire [1:0]      fp_forward_a;            // FP forwarding control signals
+  wire [1:0]      fp_forward_b;
+  wire [1:0]      fp_forward_c;
+
+  // Hold EX/MEM register when M instruction or A instruction or FP instruction is executing
   wire            hold_exmem;
   assign hold_exmem = (idex_is_mul_div && idex_valid && !ex_mul_div_ready) ||
-                      (idex_is_atomic && idex_valid && !ex_atomic_done);
+                      (idex_is_atomic && idex_valid && !ex_atomic_done) ||
+                      (idex_fp_alu_en && idex_valid && !ex_fpu_done);
 
   // M unit start signal: pulse once when M instruction first enters EX
   // Only start if not already busy or ready (prevents restarting)
   wire            m_unit_start;
   assign m_unit_start = idex_is_mul_div && idex_valid && !ex_mul_div_busy && !ex_mul_div_ready;
+
+  // FPU start signal: pulse once when FP instruction first enters EX
+  wire            fpu_start;
+  assign fpu_start = idex_fp_alu_en && idex_valid && !ex_fpu_busy && !ex_fpu_done;
 
   //==========================================================================
   // EX/MEM Pipeline Register Outputs
@@ -188,6 +248,16 @@ module rv_core_pipelined #(
   wire            exmem_valid;
   wire [XLEN-1:0] exmem_mul_div_result;
   wire [XLEN-1:0] exmem_atomic_result;
+  wire [XLEN-1:0] exmem_fp_result;
+  wire [XLEN-1:0] exmem_int_result_fp;
+  wire [4:0]      exmem_fp_rd_addr;
+  wire            exmem_fp_reg_write;
+  wire            exmem_int_reg_write_fp;
+  wire            exmem_fp_flag_nv;
+  wire            exmem_fp_flag_dz;
+  wire            exmem_fp_flag_of;
+  wire            exmem_fp_flag_uf;
+  wire            exmem_fp_flag_nx;
   wire [11:0]     exmem_csr_addr;
   wire            exmem_csr_we;
   wire [XLEN-1:0] exmem_csr_rdata;
@@ -212,6 +282,16 @@ module rv_core_pipelined #(
   wire            memwb_valid;
   wire [XLEN-1:0] memwb_mul_div_result;
   wire [XLEN-1:0] memwb_atomic_result;
+  wire [XLEN-1:0] memwb_fp_result;
+  wire [XLEN-1:0] memwb_int_result_fp;
+  wire [4:0]      memwb_fp_rd_addr;
+  wire            memwb_fp_reg_write;
+  wire            memwb_int_reg_write_fp;
+  wire            memwb_fp_flag_nv;
+  wire            memwb_fp_flag_dz;
+  wire            memwb_fp_flag_of;
+  wire            memwb_fp_flag_uf;
+  wire            memwb_fp_flag_nx;
   wire [XLEN-1:0] memwb_csr_rdata;
 
   //==========================================================================
@@ -224,11 +304,14 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] trap_vector;
   wire [XLEN-1:0] mepc;
   wire            mstatus_mie;
+  wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
+  wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
 
   //==========================================================================
   // WB Stage Signals
   //==========================================================================
   wire [XLEN-1:0] wb_data;
+  wire [XLEN-1:0] wb_fp_data;         // FP write-back data
 
   //==========================================================================
   // Debug outputs

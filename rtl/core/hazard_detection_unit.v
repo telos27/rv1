@@ -21,6 +21,10 @@ module hazard_detection_unit (
   input  wire        atomic_done,      // A unit operation complete
   input  wire        idex_is_atomic,   // A instruction in EX stage
 
+  // F/D extension signals
+  input  wire        fpu_busy,         // FPU is busy (multi-cycle operation in progress)
+  input  wire        idex_fp_alu_en,   // FP instruction in EX stage
+
   // Hazard control outputs
   output wire        stall_pc,         // Stall program counter
   output wire        stall_ifid,       // Stall IF/ID register
@@ -69,12 +73,18 @@ module hazard_detection_unit (
   wire a_extension_stall;
   assign a_extension_stall = (atomic_busy || idex_is_atomic) && !atomic_done;
 
+  // FP extension hazard: stall IF/ID stages when FPU is busy OR when FP instruction just entered EX
+  // FP multi-cycle operations (FDIV, FSQRT, FMA, etc.) hold the pipeline.
+  // Similar to M extension, the FP instruction is held in EX stage using hold signals.
+  wire fp_extension_stall;
+  assign fp_extension_stall = fpu_busy || idex_fp_alu_en;
+
   // Generate control signals
-  // Stall if load-use hazard, M extension dependency, or A extension dependency
-  assign stall_pc    = load_use_hazard || m_extension_stall || a_extension_stall;
-  assign stall_ifid  = load_use_hazard || m_extension_stall || a_extension_stall;
-  // Note: Only bubble for load-use hazard, NOT for M/A stall
-  // (M/A stall uses hold signals on IDEX and EXMEM to keep instruction in place)
+  // Stall if load-use hazard, M extension dependency, A extension dependency, or FP extension dependency
+  assign stall_pc    = load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
+  assign stall_ifid  = load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
+  // Note: Only bubble for load-use hazard, NOT for M/A/FP stall
+  // (M/A/FP stall uses hold signals on IDEX and EXMEM to keep instruction in place)
   assign bubble_idex = load_use_hazard;
 
 endmodule

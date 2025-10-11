@@ -47,6 +47,21 @@ module idex_register #(
   input  wire        aq_in,
   input  wire        rl_in,
 
+  // F/D extension signals from ID stage
+  input  wire [XLEN-1:0] fp_rs1_data_in,      // FP register rs1 data
+  input  wire [XLEN-1:0] fp_rs2_data_in,      // FP register rs2 data
+  input  wire [XLEN-1:0] fp_rs3_data_in,      // FP register rs3 data (for FMA)
+  input  wire [4:0]      fp_rs1_addr_in,      // FP rs1 address
+  input  wire [4:0]      fp_rs2_addr_in,      // FP rs2 address
+  input  wire [4:0]      fp_rs3_addr_in,      // FP rs3 address
+  input  wire [4:0]      fp_rd_addr_in,       // FP rd address
+  input  wire            fp_reg_write_in,     // FP register write enable
+  input  wire            int_reg_write_fp_in, // Integer register write (FP compare/classify/FMV.X.W)
+  input  wire            fp_alu_en_in,        // FP ALU enable
+  input  wire [4:0]      fp_alu_op_in,        // FP ALU operation
+  input  wire [2:0]      fp_rm_in,            // FP rounding mode
+  input  wire            fp_use_dynamic_rm_in,// Use dynamic rounding mode
+
   // CSR signals from ID stage
   input  wire [11:0]      csr_addr_in,
   input  wire             csr_we_in,
@@ -93,6 +108,21 @@ module idex_register #(
   output reg  [4:0]  funct5_out,
   output reg         aq_out,
   output reg         rl_out,
+
+  // F/D extension signals to EX stage
+  output reg  [XLEN-1:0] fp_rs1_data_out,
+  output reg  [XLEN-1:0] fp_rs2_data_out,
+  output reg  [XLEN-1:0] fp_rs3_data_out,
+  output reg  [4:0]      fp_rs1_addr_out,
+  output reg  [4:0]      fp_rs2_addr_out,
+  output reg  [4:0]      fp_rs3_addr_out,
+  output reg  [4:0]      fp_rd_addr_out,
+  output reg             fp_reg_write_out,
+  output reg             int_reg_write_fp_out,
+  output reg             fp_alu_en_out,
+  output reg  [4:0]      fp_alu_op_out,
+  output reg  [2:0]      fp_rm_out,
+  output reg             fp_use_dynamic_rm_out,
 
   // CSR signals to EX stage
   output reg  [11:0]      csr_addr_out,
@@ -141,6 +171,20 @@ module idex_register #(
       aq_out          <= 1'b0;
       rl_out          <= 1'b0;
 
+      fp_rs1_data_out <= {XLEN{1'b0}};
+      fp_rs2_data_out <= {XLEN{1'b0}};
+      fp_rs3_data_out <= {XLEN{1'b0}};
+      fp_rs1_addr_out <= 5'h0;
+      fp_rs2_addr_out <= 5'h0;
+      fp_rs3_addr_out <= 5'h0;
+      fp_rd_addr_out  <= 5'h0;
+      fp_reg_write_out<= 1'b0;
+      int_reg_write_fp_out <= 1'b0;
+      fp_alu_en_out   <= 1'b0;
+      fp_alu_op_out   <= 5'h0;
+      fp_rm_out       <= 3'h0;
+      fp_use_dynamic_rm_out <= 1'b0;
+
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;
       csr_src_out     <= 1'b0;
@@ -185,6 +229,20 @@ module idex_register #(
       aq_out          <= 1'b0;
       rl_out          <= 1'b0;
 
+      fp_rs1_data_out <= fp_rs1_data_in;
+      fp_rs2_data_out <= fp_rs2_data_in;
+      fp_rs3_data_out <= fp_rs3_data_in;
+      fp_rs1_addr_out <= 5'h0;
+      fp_rs2_addr_out <= 5'h0;
+      fp_rs3_addr_out <= 5'h0;
+      fp_rd_addr_out  <= 5'h0;          // Clear destination
+      fp_reg_write_out<= 1'b0;          // Critical: no FP register write
+      int_reg_write_fp_out <= 1'b0;     // Critical: no INT register write
+      fp_alu_en_out   <= 1'b0;
+      fp_alu_op_out   <= 5'h0;
+      fp_rm_out       <= 3'h0;
+      fp_use_dynamic_rm_out <= 1'b0;
+
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;          // Critical: no CSR write
       csr_src_out     <= 1'b0;
@@ -226,6 +284,20 @@ module idex_register #(
       funct5_out      <= funct5_in;
       aq_out          <= aq_in;
       rl_out          <= rl_in;
+
+      fp_rs1_data_out <= fp_rs1_data_in;
+      fp_rs2_data_out <= fp_rs2_data_in;
+      fp_rs3_data_out <= fp_rs3_data_in;
+      fp_rs1_addr_out <= fp_rs1_addr_in;
+      fp_rs2_addr_out <= fp_rs2_addr_in;
+      fp_rs3_addr_out <= fp_rs3_addr_in;
+      fp_rd_addr_out  <= fp_rd_addr_in;
+      fp_reg_write_out<= fp_reg_write_in;
+      int_reg_write_fp_out <= int_reg_write_fp_in;
+      fp_alu_en_out   <= fp_alu_en_in;
+      fp_alu_op_out   <= fp_alu_op_in;
+      fp_rm_out       <= fp_rm_in;
+      fp_use_dynamic_rm_out <= fp_use_dynamic_rm_in;
 
       csr_addr_out    <= csr_addr_in;
       csr_we_out      <= csr_we_in;

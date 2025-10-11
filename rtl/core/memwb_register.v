@@ -28,6 +28,18 @@ module memwb_register #(
   // A extension result from MEM stage
   input  wire [XLEN-1:0] atomic_result_in,
 
+  // F/D extension signals from MEM stage
+  input  wire [XLEN-1:0]  fp_result_in,
+  input  wire [XLEN-1:0]  int_result_fp_in,
+  input  wire [4:0]       fp_rd_addr_in,
+  input  wire             fp_reg_write_in,
+  input  wire             int_reg_write_fp_in,
+  input  wire             fp_flag_nv_in,
+  input  wire             fp_flag_dz_in,
+  input  wire             fp_flag_of_in,
+  input  wire             fp_flag_uf_in,
+  input  wire             fp_flag_nx_in,
+
   // CSR signals from MEM stage
   input  wire [XLEN-1:0] csr_rdata_in,       // CSR read data
 
@@ -47,6 +59,18 @@ module memwb_register #(
 
   // A extension result to WB stage
   output reg  [XLEN-1:0] atomic_result_out,
+
+  // F/D extension signals to WB stage
+  output reg  [XLEN-1:0]  fp_result_out,
+  output reg  [XLEN-1:0]  int_result_fp_out,
+  output reg  [4:0]       fp_rd_addr_out,
+  output reg              fp_reg_write_out,
+  output reg              int_reg_write_fp_out,
+  output reg              fp_flag_nv_out,
+  output reg              fp_flag_dz_out,
+  output reg              fp_flag_of_out,
+  output reg              fp_flag_uf_out,
+  output reg              fp_flag_nx_out,
 
   // CSR signals to WB stage
   output reg  [XLEN-1:0] csr_rdata_out
@@ -68,6 +92,17 @@ module memwb_register #(
 
       atomic_result_out  <= {XLEN{1'b0}};
 
+      fp_result_out      <= {XLEN{1'b0}};
+      int_result_fp_out  <= {XLEN{1'b0}};
+      fp_rd_addr_out     <= 5'h0;
+      fp_reg_write_out   <= 1'b0;
+      int_reg_write_fp_out <= 1'b0;
+      fp_flag_nv_out     <= 1'b0;
+      fp_flag_dz_out     <= 1'b0;
+      fp_flag_of_out     <= 1'b0;
+      fp_flag_uf_out     <= 1'b0;
+      fp_flag_nx_out     <= 1'b0;
+
       csr_rdata_out      <= {XLEN{1'b0}};
     end else begin
       // Normal operation: latch all values
@@ -83,6 +118,17 @@ module memwb_register #(
       mul_div_result_out <= mul_div_result_in;
 
       atomic_result_out  <= atomic_result_in;
+
+      fp_result_out      <= fp_result_in;
+      int_result_fp_out  <= int_result_fp_in;
+      fp_rd_addr_out     <= fp_rd_addr_in;
+      fp_reg_write_out   <= fp_reg_write_in;
+      int_reg_write_fp_out <= int_reg_write_fp_in;
+      fp_flag_nv_out     <= fp_flag_nv_in;
+      fp_flag_dz_out     <= fp_flag_dz_in;
+      fp_flag_of_out     <= fp_flag_of_in;
+      fp_flag_uf_out     <= fp_flag_uf_in;
+      fp_flag_nx_out     <= fp_flag_nx_in;
 
       csr_rdata_out      <= csr_rdata_in;
     end
