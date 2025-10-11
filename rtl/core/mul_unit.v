@@ -22,7 +22,7 @@ module mul_unit #(
   output reg   [XLEN-1:0]    result,       // Result
 
   // Status
-  output reg                 busy,         // Operation in progress
+  output wire                busy,         // Operation in progress
   output reg                 ready         // Result ready (1 cycle pulse)
 );
 
@@ -118,7 +118,6 @@ module mul_unit #(
       multiplicand    <= {(2*XLEN){1'b0}};
       multiplier      <= {XLEN{1'b0}};
       cycle_count     <= 7'd0;
-      busy            <= 1'b0;
       ready           <= 1'b0;
       result          <= {XLEN{1'b0}};
       result_negative <= 1'b0;
@@ -127,7 +126,6 @@ module mul_unit #(
     end else begin
       case (state)
         IDLE: begin
-          busy  <= 1'b0;
           ready <= 1'b0;
 
           if (start) begin
@@ -136,7 +134,6 @@ module mul_unit #(
             multiplicand    <= {{XLEN{1'b0}}, abs_a};
             multiplier      <= abs_b;
             cycle_count     <= 7'd0;
-            busy            <= 1'b1;
             result_negative <= negate_a ^ negate_b;  // XOR for result sign
             op_reg          <= mul_op;
             word_op_reg     <= is_word_op;
@@ -156,7 +153,6 @@ module mul_unit #(
         end
 
         DONE: begin
-          busy  <= 1'b0;
           ready <= 1'b1;
 
           // Extract result based on operation
@@ -192,11 +188,14 @@ module mul_unit #(
         end
 
         default: begin
-          busy  <= 1'b0;
           ready <= 1'b0;
         end
       endcase
     end
   end
+
+  // Combinational busy signal - asserts when not in IDLE state
+  // This is one cycle faster than using a registered busy signal.
+  assign busy = (state != IDLE);
 
 endmodule

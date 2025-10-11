@@ -20,6 +20,8 @@ module control #(
   input  wire       is_ebreak,   // EBREAK instruction
   input  wire       is_mret,     // MRET instruction
   input  wire       is_mul_div,  // M extension instruction
+  input  wire [3:0] mul_div_op,  // M extension operation (from decoder)
+  input  wire       is_word_op,  // RV64M: W-suffix instruction
 
   // Standard control outputs
   output reg        reg_write,   // Register file write enable
@@ -35,6 +37,11 @@ module control #(
   // CSR control outputs
   output reg        csr_we,      // CSR write enable
   output reg        csr_src,     // CSR source: 0=rs1, 1=uimm
+
+  // M extension control outputs
+  output reg        mul_div_en,  // M extension unit enable
+  output reg [3:0]  mul_div_op_out, // M extension operation (passed through)
+  output reg        is_word_op_out,  // RV64M: W-suffix instruction (passed through)
 
   // Exception/trap outputs
   output reg        illegal_inst // Illegal instruction detected
@@ -107,6 +114,9 @@ module control #(
     imm_sel = IMM_I;
     csr_we = 1'b0;
     csr_src = 1'b0;
+    mul_div_en = 1'b0;
+    mul_div_op_out = 4'b0000;
+    is_word_op_out = 1'b0;
     illegal_inst = 1'b0;
 
     case (opcode)
@@ -187,8 +197,11 @@ module control #(
 
         if (is_mul_div) begin
           // M extension instruction
-          wb_sel = 3'b100;  // Select M unit result
-          alu_control = 4'b0000;  // ALU not used, but pass rs1 and rs2 through
+          mul_div_en = 1'b1;          // Enable M unit
+          mul_div_op_out = mul_div_op; // Pass through operation
+          is_word_op_out = is_word_op; // Pass through word-op flag
+          wb_sel = 3'b100;             // Select M unit result
+          alu_control = 4'b0000;       // ALU not used, but pass rs1 and rs2 through
         end else begin
           // Standard ALU operation
           alu_control = get_alu_control(funct3, funct7, 1'b1);
@@ -226,8 +239,11 @@ module control #(
 
           if (is_mul_div) begin
             // RV64M word operation
-            wb_sel = 3'b100;  // Select M unit result
-            alu_control = 4'b0000;  // ALU not used
+            mul_div_en = 1'b1;          // Enable M unit
+            mul_div_op_out = mul_div_op; // Pass through operation
+            is_word_op_out = is_word_op; // Pass through word-op flag (will be 1)
+            wb_sel = 3'b100;             // Select M unit result
+            alu_control = 4'b0000;       // ALU not used
           end else begin
             // RV64I word operation
             alu_control = get_alu_control(funct3, funct7, 1'b1);

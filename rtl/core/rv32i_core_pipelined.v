@@ -321,6 +321,11 @@ module rv_core_pipelined #(
     .is_word_op(id_is_word_op_dec)
   );
 
+  // M extension control signals from control unit (not used directly, but available)
+  wire        id_mul_div_en;       // M unit enable from control
+  wire [3:0]  id_mul_div_op_ctrl;  // M operation from control (pass-through)
+  wire        id_is_word_op_ctrl;  // Word-op from control (pass-through)
+
   // Control Unit
   control #(
     .XLEN(XLEN)
@@ -334,6 +339,8 @@ module rv_core_pipelined #(
     .is_ebreak(id_is_ebreak_dec),
     .is_mret(id_is_mret_dec),
     .is_mul_div(id_is_mul_div_dec),
+    .mul_div_op(id_mul_div_op_dec),
+    .is_word_op(id_is_word_op_dec),
     // Standard outputs
     .reg_write(id_reg_write),
     .mem_read(id_mem_read),
@@ -346,6 +353,10 @@ module rv_core_pipelined #(
     .imm_sel(id_imm_sel),
     .csr_we(id_csr_we),
     .csr_src(id_csr_src),
+    // M extension outputs
+    .mul_div_en(id_mul_div_en),
+    .mul_div_op_out(id_mul_div_op_ctrl),
+    .is_word_op_out(id_is_word_op_ctrl),
     .illegal_inst(id_illegal_inst)
   );
 
@@ -409,6 +420,7 @@ module rv_core_pipelined #(
     .ifid_rs1(id_rs1),
     .ifid_rs2(id_rs2),
     .mul_div_busy(ex_mul_div_busy),
+    .idex_is_mul_div(idex_is_mul_div),
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
     .bubble_idex(flush_idex_hazard)
