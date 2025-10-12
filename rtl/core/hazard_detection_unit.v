@@ -28,6 +28,7 @@ module hazard_detection_unit (
 
   // F/D extension signals
   input  wire        fpu_busy,         // FPU is busy (multi-cycle operation in progress)
+  input  wire        fpu_done,         // FPU operation complete (1 cycle pulse)
   input  wire        idex_fp_alu_en,   // FP instruction in EX stage
 
   // Hazard control outputs
@@ -97,11 +98,12 @@ module hazard_detection_unit (
   wire a_extension_stall;
   assign a_extension_stall = (atomic_busy || idex_is_atomic) && !atomic_done;
 
-  // FP extension hazard: stall IF/ID stages when FPU is busy OR when FP instruction just entered EX
+  // FP extension hazard: stall IF/ID stages when FPU is busy with multi-cycle operations
   // FP multi-cycle operations (FDIV, FSQRT, FMA, etc.) hold the pipeline.
-  // Similar to M extension, the FP instruction is held in EX stage using hold signals.
+  // Similar to A extension, stall while FPU is busy but NOT when operation completes.
+  // This allows single-cycle FP operations (FSGNJ, FMV.X.W, etc.) to complete without stalling.
   wire fp_extension_stall;
-  assign fp_extension_stall = fpu_busy || idex_fp_alu_en;
+  assign fp_extension_stall = (fpu_busy || idex_fp_alu_en) && !fpu_done;
 
   // Generate control signals
   // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency, or FP extension dependency

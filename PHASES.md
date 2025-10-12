@@ -4,11 +4,38 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 8 - F/D Extension (Floating-Point) ✅ **COMPLETE (100%)**
-**Completion**: 100% ✅ | **All FPU integration and critical fixes complete**
-**Next Milestone**: Testing and verification (Stage 8.5) - Create test programs and run compliance tests
+**Active Phase**: Phase 8.5 - FPU Testing & Bug Fixes ✅ **IN PROGRESS (60%)**
+**Completion**: 60% ✅ | **Critical bugs fixed, basic tests passing**
+**Next Milestone**: Complete FPU debugging and run compliance tests
 
-**Recent Progress (2025-10-11 - Session 19 - Phase 8 Complete):**
+**Recent Progress (2025-10-11 - Session 20 - Phase 8.5 Testing & Critical Bug Fixes):**
+- ✅ **Test Suite Created**: 8 comprehensive FP test programs
+  - test_fp_minimal: Basic FLW/FSW/FMV operations ✅ **PASSING (15 cycles)**
+  - test_fp_basic: FADD/FSUB/FMUL/FDIV arithmetic
+  - test_fp_compare: FEQ/FLT/FLE comparisons
+  - test_fp_csr: FCSR/FRM/FFLAGS CSR operations
+  - test_fp_load_use: FP load-use hazard detection
+  - test_fp_fma: FMADD/FMSUB/FNMSUB/FNMADD operations
+  - test_fp_convert: FCVT INT↔FP conversions
+  - test_fp_misc: FSGNJ/FMIN/FMAX/FCLASS operations
+- ✅ **CRITICAL BUG #1 FIXED**: FPU Pipeline Stall
+  - **Problem**: `fp_extension_stall = fpu_busy || idex_fp_alu_en` caused permanent stalls
+  - **Fix**: Changed to `(fpu_busy || idex_fp_alu_en) && !fpu_done`
+  - **Impact**: Single-cycle FP ops now complete, pipeline no longer hangs
+  - **Files**: hazard_detection_unit.v, rv32i_core_pipelined.v
+- ✅ **CRITICAL BUG #2 FIXED**: Test Hex File Byte Order
+  - **Problem**: Used `xxd -p` which output big-endian bytes
+  - **Fix**: Changed to `od -An -t x4 -v` for correct little-endian words
+  - **Impact**: All tests now execute correctly
+- ✅ **Basic FP Operations Verified**: FLW, FSW work correctly
+- ⚠️ **Known Issue**: FMV.X.W returns zeros (FP register file needs debugging)
+- ⏳ **Remaining Work**:
+  - Debug FP register file read/write operations
+  - Verify FP arithmetic results
+  - Run RISC-V F extension compliance tests
+  - Complete waveform analysis for multi-cycle operations
+
+**Earlier Progress (2025-10-11 - Session 19 - Phase 8 Complete):**
 - ✅ **Code Review**: Comprehensive review of all FPU integration code
 - ✅ **Critical Fixes**: All 4 critical issues resolved
   - CSR integration (dynamic rounding, flag accumulation)

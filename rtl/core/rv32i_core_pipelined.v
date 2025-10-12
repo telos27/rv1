@@ -594,6 +594,7 @@ module rv_core_pipelined #(
     .idex_is_atomic(idex_is_atomic),
     // F/D extension
     .fpu_busy(ex_fpu_busy),
+    .fpu_done(ex_fpu_done),
     .idex_fp_alu_en(idex_fp_alu_en),
     // Outputs
     .stall_pc(stall_pc),
