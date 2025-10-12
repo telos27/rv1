@@ -40,16 +40,17 @@ module data_memory #(
   assign byte_offset = masked_addr[2:0];
 
   // Read data from memory (little-endian)
+  // Using masked_addr directly to support misaligned access
   assign byte_data = mem[masked_addr];
   assign halfword_data = {mem[masked_addr + 1], mem[masked_addr]};
-  assign word_data = {mem[word_addr + 3], mem[word_addr + 2],
-                      mem[word_addr + 1], mem[word_addr]};
+  assign word_data = {mem[masked_addr + 3], mem[masked_addr + 2],
+                      mem[masked_addr + 1], mem[masked_addr]};
 
   // Doubleword data for RV64
-  assign dword_data = {mem[dword_addr + 7], mem[dword_addr + 6],
-                       mem[dword_addr + 5], mem[dword_addr + 4],
-                       mem[dword_addr + 3], mem[dword_addr + 2],
-                       mem[dword_addr + 1], mem[dword_addr]};
+  assign dword_data = {mem[masked_addr + 7], mem[masked_addr + 6],
+                       mem[masked_addr + 5], mem[masked_addr + 4],
+                       mem[masked_addr + 3], mem[masked_addr + 2],
+                       mem[masked_addr + 1], mem[masked_addr]};
 
   // Write operation
   always @(posedge clk) begin
@@ -62,22 +63,22 @@ module data_memory #(
           mem[masked_addr]     <= write_data[7:0];
           mem[masked_addr + 1] <= write_data[15:8];
         end
-        3'b010: begin  // SW (store word)
-          mem[word_addr]     <= write_data[7:0];
-          mem[word_addr + 1] <= write_data[15:8];
-          mem[word_addr + 2] <= write_data[23:16];
-          mem[word_addr + 3] <= write_data[31:24];
+        3'b010: begin  // SW (store word) - supports misaligned access
+          mem[masked_addr]     <= write_data[7:0];
+          mem[masked_addr + 1] <= write_data[15:8];
+          mem[masked_addr + 2] <= write_data[23:16];
+          mem[masked_addr + 3] <= write_data[31:24];
         end
-        3'b011: begin  // SD (store doubleword - RV64 only)
+        3'b011: begin  // SD (store doubleword - RV64 only) - supports misaligned access
           if (XLEN == 64) begin
-            mem[dword_addr]     <= write_data[7:0];
-            mem[dword_addr + 1] <= write_data[15:8];
-            mem[dword_addr + 2] <= write_data[23:16];
-            mem[dword_addr + 3] <= write_data[31:24];
-            mem[dword_addr + 4] <= write_data[39:32];
-            mem[dword_addr + 5] <= write_data[47:40];
-            mem[dword_addr + 6] <= write_data[55:48];
-            mem[dword_addr + 7] <= write_data[63:56];
+            mem[masked_addr]     <= write_data[7:0];
+            mem[masked_addr + 1] <= write_data[15:8];
+            mem[masked_addr + 2] <= write_data[23:16];
+            mem[masked_addr + 3] <= write_data[31:24];
+            mem[masked_addr + 4] <= write_data[39:32];
+            mem[masked_addr + 5] <= write_data[47:40];
+            mem[masked_addr + 6] <= write_data[55:48];
+            mem[masked_addr + 7] <= write_data[63:56];
           end
         end
       endcase

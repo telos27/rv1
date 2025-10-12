@@ -18,7 +18,7 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 
 **Supported ISAs**: RV32IMAFD, RV64IMAFD
 **Architecture**: Parameterized 5-stage pipeline with full feature set
-**Compliance**: **40/42 RV32I tests PASSING (95%)**
+**Compliance**: **42/42 RV32I tests PASSING (100%)** ✅
 
 ### **Key Features Implemented:**
 - ✅ **RV32I/RV64I** - Base integer instruction set (47 instructions)
@@ -35,10 +35,26 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 - **Total Instructions**: 134 RISC-V instructions implemented
 - **RTL Modules**: 25+ parameterized modules (~6000 lines)
 - **FPU Test Suite**: 13/13 PASSING (100%)
-- **Base ISA Compliance**: 40/42 PASSING (95%)
+- **Base ISA Compliance**: 42/42 PASSING (100%)** ✅
 - **Configuration Support**: RV32/RV64, multiple extensions
 
 ## Recent Achievements (2025-10-11)
+
+### **🎉 100% RV32I Compliance Achieved!**
+✅ **All 42 RV32I compliance tests now PASSING**
+- Fixed FENCE.I instruction support for self-modifying code
+- Implemented hardware misaligned load/store support
+- Enhanced instruction memory with write capability
+- Improved data memory for full misaligned access support
+
+**Previously failing tests:**
+- ✅ `rv32ui-p-fence_i` - Now passing (FENCE.I self-modifying code)
+- ✅ `rv32ui-p-ma_data` - Now passing (misaligned load/store operations)
+
+**Key improvements:**
+1. **FENCE.I Support**: Instruction memory now accepts writes from MEM stage, enabling self-modifying code compliance
+2. **Misaligned Access**: Full hardware support for misaligned loads/stores (no exceptions)
+3. **Compliance Script**: Fixed include paths for proper compilation
 
 ### **Phase 8.5 Complete - F/D Extension FPU Implementation**
 ✅ **Floating-Point Unit Fully Implemented and Verified**
@@ -120,7 +136,7 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 - Status: Skipped in favor of direct pipeline implementation
 - Rationale: Pipeline better addresses RAW hazard discovered in Phase 1
 
-### Phase 3: 5-Stage Pipeline ✅ COMPLETE (95% compliance)
+### Phase 3: 5-Stage Pipeline ✅ COMPLETE (100% compliance)
 - [x] **Phase 3.1**: Pipeline registers (IF/ID, ID/EX, EX/MEM, MEM/WB) ✅
 - [x] **Phase 3.2**: Basic pipelined datapath integration ✅
 - [x] **Phase 3.3**: Data forwarding (EX-to-EX, MEM-to-EX) ✅
@@ -129,7 +145,8 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 - [x] **Phase 3.6**: Control hazard bug fixed ✅
 - [x] **Phase 3.7**: LUI/AUIPC forwarding bug fixed ✅
 - [x] **Phase 3.8**: Data memory initialization fixed ✅
-  - **40/42 compliance tests (95%)** ✅ TARGET EXCEEDED
+- [x] **Phase 3.9**: FENCE.I and misaligned access support ✅
+  - **42/42 compliance tests (100%)** ✅ **PERFECT SCORE**
 
 ### Phase 4: CSR and Exception Support ✅ COMPLETE
 - [x] CSR register file (13 Machine-mode CSRs)
@@ -216,7 +233,12 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 ### Current Status
 ✅ **All code-level TODOs cleaned up** (2025-10-11)
 - 13/13 custom FPU tests PASSING (100%)
-- 40/42 RV32I compliance tests PASSING (95%)
+- 42/42 RV32I compliance tests PASSING (100%)** ✅
+
+✅ **100% RV32I Compliance Achieved** (2025-10-11)
+- **FENCE.I Support**: Self-modifying code now fully supported
+- **Misaligned Access**: Hardware support for misaligned loads/stores (no exceptions)
+- **All 42 tests passing**: rv32ui-p-fence_i and rv32ui-p-ma_data now working
 
 ✅ **Memory Initialization Bug FIXED** (2025-10-11)
 - **Root Cause**: `$readmemh` was incorrectly reading byte-separated hex files using temporary word array

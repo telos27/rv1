@@ -1,8 +1,9 @@
 // instruction_memory.v - Instruction memory for RISC-V
-// Read-only memory for program storage
+// Memory for program storage (writable for FENCE.I self-modifying code support)
 // Author: RV1 Project
 // Date: 2025-10-09
 // Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit address support)
+// Updated: 2025-10-11 - Added write capability for FENCE.I compliance
 
 `include "config/rv_config.vh"
 
@@ -11,8 +12,15 @@ module instruction_memory #(
   parameter MEM_SIZE = 65536,     // Memory size in bytes (64KB default)
   parameter MEM_FILE = ""         // Hex file to initialize memory
 ) (
-  input  wire [XLEN-1:0] addr,        // Byte address
-  output wire [31:0]     instruction  // Instruction output (always 32-bit in base ISA)
+  input  wire             clk,          // Clock for writes
+  input  wire [XLEN-1:0]  addr,         // Byte address for reads
+  output wire [31:0]      instruction,  // Instruction output (always 32-bit in base ISA)
+
+  // Write interface for FENCE.I support (self-modifying code)
+  input  wire             mem_write,    // Write enable
+  input  wire [XLEN-1:0]  write_addr,   // Write address
+  input  wire [XLEN-1:0]  write_data,   // Data to write
+  input  wire [2:0]       funct3        // Store operation type (SB/SH/SW/SD)
 );
 
   // Memory array (byte-addressed for easier hex file loading)
@@ -53,5 +61,47 @@ module instruction_memory #(
   wire [XLEN-1:0] masked_addr = addr & (MEM_SIZE - 1);  // Mask to memory size
   wire [XLEN-1:0] word_addr = {masked_addr[XLEN-1:2], 2'b00};  // Align to word boundary
   assign instruction = {mem[word_addr+3], mem[word_addr+2], mem[word_addr+1], mem[word_addr]};
+
+  // Write operation (for self-modifying code via FENCE.I)
+  // This allows data stores to modify instruction memory
+  wire [XLEN-1:0] write_masked_addr;
+  wire [XLEN-1:0] write_word_addr;
+  wire [XLEN-1:0] write_dword_addr;
+
+  assign write_masked_addr = write_addr & (MEM_SIZE - 1);  // Mask write address
+  assign write_word_addr = {write_masked_addr[XLEN-1:2], 2'b00};
+  assign write_dword_addr = {write_masked_addr[XLEN-1:3], 3'b000};
+
+  always @(posedge clk) begin
+    if (mem_write) begin
+      case (funct3)
+        3'b000: begin  // SB (store byte)
+          mem[write_masked_addr] <= write_data[7:0];
+        end
+        3'b001: begin  // SH (store halfword)
+          mem[write_masked_addr]     <= write_data[7:0];
+          mem[write_masked_addr + 1] <= write_data[15:8];
+        end
+        3'b010: begin  // SW (store word)
+          mem[write_word_addr]     <= write_data[7:0];
+          mem[write_word_addr + 1] <= write_data[15:8];
+          mem[write_word_addr + 2] <= write_data[23:16];
+          mem[write_word_addr + 3] <= write_data[31:24];
+        end
+        3'b011: begin  // SD (store doubleword - RV64 only)
+          if (XLEN == 64) begin
+            mem[write_dword_addr]     <= write_data[7:0];
+            mem[write_dword_addr + 1] <= write_data[15:8];
+            mem[write_dword_addr + 2] <= write_data[23:16];
+            mem[write_dword_addr + 3] <= write_data[31:24];
+            mem[write_dword_addr + 4] <= write_data[39:32];
+            mem[write_dword_addr + 5] <= write_data[47:40];
+            mem[write_dword_addr + 6] <= write_data[55:48];
+            mem[write_dword_addr + 7] <= write_data[63:56];
+          end
+        end
+      endcase
+    end
+  end
 
 endmodule

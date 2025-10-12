@@ -369,14 +369,20 @@ module rv_core_pipelined #(
     .pc_current(pc_current)
   );
 
-  // Instruction Memory
+  // Instruction Memory (writable for FENCE.I support)
   instruction_memory #(
     .XLEN(XLEN),
     .MEM_SIZE(IMEM_SIZE),
     .MEM_FILE(MEM_FILE)
   ) imem (
+    .clk(clk),
     .addr(pc_current),
-    .instruction(if_instruction)
+    .instruction(if_instruction),
+    // Write interface for self-modifying code (FENCE.I)
+    .mem_write(exmem_mem_write && exmem_valid && !exception),
+    .write_addr(exmem_alu_result),
+    .write_data(exmem_mem_write_data),
+    .funct3(exmem_funct3)
   );
 
   // IF/ID Pipeline Register

@@ -75,6 +75,7 @@ for hex_file in "$COMPLIANCE_DIR"/rv32ui-p-*.hex; do
 
   # Run simulation (using pipelined core)
   iverilog -g2012 \
+    -I"$RTL_DIR" \
     -DCOMPLIANCE_TEST \
     -DMEM_FILE="\"$hex_file\"" \
     -o "$SIM_DIR/compliance/${test_name}.vvp" \
