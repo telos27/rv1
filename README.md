@@ -211,6 +211,55 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 - [ ] Performance optimization
 - [ ] Multicore support
 
+## Known Limitations and Testing Gaps
+
+### Current Status
+✅ **No known bugs** - All 7 critical FPU bugs have been fixed
+- 13/13 custom FPU tests PASSING (100%)
+- 40/42 RV32I compliance tests PASSING (95%)
+
+### Code-Level TODO Items
+1. **FP Exception Flags** (`fp_converter.v:263,269`)
+   - Overflow/underflow flags not connected to output
+   - Impact: Exception flags may not be accurate for conversion edge cases
+
+2. **Conversion Operation Decoding** (`fpu.v:318`)
+   - Currently hardcoded to `4'b0000` (works but not explicit)
+   - Could be decoded from `funct5` field
+
+3. **Mixed-Precision Writes** (`rv32i_core_pipelined.v:544`)
+   - `write_single` mode hardcoded to 0
+   - Mixed float/double operations not stress-tested
+
+4. **Atomic Reservation Invalidation** (`atomic_unit.v:874`)
+   - Reservations not invalidated on intervening writes
+   - May affect correctness in multi-threaded scenarios
+
+### Testing Gaps
+
+**High Priority:**
+- ⚠️ **Official RISC-V F/D Compliance Tests** - Not yet run
+  - Would provide comprehensive IEEE 754 compliance verification
+  - Location: https://github.com/riscv/riscv-tests (rv32uf/rv32ud)
+
+**Medium Priority:**
+- ⚠️ **Subnormal Number Handling** - Only basic tests exist
+- ⚠️ **Rounding Mode Coverage** - Most tests use default RNE mode
+- ⚠️ **FP Exception Flag Accumulation** - Edge cases not fully tested
+- ⚠️ **Concurrent INT/FP Operations** - Limited stress testing
+
+**Low Priority:**
+- ⚠️ **Performance Benchmarks** - No standardized measurements (Whetstone, Linpack)
+
+### Recommendations
+1. **Run official RISC-V F/D compliance tests** (highest priority)
+2. Create comprehensive subnormal and rounding mode test suites
+3. Add FP exception flag accumulation tests
+4. Implement stress tests for concurrent operations
+5. Connect FP exception flags in fp_converter.v
+
+See [docs/FD_EXTENSION_DESIGN.md](docs/FD_EXTENSION_DESIGN.md) for detailed testing gap analysis.
+
 ## Directory Structure
 
 ```

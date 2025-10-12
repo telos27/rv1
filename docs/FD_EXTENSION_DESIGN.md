@@ -907,6 +907,69 @@ For FP-heavy code:
    - Full support (slow path)
    - Could add "flush to zero" mode for performance
 
+### Known Test Gaps and TODO Items
+
+**Code-Level TODOs** (from rtl/core/*.v):
+1. `fp_converter.v:263,269` - Overflow/underflow exception flags not connected
+   - Currently commented out: `flag_of` and `flag_uf` outputs
+   - Impact: Exception flags may not be accurate for all edge cases
+
+2. `fpu.v:318` - Conversion operation hardcoded to 4'b0000
+   - Line: `assign cvt_op = 4'b0000; // TODO: decode conversion type from funct5`
+   - Impact: Conversions work but could be more explicit
+
+3. `rv32i_core_pipelined.v:544` - Single-precision write mode hardcoded
+   - Line: `.write_single(1'b0)  // TODO: Implement based on fp_fmt`
+   - Impact: Mixed-precision operations not fully tested
+
+4. `atomic_unit.v:874` - Reservation invalidation incomplete
+   - Line: `.invalidate(1'b0), // TODO: invalidation on intervening writes`
+   - Impact: LR/SC reservations may not invalidate correctly in all cases
+
+**Testing Gaps** (from PHASE8_VERIFICATION_REPORT.md):
+1. ⚠️ **Official RISC-V F/D Compliance Tests**
+   - Status: Not yet integrated or run
+   - Location: https://github.com/riscv/riscv-tests (riscv-tests/isa/rv32uf/*.S)
+   - Priority: HIGH - Would provide comprehensive IEEE 754 compliance verification
+
+2. ⚠️ **Subnormal Number Handling**
+   - Current: Only basic tests exist
+   - Needed: Edge cases for denormalized numbers (gradual underflow)
+   - Tests: Operations near underflow boundary (< 2^-126 for float32)
+
+3. ⚠️ **Rounding Mode Coverage**
+   - Current: Tests use mostly default rounding (RNE)
+   - Needed: Comprehensive tests for all 5 modes:
+     - RNE (Round to Nearest, ties to Even) - default
+     - RTZ (Round Toward Zero)
+     - RDN (Round Down / toward -∞)
+     - RUP (Round Up / toward +∞)
+     - RMM (Round to Nearest, ties to Max Magnitude)
+   - Impact: Rounding correctness not fully validated
+
+4. ⚠️ **FP Exception Flag Accumulation**
+   - Current: Basic flag setting tested
+   - Needed: Edge cases for sticky flags (NV, DZ, OF, UF, NX)
+   - Tests: Multiple operations with cumulative flag updates
+
+5. ⚠️ **Concurrent Integer and FP Operations**
+   - Current: Tests mostly sequential
+   - Needed: Stress tests with interleaved INT/FP instructions
+   - Impact: Forwarding and hazard detection under load not fully verified
+
+6. ⚠️ **FP Performance Benchmarks**
+   - Current: No standardized performance measurements
+   - Needed: Benchmarks like Whetstone, Linpack, STREAM
+   - Impact: Performance characteristics not quantified
+
+**Recommendations for Next Testing Phase**:
+1. Integrate official RISC-V F/D compliance tests (highest priority)
+2. Create comprehensive subnormal test suite
+3. Test all rounding mode combinations with edge cases
+4. Add FP exception flag accumulation tests
+5. Create stress tests with concurrent INT/FP operations
+6. Implement FP performance benchmark suite
+
 ### Future Enhancements
 
 1. **Faster Divider**: Implement radix-4 SRT (8-16 cycles)

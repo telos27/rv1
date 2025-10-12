@@ -272,22 +272,47 @@ Total FPU RTL:           ~2660 lines
 
 ### Test Gaps (Future Work)
 - ⚠️ Official RISC-V F/D compliance tests (not yet run)
+  - Location: https://github.com/riscv/riscv-tests (rv32uf/rv32ud/rv64uf/rv64ud)
+  - Priority: HIGH - comprehensive IEEE 754 compliance verification
 - ⚠️ Subnormal number handling (basic tests only)
+  - Need edge cases for denormalized numbers near underflow boundary
 - ⚠️ All rounding mode combinations
+  - Current tests use mostly RNE (default); need RNE/RTZ/RDN/RUP/RMM coverage
 - ⚠️ FP exception flag accumulation
+  - Need tests for sticky flags (NV, DZ, OF, UF, NX) across multiple operations
 - ⚠️ Concurrent integer and FP operations
+  - Need stress tests with interleaved INT/FP instructions
 - ⚠️ FP performance benchmarks
+  - No standardized measurements (Whetstone, Linpack, STREAM)
 
 ---
 
 ## Known Limitations
 
+### Design Limitations
 1. **Compliance Tests**: Official RISC-V F/D compliance suite not yet integrated
 2. **Subnormal Performance**: Full subnormal support may be slow (acceptable for initial implementation)
 3. **Division Performance**: 16-32 cycles (could be improved with radix-4 SRT)
 4. **No Transcendental Functions**: sin, cos, log, etc. require software emulation
 5. **No Half-Precision**: Zfh extension not implemented
 6. **Memory Alignment**: Assumes aligned FP loads/stores
+
+### Code-Level TODO Items
+1. **fp_converter.v:263,269** - Overflow/underflow exception flags not connected
+   - Lines commented out: `flag_of` and `flag_uf` outputs
+   - Impact: Exception flags may not be accurate for conversion edge cases
+
+2. **fpu.v:318** - Conversion operation hardcoded
+   - `assign cvt_op = 4'b0000; // TODO: decode conversion type from funct5`
+   - Impact: Works correctly but could be more explicit
+
+3. **rv32i_core_pipelined.v:544** - Single-precision write mode hardcoded
+   - `.write_single(1'b0)  // TODO: Implement based on fp_fmt`
+   - Impact: Mixed-precision operations not fully tested
+
+4. **atomic_unit.v:874** - Reservation invalidation incomplete
+   - `.invalidate(1'b0), // TODO: invalidation on intervening writes`
+   - Impact: LR/SC may not invalidate correctly in multi-threaded scenarios
 
 ---
 
