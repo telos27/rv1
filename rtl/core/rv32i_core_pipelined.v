@@ -34,6 +34,7 @@ module rv_core_pipelined #(
   // Trap/exception control
   wire trap_flush;         // Flush pipeline on trap
   wire mret_flush;         // Flush pipeline on MRET
+  wire sret_flush;         // Flush pipeline on SRET
 
   // Privilege mode tracking
   reg  [1:0] current_priv; // Current privilege mode: 00=U, 01=S, 11=M
@@ -74,6 +75,8 @@ module rv_core_pipelined #(
   wire            id_is_ecall_dec; // ECALL from decoder
   wire            id_is_ebreak_dec; // EBREAK from decoder
   wire            id_is_mret_dec;   // MRET from decoder
+  wire            id_is_sret_dec;   // SRET from decoder
+  wire            id_is_sfence_vma_dec; // SFENCE.VMA from decoder
   wire            id_is_mul_div_dec; // M extension instruction from decoder
   wire [3:0]      id_mul_div_op_dec; // M extension operation from decoder
   wire            id_is_word_op_dec; // RV64M word operation from decoder
@@ -103,6 +106,7 @@ module rv_core_pipelined #(
 
   // CSR signals
   wire [11:0]     id_csr_addr;
+  wire [4:0]      id_csr_uimm;
   wire            id_csr_we;
   wire            id_csr_src;
   wire [XLEN-1:0] id_csr_wdata;
@@ -111,6 +115,8 @@ module rv_core_pipelined #(
   wire            id_is_ecall;
   wire            id_is_ebreak;
   wire            id_is_mret;
+  wire            id_is_sret;
+  wire            id_is_sfence_vma;
   wire            id_illegal_inst;
 
   // Register file outputs
@@ -187,6 +193,8 @@ module rv_core_pipelined #(
   wire            idex_is_ecall;
   wire            idex_is_ebreak;
   wire            idex_is_mret;
+  wire            idex_is_sret;
+  wire            idex_is_sfence_vma;
   wire            idex_illegal_inst;
   wire [31:0]     idex_instruction;  // Instructions always 32-bit
 
@@ -231,11 +239,12 @@ module rv_core_pipelined #(
   wire [1:0]      fp_forward_b;
   wire [1:0]      fp_forward_c;
 
-  // Hold EX/MEM register when M instruction or A instruction or FP instruction is executing
+  // Hold EX/MEM register when M instruction or A instruction or FP instruction or MMU is executing
   wire            hold_exmem;
   assign hold_exmem = (idex_is_mul_div && idex_valid && !ex_mul_div_ready) ||
                       (idex_is_atomic && idex_valid && !ex_atomic_done) ||
-                      (idex_fp_alu_en && idex_valid && !ex_fpu_done);
+                      (idex_fp_alu_en && idex_valid && !ex_fpu_done) ||
+                      mmu_busy;  // Phase 3: Stall on MMU page table walk
 
   // M unit start signal: pulse once when M instruction first enters EX
   // Only start if not already busy or ready (prevents restarting)
@@ -279,6 +288,11 @@ module rv_core_pipelined #(
   wire            exmem_csr_we;
   wire [XLEN-1:0] exmem_csr_rdata;
   wire            exmem_is_mret;
+  wire            exmem_is_sret;
+  wire            exmem_is_sfence_vma;
+  wire [4:0]      exmem_rs1_addr;
+  wire [4:0]      exmem_rs2_addr;
+  wire [XLEN-1:0] exmem_rs1_data;
   wire [31:0]     exmem_instruction;  // Instructions always 32-bit
   wire [XLEN-1:0] exmem_pc;
 
@@ -286,6 +300,33 @@ module rv_core_pipelined #(
   // MEM Stage Signals
   //==========================================================================
   wire [XLEN-1:0] mem_read_data;
+
+  //==========================================================================
+  // MMU Signals (Phase 3)
+  //==========================================================================
+  // MMU translation request
+  wire            mmu_req_valid;
+  wire [XLEN-1:0] mmu_req_vaddr;
+  wire            mmu_req_is_store;
+  wire            mmu_req_is_fetch;
+  wire [2:0]      mmu_req_size;
+  wire            mmu_req_ready;
+  wire [XLEN-1:0] mmu_req_paddr;
+  wire            mmu_req_page_fault;
+  wire [XLEN-1:0] mmu_req_fault_vaddr;
+
+  // MMU page table walk memory interface
+  wire            mmu_ptw_req_valid;
+  wire [XLEN-1:0] mmu_ptw_req_addr;
+  wire            mmu_ptw_req_ready;
+  wire [XLEN-1:0] mmu_ptw_resp_data;
+  wire            mmu_ptw_resp_valid;
+
+  // TLB flush control
+  wire            tlb_flush_all;
+  wire            tlb_flush_vaddr;
+  wire [XLEN-1:0] tlb_flush_addr;
+  wire            mmu_busy;  // MMU is busy (page table walk in progress)
 
   //==========================================================================
   // MEM/WB Pipeline Register Outputs
@@ -321,9 +362,11 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] exception_val;
   wire [XLEN-1:0] trap_vector;
   wire [XLEN-1:0] mepc;
+  wire [XLEN-1:0] sepc;
   wire            mstatus_sum;  // MSTATUS.SUM bit (for MMU)
   wire            mstatus_mxr;  // MSTATUS.MXR bit (for MMU)
   wire [XLEN-1:0] satp;         // SATP register (for MMU)
+  wire [XLEN-1:0] csr_satp;     // Alias for MMU
   wire            mstatus_mie;
   wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
   wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
@@ -350,9 +393,10 @@ module rv_core_pipelined #(
   assign pc_plus_4 = pc_current + 32'd4;
   assign pc_increment = if_is_compressed ? pc_plus_2 : pc_plus_4;
 
-  // Trap and MRET handling
+  // Trap and xRET handling
   assign trap_flush = exception;  // Exception occurred
   assign mret_flush = exmem_is_mret && exmem_valid;  // MRET in MEM stage
+  assign sret_flush = exmem_is_sret && exmem_valid;  // SRET in MEM stage
 
   // Track exception from previous cycle to prevent re-triggering
   reg exception_taken_r;
@@ -377,21 +421,24 @@ module rv_core_pipelined #(
       end else if (mret_flush) begin
         // On MRET, restore privilege from MSTATUS.MPP
         current_priv <= mpp;
+      end else if (sret_flush) begin
+        // On SRET, restore privilege from MSTATUS.SPP
+        current_priv <= {1'b0, spp};  // SPP: 0=U, 1=S -> {1'b0, spp} = 00 or 01
       end
-      // Note: SRET handling will be added in Phase 2
     end
   end
 
-  // PC selection: priority order - trap > mret > branch/jump > PC+increment
+  // PC selection: priority order - trap > mret > sret > branch/jump > PC+increment
   // Note: Branches/jumps can target 2-byte aligned addresses (for C extension)
   assign pc_next = trap_flush ? trap_vector :
                    mret_flush ? mepc :
+                   sret_flush ? sepc :
                    ex_take_branch ? (idex_jump ? ex_jump_target : ex_branch_target) :
                    pc_increment;
 
-  // Pipeline flush: trap/MRET flushes all stages, branch flushes IF/ID and ID/EX
-  assign flush_ifid = trap_flush | mret_flush | ex_take_branch;
-  assign flush_idex = trap_flush | mret_flush | flush_idex_hazard | ex_take_branch;
+  // Pipeline flush: trap/xRET flushes all stages, branch flushes IF/ID and ID/EX
+  assign flush_ifid = trap_flush | mret_flush | sret_flush | ex_take_branch;
+  assign flush_idex = trap_flush | mret_flush | sret_flush | flush_idex_hazard | ex_take_branch;
 
   // Program Counter
   pc #(
@@ -482,10 +529,14 @@ module rv_core_pipelined #(
     .imm_b(id_imm_b),
     .imm_u(id_imm_u),
     .imm_j(id_imm_j),
+    .csr_addr(id_csr_addr),
+    .csr_uimm(id_csr_uimm),
     .is_csr(id_is_csr_dec),
     .is_ecall(id_is_ecall_dec),
     .is_ebreak(id_is_ebreak_dec),
     .is_mret(id_is_mret_dec),
+    .is_sret(id_is_sret_dec),
+    .is_sfence_vma(id_is_sfence_vma_dec),
     .is_mul_div(id_is_mul_div_dec),
     .mul_div_op(id_mul_div_op_dec),
     .is_word_op(id_is_word_op_dec),
@@ -526,6 +577,8 @@ module rv_core_pipelined #(
     .is_ecall(id_is_ecall_dec),
     .is_ebreak(id_is_ebreak_dec),
     .is_mret(id_is_mret_dec),
+    .is_sret(id_is_sret_dec),
+    .is_sfence_vma(id_is_sfence_vma_dec),
     .is_mul_div(id_is_mul_div_dec),
     .mul_div_op(id_mul_div_op_dec),
     .is_word_op(id_is_word_op_dec),
@@ -571,6 +624,8 @@ module rv_core_pipelined #(
   assign id_is_ecall = id_is_ecall_dec;
   assign id_is_ebreak = id_is_ebreak_dec;
   assign id_is_mret = id_is_mret_dec;
+  assign id_is_sret = id_is_sret_dec;
+  assign id_is_sfence_vma = id_is_sfence_vma_dec;
 
   // Register File
   wire [XLEN-1:0] id_rs1_data_raw;  // Raw register file output
@@ -739,6 +794,8 @@ module rv_core_pipelined #(
     .is_ecall_in(id_is_ecall),
     .is_ebreak_in(id_is_ebreak),
     .is_mret_in(id_is_mret),
+    .is_sret_in(id_is_sret),
+    .is_sfence_vma_in(id_is_sfence_vma),
     .illegal_inst_in(id_illegal_inst),
     .instruction_in(ifid_instruction),
     // Data outputs
@@ -796,6 +853,8 @@ module rv_core_pipelined #(
     .is_ecall_out(idex_is_ecall),
     .is_ebreak_out(idex_is_ebreak),
     .is_mret_out(idex_is_mret),
+    .is_sret_out(idex_is_sret),
+    .is_sfence_vma_out(idex_is_sfence_vma),
     .illegal_inst_out(idex_illegal_inst),
     .instruction_out(idex_instruction)
   );
@@ -843,6 +902,12 @@ module rv_core_pipelined #(
                                       (forward_a == 2'b10) ? exmem_alu_result :         // EX hazard
                                       (forward_a == 2'b01) ? wb_data :                  // MEM hazard
                                       ex_alu_operand_a;                                  // No hazard
+
+  // rs1 data forwarding (for SFENCE.VMA and other instructions that use rs1 data directly)
+  wire [XLEN-1:0] ex_rs1_data_forwarded;
+  assign ex_rs1_data_forwarded = (forward_a == 2'b10) ? exmem_alu_result :         // EX hazard
+                                  (forward_a == 2'b01) ? wb_data :                  // MEM hazard
+                                  idex_rs1_data;                                     // No hazard
 
   // ALU Operand B selection (with forwarding)
   wire [XLEN-1:0] ex_rs2_data_forwarded;
@@ -1013,6 +1078,8 @@ module rv_core_pipelined #(
     .trap_vector(trap_vector),
     .mret(idex_is_mret && idex_valid),
     .mepc_out(mepc),
+    .sret(idex_is_sret && idex_valid),
+    .sepc_out(sepc),
     .mstatus_mie(mstatus_mie),
     .illegal_csr(ex_illegal_csr),
     // Privilege mode tracking (Phase 1)
@@ -1030,6 +1097,9 @@ module rv_core_pipelined #(
     .fflags_we(memwb_fp_reg_write && memwb_valid),  // Accumulate flags when FP instruction completes in WB
     .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx})
   );
+
+  // Alias for MMU integration
+  assign csr_satp = satp;
 
   //==========================================================================
   // Exception Unit (monitors all stages)
@@ -1061,9 +1131,9 @@ module rv_core_pipelined #(
     .mem_pc(exmem_pc),
     .mem_instruction(exmem_instruction),
     .mem_valid(exmem_valid),
-    // Page fault inputs (Phase 3 - stub for now)
-    .mem_page_fault(1'b0),          // Will connect to MMU in Phase 3
-    .mem_fault_vaddr({XLEN{1'b0}}), // Will connect to MMU in Phase 3
+    // Page fault inputs (Phase 3 - MMU integration)
+    .mem_page_fault(mmu_req_page_fault),
+    .mem_fault_vaddr(mmu_req_fault_vaddr),
     // Outputs
     .exception(exception),
     .exception_code(exception_code),
@@ -1154,6 +1224,11 @@ module rv_core_pipelined #(
     .csr_rdata_in(ex_csr_rdata),
     // Exception inputs
     .is_mret_in(idex_is_mret),
+    .is_sret_in(idex_is_sret),
+    .is_sfence_vma_in(idex_is_sfence_vma),
+    .rs1_addr_in(idex_rs1_addr),
+    .rs2_addr_in(idex_rs2_addr),
+    .rs1_data_in(ex_rs1_data_forwarded),  // Forwarded rs1 data
     .instruction_in(idex_instruction),
     .pc_in(idex_pc),
     // Outputs
@@ -1176,6 +1251,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_in(idex_fp_rd_addr),
     .fp_reg_write_in(idex_fp_reg_write),
     .int_reg_write_fp_in(idex_int_reg_write_fp),
+    .fp_fmt_in(idex_fp_fmt),
     .fp_flag_nv_in(ex_fp_flag_nv),
     .fp_flag_dz_in(ex_fp_flag_dz),
     .fp_flag_of_in(ex_fp_flag_of),
@@ -1199,6 +1275,11 @@ module rv_core_pipelined #(
     .csr_rdata_out(exmem_csr_rdata),
     // Exception outputs
     .is_mret_out(exmem_is_mret),
+    .is_sret_out(exmem_is_sret),
+    .is_sfence_vma_out(exmem_is_sfence_vma),
+    .rs1_addr_out(exmem_rs1_addr),
+    .rs2_addr_out(exmem_rs2_addr),
+    .rs1_data_out(exmem_rs1_data),
     .instruction_out(exmem_instruction),
     .pc_out(exmem_pc)
   );
@@ -1230,20 +1311,118 @@ module rv_core_pipelined #(
   // Atomic unit sees memory as always ready (synchronous memory, 1-cycle latency)
   assign ex_atomic_mem_ready = 1'b1;
 
-  // Data Memory
+  //--------------------------------------------------------------------------
+  // MMU: Virtual Memory Translation
+  //--------------------------------------------------------------------------
+
+  // MMU translation request signals
+  // For data accesses: translate virtual address from MEM stage
+  // For instruction fetches: translation happens in IF stage (future enhancement)
+  assign mmu_req_valid   = exmem_valid && (exmem_mem_read || exmem_mem_write);
+  assign mmu_req_vaddr   = exmem_alu_result;  // ALU result is the virtual address
+  assign mmu_req_is_store = exmem_mem_write;
+  assign mmu_req_is_fetch = 1'b0;  // Data access (instruction fetch MMU in IF stage)
+  assign mmu_req_size    = exmem_funct3;  // funct3 encodes access size
+
+  // TLB flush control from SFENCE.VMA instruction
+  // SFENCE.VMA in MEM stage: rs1 specifies vaddr, rs2 specifies ASID
+  // For now, implement simple flush: rs1=x0 && rs2=x0 => flush all
+  wire sfence_flush_all = exmem_is_sfence_vma && (exmem_rs1_addr == 5'h0) && (exmem_rs2_addr == 5'h0);
+  wire sfence_flush_vaddr = exmem_is_sfence_vma && (exmem_rs1_addr != 5'h0);
+  wire [XLEN-1:0] sfence_vaddr = exmem_rs1_data;  // rs1 data contains virtual address
+
+  assign tlb_flush_all = sfence_flush_all;
+  assign tlb_flush_vaddr = sfence_flush_vaddr;
+  assign tlb_flush_addr = sfence_vaddr;
+
+  // MMU busy signal: translation in progress (req_valid && !req_ready)
+  assign mmu_busy = mmu_req_valid && !mmu_req_ready;
+
+  // Instantiate MMU
+  mmu #(
+    .XLEN(XLEN),
+    .TLB_ENTRIES(16)  // 16-entry TLB
+  ) mmu_inst (
+    .clk(clk),
+    .reset_n(reset_n),
+    // Translation request
+    .req_valid(mmu_req_valid),
+    .req_vaddr(mmu_req_vaddr),
+    .req_is_store(mmu_req_is_store),
+    .req_is_fetch(mmu_req_is_fetch),
+    .req_size(mmu_req_size),
+    .req_ready(mmu_req_ready),
+    .req_paddr(mmu_req_paddr),
+    .req_page_fault(mmu_req_page_fault),
+    .req_fault_vaddr(mmu_req_fault_vaddr),
+    // Page table walk memory interface
+    .ptw_req_valid(mmu_ptw_req_valid),
+    .ptw_req_addr(mmu_ptw_req_addr),
+    .ptw_req_ready(mmu_ptw_req_ready),
+    .ptw_resp_data(mmu_ptw_resp_data),
+    .ptw_resp_valid(mmu_ptw_resp_valid),
+    // CSR interface
+    .satp(csr_satp),
+    .privilege_mode(current_priv),
+    .mstatus_sum(mstatus_sum),
+    .mstatus_mxr(mstatus_mxr),
+    // TLB flush control
+    .tlb_flush_all(tlb_flush_all),
+    .tlb_flush_vaddr(tlb_flush_vaddr),
+    .tlb_flush_addr(tlb_flush_addr)
+  );
+
+  // Memory Arbiter: Multiplex between CPU data access and MMU PTW
+  // Priority: PTW gets priority when active (MMU needs memory for page table walk)
+  // Otherwise, normal data memory access
+  wire [XLEN-1:0] arb_mem_addr;
+  wire [XLEN-1:0] arb_mem_write_data;
+  wire            arb_mem_read;
+  wire            arb_mem_write;
+  wire [2:0]      arb_mem_funct3;
+  wire [XLEN-1:0] arb_mem_read_data;
+
+  // When PTW is active, it gets priority
+  // When PTW is not active, use translated address from MMU (or bypass if no MMU)
+  wire use_mmu_translation = mmu_req_ready && !mmu_req_page_fault;
+  wire [XLEN-1:0] translated_addr = use_mmu_translation ? mmu_req_paddr : dmem_addr;
+
+  assign arb_mem_addr       = mmu_ptw_req_valid ? mmu_ptw_req_addr : translated_addr;
+  assign arb_mem_write_data = dmem_write_data;  // PTW never writes
+  assign arb_mem_read       = mmu_ptw_req_valid ? 1'b1 : dmem_mem_read;
+  assign arb_mem_write      = mmu_ptw_req_valid ? 1'b0 : dmem_mem_write;
+  assign arb_mem_funct3     = mmu_ptw_req_valid ? 3'b010 : dmem_funct3;  // PTW uses word access
+
+  // PTW ready when memory is not busy (synchronous memory, always ready)
+  assign mmu_ptw_req_ready = 1'b1;
+  // PTW response valid one cycle after request (synchronous memory)
+  reg ptw_req_valid_r;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      ptw_req_valid_r <= 1'b0;
+    else
+      ptw_req_valid_r <= mmu_ptw_req_valid;
+  end
+  assign mmu_ptw_resp_valid = ptw_req_valid_r;
+  assign mmu_ptw_resp_data = arb_mem_read_data;
+
+  // Data Memory (connected via arbiter for MMU PTW access)
   data_memory #(
     .XLEN(XLEN),
     .MEM_SIZE(DMEM_SIZE),
     .MEM_FILE(MEM_FILE)  // Load same file as instruction memory (for compliance tests)
   ) dmem (
     .clk(clk),
-    .addr(dmem_addr),
-    .write_data(dmem_write_data),
-    .mem_read(dmem_mem_read),
-    .mem_write(dmem_mem_write),
-    .funct3(dmem_funct3),
-    .read_data(mem_read_data)
+    .addr(arb_mem_addr),        // Arbitrated address (PTW or translated CPU address)
+    .write_data(arb_mem_write_data),
+    .mem_read(arb_mem_read),
+    .mem_write(arb_mem_write),
+    .funct3(arb_mem_funct3),
+    .read_data(arb_mem_read_data)
   );
+
+  // Connect arbiter read data to both CPU and PTW
+  assign mem_read_data = arb_mem_read_data;
 
   // MEM/WB Pipeline Register
   memwb_register #(

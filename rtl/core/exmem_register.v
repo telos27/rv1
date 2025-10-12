@@ -53,6 +53,11 @@ module exmem_register #(
 
   // Exception signals from EX stage
   input  wire        is_mret_in,
+  input  wire        is_sret_in,
+  input  wire        is_sfence_vma_in,
+  input  wire [4:0]  rs1_addr_in,
+  input  wire [4:0]  rs2_addr_in,
+  input  wire [XLEN-1:0] rs1_data_in,
   input  wire [31:0] instruction_in,
   input  wire [XLEN-1:0] pc_in,           // For exception handling
 
@@ -97,6 +102,11 @@ module exmem_register #(
 
   // Exception signals to MEM stage
   output reg         is_mret_out,
+  output reg         is_sret_out,
+  output reg         is_sfence_vma_out,
+  output reg  [4:0]  rs1_addr_out,
+  output reg  [4:0]  rs2_addr_out,
+  output reg  [XLEN-1:0] rs1_data_out,
   output reg  [31:0] instruction_out,
   output reg  [XLEN-1:0] pc_out
 );
@@ -138,6 +148,11 @@ module exmem_register #(
       csr_rdata_out      <= {XLEN{1'b0}};
 
       is_mret_out        <= 1'b0;
+      is_sret_out        <= 1'b0;
+      is_sfence_vma_out  <= 1'b0;
+      rs1_addr_out       <= 5'h0;
+      rs2_addr_out       <= 5'h0;
+      rs1_data_out       <= {XLEN{1'b0}};
       instruction_out    <= 32'h0;
       pc_out             <= {XLEN{1'b0}};
     end else if (!hold) begin
@@ -176,6 +191,11 @@ module exmem_register #(
       csr_rdata_out      <= csr_rdata_in;
 
       is_mret_out        <= is_mret_in;
+      is_sret_out        <= is_sret_in;
+      is_sfence_vma_out  <= is_sfence_vma_in;
+      rs1_addr_out       <= rs1_addr_in;
+      rs2_addr_out       <= rs2_addr_in;
+      rs1_data_out       <= rs1_data_in;
       instruction_out    <= instruction_in;
       pc_out             <= pc_in;
     end

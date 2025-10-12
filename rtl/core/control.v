@@ -19,6 +19,8 @@ module control #(
   input  wire       is_ecall,    // ECALL instruction
   input  wire       is_ebreak,   // EBREAK instruction
   input  wire       is_mret,     // MRET instruction
+  input  wire       is_sret,     // SRET instruction
+  input  wire       is_sfence_vma, // SFENCE.VMA instruction
   input  wire       is_mul_div,  // M extension instruction
   input  wire [3:0] mul_div_op,  // M extension operation (from decoder)
   input  wire       is_word_op,  // RV64M: W-suffix instruction
@@ -511,6 +513,17 @@ module control #(
           // MRET: return from trap
           // This is handled as a special jump in the core
           jump = 1'b1;  // Indicate control flow change
+
+        end else if (is_sret) begin
+          // SRET: return from supervisor trap
+          // This is handled as a special jump in the core
+          jump = 1'b1;  // Indicate control flow change
+
+        end else if (is_sfence_vma) begin
+          // SFENCE.VMA: TLB fence (flush TLB)
+          // This is a NOP from control unit perspective
+          // MMU will handle TLB flush based on rs1/rs2 values
+          // No register write, no memory access, just flush signal
 
         end else begin
           // Unknown SYSTEM instruction

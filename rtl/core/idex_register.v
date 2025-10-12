@@ -74,6 +74,8 @@ module idex_register #(
   input  wire        is_ecall_in,
   input  wire        is_ebreak_in,
   input  wire        is_mret_in,
+  input  wire        is_sret_in,
+  input  wire        is_sfence_vma_in,
   input  wire        illegal_inst_in,
   input  wire [31:0] instruction_in,  // For exception value
 
@@ -138,6 +140,8 @@ module idex_register #(
   output reg         is_ecall_out,
   output reg         is_ebreak_out,
   output reg         is_mret_out,
+  output reg         is_sret_out,
+  output reg         is_sfence_vma_out,
   output reg         illegal_inst_out,
   output reg  [31:0] instruction_out
 );
@@ -199,6 +203,8 @@ module idex_register #(
       is_ecall_out    <= 1'b0;
       is_ebreak_out   <= 1'b0;
       is_mret_out     <= 1'b0;
+      is_sret_out     <= 1'b0;
+      is_sfence_vma_out <= 1'b0;
       illegal_inst_out <= 1'b0;
       instruction_out <= 32'h0;
     end else if (flush && !hold) begin
@@ -259,6 +265,8 @@ module idex_register #(
       is_ecall_out    <= 1'b0;          // Critical: clear exceptions
       is_ebreak_out   <= 1'b0;
       is_mret_out     <= 1'b0;
+      is_sret_out     <= 1'b0;
+      is_sfence_vma_out <= 1'b0;
       illegal_inst_out <= 1'b0;
       instruction_out <= 32'h0;
     end else if (!hold) begin
@@ -317,6 +325,8 @@ module idex_register #(
       is_ecall_out    <= is_ecall_in;
       is_ebreak_out   <= is_ebreak_in;
       is_mret_out     <= is_mret_in;
+      is_sret_out     <= is_sret_in;
+      is_sfence_vma_out <= is_sfence_vma_in;
       illegal_inst_out <= illegal_inst_in;
       instruction_out <= instruction_in;
     end

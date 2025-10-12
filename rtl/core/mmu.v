@@ -407,10 +407,12 @@ module mmu #(
           tlb_vpn[tlb_replace_idx] <= ptw_vpn_save;
 
           // Extract PPN from PTE
+          // RV32 Sv32: PPN is 22 bits [31:10], pad to XLEN (32-22=10 zeros)
+          // RV64 Sv39: PPN is 44 bits [53:10], pad to XLEN (64-44=20 zeros)
           if (XLEN == 32) begin
-            tlb_ppn[tlb_replace_idx] <= {{(XLEN-22){1'b0}}, ptw_pte_data[31:10]};
+            tlb_ppn[tlb_replace_idx] <= {{10{1'b0}}, ptw_pte_data[31:10]};
           end else begin
-            tlb_ppn[tlb_replace_idx] <= {{(XLEN-44){1'b0}}, ptw_pte_data[53:10]};
+            tlb_ppn[tlb_replace_idx] <= {{20{1'b0}}, ptw_pte_data[53:10]};
           end
 
           tlb_pte[tlb_replace_idx] <= ptw_pte_data[7:0];

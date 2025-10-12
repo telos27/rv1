@@ -125,6 +125,11 @@ module exception_unit #(
                                 (mem_store_doubleword && (mem_addr[2:0] != 3'b000)));
   */
 
+  // MEM stage: Page faults (Phase 3 - MMU integration)
+  // Page fault takes priority over misaligned access
+  wire mem_page_fault_load = mem_valid && mem_page_fault && mem_read && !mem_write;
+  wire mem_page_fault_store = mem_valid && mem_page_fault && mem_write;
+
   // =========================================================================
   // Exception Priority Encoder
   // =========================================================================
@@ -133,8 +138,9 @@ module exception_unit #(
   // 2. Illegal instruction (ID)
   // 3. EBREAK (ID)
   // 4. ECALL (ID)
-  // 5. Load address misaligned (MEM)
-  // 6. Store address misaligned (MEM)
+  // 5. Load/Store page fault (MEM) - Phase 3
+  // 6. Load address misaligned (MEM)
+  // 7. Store address misaligned (MEM)
 
   always @(*) begin
     // Default: no exception
@@ -167,6 +173,20 @@ module exception_unit #(
       exception_code = CAUSE_ILLEGAL_INST;
       exception_pc = id_pc;
       exception_val = {{(XLEN-32){1'b0}}, id_instruction};  // Zero-extend instruction to XLEN
+
+    end else if (mem_page_fault_load) begin
+      // Phase 3: Load page fault (higher priority than misaligned)
+      exception = 1'b1;
+      exception_code = CAUSE_LOAD_PAGE_FAULT;
+      exception_pc = mem_pc;
+      exception_val = mem_fault_vaddr;  // Faulting virtual address
+
+    end else if (mem_page_fault_store) begin
+      // Phase 3: Store/AMO page fault (higher priority than misaligned)
+      exception = 1'b1;
+      exception_code = CAUSE_STORE_PAGE_FAULT;
+      exception_pc = mem_pc;
+      exception_val = mem_fault_vaddr;  // Faulting virtual address
 
     end else if (mem_load_misaligned) begin
       exception = 1'b1;

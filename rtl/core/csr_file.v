@@ -30,6 +30,10 @@ module csr_file #(
   input  wire             mret,           // MRET instruction
   output wire [XLEN-1:0]  mepc_out,       // mepc for return
 
+  // SRET (supervisor trap return)
+  input  wire             sret,           // SRET instruction
+  output wire [XLEN-1:0]  sepc_out,       // sepc for return
+
   // Status outputs
   output wire             mstatus_mie,    // Global interrupt enable
   output wire             illegal_csr,    // Invalid CSR access
@@ -77,8 +81,24 @@ module csr_file #(
   localparam CSR_MTVAL     = 12'h343;
   localparam CSR_MIP       = 12'h344;
 
+  // Supervisor Trap Setup
+  localparam CSR_SSTATUS   = 12'h100;
+  localparam CSR_SIE       = 12'h104;
+  localparam CSR_STVEC     = 12'h105;
+
+  // Supervisor Trap Handling
+  localparam CSR_SSCRATCH  = 12'h140;
+  localparam CSR_SEPC      = 12'h141;
+  localparam CSR_SCAUSE    = 12'h142;
+  localparam CSR_STVAL     = 12'h143;
+  localparam CSR_SIP       = 12'h144;
+
   // Supervisor Address Translation and Protection
   localparam CSR_SATP      = 12'h180;
+
+  // Machine Trap Delegation
+  localparam CSR_MEDELEG   = 12'h302;
+  localparam CSR_MIDELEG   = 12'h303;
 
   // Floating-Point CSRs (F/D extension)
   localparam CSR_FFLAGS    = 12'h001;  // Floating-point exception flags
@@ -148,6 +168,17 @@ module csr_file #(
   // Supervisor Address Translation and Protection (SATP)
   reg [XLEN-1:0] satp_r;
 
+  // Supervisor Trap Handling Registers
+  reg [XLEN-1:0] stvec_r;      // Supervisor trap vector
+  reg [XLEN-1:0] sscratch_r;   // Supervisor scratch register
+  reg [XLEN-1:0] sepc_r;       // Supervisor exception PC
+  reg [XLEN-1:0] scause_r;     // Supervisor exception cause
+  reg [XLEN-1:0] stval_r;      // Supervisor trap value
+
+  // Machine Trap Delegation Registers
+  reg [XLEN-1:0] medeleg_r;    // Machine exception delegation to S-mode
+  reg [XLEN-1:0] mideleg_r;    // Machine interrupt delegation to S-mode
+
   // =========================================================================
   // Read-Only CSRs (hardwired)
   // =========================================================================
@@ -211,24 +242,77 @@ module csr_file #(
     end
   endgenerate
 
+  // Construct sstatus as read-only subset of mstatus
+  // SSTATUS provides restricted view: only S-mode relevant fields visible
+  generate
+    if (XLEN == 32) begin : gen_sstatus_rv32
+      wire [31:0] sstatus_value = {
+        12'b0,                // [31:20] Reserved
+        mstatus_mxr_r,        // [19] MXR
+        mstatus_sum_r,        // [18] SUM
+        5'b0,                 // [17:13] Reserved
+        2'b00,                // [12:11] Reserved (MPP not visible in S-mode)
+        2'b0,                 // [10:9] Reserved
+        mstatus_spp_r,        // [8] SPP
+        1'b0,                 // [7] Reserved (MPIE not visible in S-mode)
+        1'b0,                 // [6] Reserved
+        mstatus_spie_r,       // [5] SPIE
+        1'b0,                 // [4] Reserved
+        1'b0,                 // [3] Reserved (MIE not visible in S-mode)
+        1'b0,                 // [2] Reserved
+        mstatus_sie_r,        // [1] SIE
+        1'b0                  // [0] Reserved
+      };
+    end else begin : gen_sstatus_rv64
+      wire [63:0] sstatus_value = {
+        44'b0,                // [63:20] Reserved
+        mstatus_mxr_r,        // [19] MXR
+        mstatus_sum_r,        // [18] SUM
+        5'b0,                 // [17:13] Reserved
+        2'b00,                // [12:11] Reserved (MPP not visible)
+        2'b0,                 // [10:9] Reserved
+        mstatus_spp_r,        // [8] SPP
+        1'b0,                 // [7] Reserved (MPIE not visible)
+        1'b0,                 // [6] Reserved
+        mstatus_spie_r,       // [5] SPIE
+        1'b0,                 // [4] Reserved
+        1'b0,                 // [3] Reserved (MIE not visible)
+        1'b0,                 // [2] Reserved
+        mstatus_sie_r,        // [1] SIE
+        1'b0                  // [0] Reserved
+      };
+    end
+  endgenerate
+
+  // SIE and SIP are subsets of MIE and MIP
+  // Supervisor-level interrupts use bits: SEIP(9), STIP(5), SSIP(1)
+  wire [XLEN-1:0] sie_value = mie_r & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
+  wire [XLEN-1:0] sip_value = mip_r & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
+
   // CSR read multiplexer
   // Note: Access to generate block signals must be inside generate blocks for Verilator
   wire [XLEN-1:0] mstatus_value;
+  wire [XLEN-1:0] sstatus_value;
   wire [XLEN-1:0] misa_value;
   generate
     if (XLEN == 32) begin : gen_csr_access
       assign mstatus_value = gen_mstatus_rv32.mstatus_value;
+      assign sstatus_value = gen_sstatus_rv32.sstatus_value;
       assign misa_value = gen_misa_rv32.misa;
     end else begin : gen_csr_access
       assign mstatus_value = gen_mstatus_rv64.mstatus_value;
+      assign sstatus_value = gen_sstatus_rv64.sstatus_value;
       assign misa_value = gen_misa_rv64.misa;
     end
   endgenerate
 
   always @(*) begin
     case (csr_addr)
+      // Machine-mode CSRs
       CSR_MSTATUS:   csr_rdata = mstatus_value;
       CSR_MISA:      csr_rdata = misa_value;
+      CSR_MEDELEG:   csr_rdata = medeleg_r;
+      CSR_MIDELEG:   csr_rdata = mideleg_r;
       CSR_MIE:       csr_rdata = mie_r;
       CSR_MTVEC:     csr_rdata = mtvec_r;
       CSR_MSCRATCH:  csr_rdata = mscratch_r;
@@ -236,11 +320,21 @@ module csr_file #(
       CSR_MCAUSE:    csr_rdata = mcause_r;
       CSR_MTVAL:     csr_rdata = mtval_r;
       CSR_MIP:       csr_rdata = mip_r;
-      CSR_SATP:      csr_rdata = satp_r;
       CSR_MVENDORID: csr_rdata = {{(XLEN-32){1'b0}}, mvendorid};  // Zero-extend to XLEN
       CSR_MARCHID:   csr_rdata = {{(XLEN-32){1'b0}}, marchid};    // Zero-extend to XLEN
       CSR_MIMPID:    csr_rdata = {{(XLEN-32){1'b0}}, mimpid};     // Zero-extend to XLEN
       CSR_MHARTID:   csr_rdata = {{(XLEN-32){1'b0}}, mhartid};    // Zero-extend to XLEN
+      // Supervisor-mode CSRs
+      CSR_SSTATUS:   csr_rdata = sstatus_value;
+      CSR_SIE:       csr_rdata = sie_value;
+      CSR_STVEC:     csr_rdata = stvec_r;
+      CSR_SSCRATCH:  csr_rdata = sscratch_r;
+      CSR_SEPC:      csr_rdata = sepc_r;
+      CSR_SCAUSE:    csr_rdata = scause_r;
+      CSR_STVAL:     csr_rdata = stval_r;
+      CSR_SIP:       csr_rdata = sip_value;
+      CSR_SATP:      csr_rdata = satp_r;
+      // Floating-point CSRs
       CSR_FFLAGS:    csr_rdata = {{(XLEN-5){1'b0}}, fflags_r};    // Zero-extend to XLEN
       CSR_FRM:       csr_rdata = {{(XLEN-3){1'b0}}, frm_r};       // Zero-extend to XLEN
       CSR_FCSR:      csr_rdata = {{(XLEN-8){1'b0}}, frm_r, fflags_r};  // {frm[7:5], fflags[4:0]}
@@ -252,8 +346,22 @@ module csr_file #(
   // CSR Write Logic
   // =========================================================================
 
-  // Determine if CSR is read-only
-  wire csr_read_only = (csr_addr == CSR_MISA) ||
+  // =========================================================================
+  // CSR Privilege Checking (Phase 2)
+  // =========================================================================
+  // CSR address encoding: [11:10] = read-only flag, [9:8] = privilege level
+  // 00 = User, 01 = Supervisor, 10 = Reserved, 11 = Machine
+
+  wire [1:0] csr_priv_level = csr_addr[9:8];  // Extract privilege level from address
+  wire       csr_read_only_bit = (csr_addr[11:10] == 2'b11);  // Read-only if top 2 bits are 11
+
+  // Check if current privilege can access this CSR
+  // Rule: Current privilege must be >= CSR privilege level
+  wire csr_priv_ok = (current_priv >= csr_priv_level);
+
+  // Determine if CSR is read-only (either by address encoding or specific CSR)
+  wire csr_read_only = csr_read_only_bit ||
+                       (csr_addr == CSR_MISA) ||
                        (csr_addr == CSR_MVENDORID) ||
                        (csr_addr == CSR_MARCHID) ||
                        (csr_addr == CSR_MIMPID) ||
@@ -261,37 +369,48 @@ module csr_file #(
 
   // Test/Debug CSRs (used by some test frameworks for output)
   // Addresses 0x700-0x7FF are sometimes used for test output
-  // We'll accept any address starting with 0x7xx as a "test CSR" (write-only, reads return 0)
   wire csr_is_test = (csr_addr[11:8] == 4'b0111);  // 0x700-0x7FF range
 
-  // Determine if CSR is valid
-  // For now, accept ALL CSR addresses to avoid illegal instruction exceptions
-  // This is NOT spec-compliant but allows tests to run
-  // TODO: Implement proper CSR validation and add missing CSRs (PMP, counters, etc.)
-  wire csr_valid = 1'b1;  // Accept all CSRs
+  // Determine if CSR exists (is valid)
+  // Check if CSR is in our implemented set
+  wire csr_exists = (csr_addr == CSR_MSTATUS) ||
+                    (csr_addr == CSR_MISA) ||
+                    (csr_addr == CSR_MEDELEG) ||
+                    (csr_addr == CSR_MIDELEG) ||
+                    (csr_addr == CSR_MIE) ||
+                    (csr_addr == CSR_MTVEC) ||
+                    (csr_addr == CSR_MSCRATCH) ||
+                    (csr_addr == CSR_MEPC) ||
+                    (csr_addr == CSR_MCAUSE) ||
+                    (csr_addr == CSR_MTVAL) ||
+                    (csr_addr == CSR_MIP) ||
+                    (csr_addr == CSR_MVENDORID) ||
+                    (csr_addr == CSR_MARCHID) ||
+                    (csr_addr == CSR_MIMPID) ||
+                    (csr_addr == CSR_MHARTID) ||
+                    (csr_addr == CSR_SSTATUS) ||
+                    (csr_addr == CSR_SIE) ||
+                    (csr_addr == CSR_STVEC) ||
+                    (csr_addr == CSR_SSCRATCH) ||
+                    (csr_addr == CSR_SEPC) ||
+                    (csr_addr == CSR_SCAUSE) ||
+                    (csr_addr == CSR_STVAL) ||
+                    (csr_addr == CSR_SIP) ||
+                    (csr_addr == CSR_SATP) ||
+                    (csr_addr == CSR_FFLAGS) ||
+                    (csr_addr == CSR_FRM) ||
+                    (csr_addr == CSR_FCSR) ||
+                    csr_is_test;  // Accept test CSRs
 
-  // Original validation (commented out for now):
-  /*
-  wire csr_valid = (csr_addr == CSR_MSTATUS) ||
-                   (csr_addr == CSR_MISA) ||
-                   (csr_addr == CSR_MIE) ||
-                   (csr_addr == CSR_MTVEC) ||
-                   (csr_addr == CSR_MSCRATCH) ||
-                   (csr_addr == CSR_MEPC) ||
-                   (csr_addr == CSR_MCAUSE) ||
-                   (csr_addr == CSR_MTVAL) ||
-                   (csr_addr == CSR_MIP) ||
-                   (csr_addr == CSR_MVENDORID) ||
-                   (csr_addr == CSR_MARCHID) ||
-                   (csr_addr == CSR_MIMPID) ||
-                   (csr_addr == CSR_MHARTID) ||
-                   csr_is_test;
-  */
-
-  // Illegal CSR access: invalid CSR or write to read-only CSR
-  // Only flag as illegal if there's actually a CSR operation (csr_we=1 or read operation)
-  // For non-CSR instructions, don't flag as illegal even if address is invalid
-  assign illegal_csr = csr_we && ((!csr_valid) || csr_read_only);
+  // Illegal CSR access conditions:
+  // 1. CSR doesn't exist
+  // 2. Privilege level too low to access CSR
+  // 3. Attempting to write to read-only CSR
+  //
+  // Note: We only check writes here (csr_we). Read privilege is implicitly checked
+  // because CSR instructions that read also write (even CSRRS/CSRRC with rs1=x0).
+  // The control unit sets csr_we=1 for all CSR instructions, so privilege is always checked.
+  assign illegal_csr = csr_we && ((!csr_exists) || (!csr_priv_ok) || csr_read_only);
 
   // Compute CSR write value based on operation
   reg [XLEN-1:0] csr_write_value;
@@ -327,23 +446,46 @@ module csr_file #(
       // Reset floating-point CSRs
       fflags_r       <= 5'b0;            // No exceptions
       frm_r          <= 3'b000;          // RNE (Round to Nearest, ties to Even)
+      // Reset supervisor CSRs
+      stvec_r        <= {XLEN{1'b0}};   // Supervisor trap vector at address 0
+      sscratch_r     <= {XLEN{1'b0}};
+      sepc_r         <= {XLEN{1'b0}};
+      scause_r       <= {XLEN{1'b0}};
+      stval_r        <= {XLEN{1'b0}};
+      // Reset trap delegation registers
+      medeleg_r      <= {XLEN{1'b0}};   // No delegation by default
+      mideleg_r      <= {XLEN{1'b0}};   // No delegation by default
     end else begin
-      // Trap entry has priority over CSR writes
+      // Trap entry has priority over CSR writes and SRET/MRET
       if (trap_entry) begin
-        // Save PC and cause
-        mepc_r  <= trap_pc;
-        mcause_r <= {{(XLEN-5){1'b0}}, trap_cause};  // [XLEN-1]=0 for exception, lower bits = cause
-        mtval_r  <= trap_val;
-
-        // Save and update status
-        mstatus_mpie_r <= mstatus_mie_r;  // Save current MIE
-        mstatus_mie_r  <= 1'b0;           // Disable interrupts
-        mstatus_mpp_r  <= 2'b11;          // Save privilege (M-mode)
+        // Determine target privilege level
+        if (trap_target_priv == 2'b11) begin
+          // Machine-mode trap
+          mepc_r  <= trap_pc;
+          mcause_r <= {{(XLEN-5){1'b0}}, trap_cause};
+          mtval_r  <= trap_val;
+          mstatus_mpie_r <= mstatus_mie_r;  // Save current MIE
+          mstatus_mie_r  <= 1'b0;           // Disable interrupts
+          mstatus_mpp_r  <= current_priv;   // Save current privilege
+        end else if (trap_target_priv == 2'b01) begin
+          // Supervisor-mode trap
+          sepc_r  <= trap_pc;
+          scause_r <= {{(XLEN-5){1'b0}}, trap_cause};
+          stval_r  <= trap_val;
+          mstatus_spie_r <= mstatus_sie_r;  // Save current SIE
+          mstatus_sie_r  <= 1'b0;           // Disable supervisor interrupts
+          mstatus_spp_r  <= current_priv[0]; // Save current privilege (0=U, 1=S)
+        end
       end else if (mret) begin
-        // Restore interrupt enable
-        mstatus_mie_r  <= mstatus_mpie_r;
-        mstatus_mpie_r <= 1'b1;
-        // Privilege stays M-mode (mstatus_mpp_r unchanged)
+        // MRET: Return from machine-mode trap
+        mstatus_mie_r  <= mstatus_mpie_r;   // Restore interrupt enable
+        mstatus_mpie_r <= 1'b1;             // Set MPIE to 1
+        mstatus_mpp_r  <= 2'b11;            // Set MPP to M-mode
+      end else if (sret) begin
+        // SRET: Return from supervisor-mode trap
+        mstatus_sie_r  <= mstatus_spie_r;   // Restore supervisor interrupt enable
+        mstatus_spie_r <= 1'b1;             // Set SPIE to 1
+        mstatus_spp_r  <= 1'b0;             // Set SPP to U-mode
       end else if (csr_we && !csr_read_only) begin
         // Normal CSR write
         case (csr_addr)
@@ -364,7 +506,35 @@ module csr_file #(
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
           CSR_MIP:      mip_r      <= csr_write_value;
+          CSR_MEDELEG:  medeleg_r  <= csr_write_value;
+          CSR_MIDELEG:  mideleg_r  <= csr_write_value;
           CSR_SATP:     satp_r     <= csr_write_value;
+          // Supervisor CSRs
+          CSR_SSTATUS: begin
+            // SSTATUS is a restricted view of MSTATUS
+            // Only allow writes to S-mode visible fields
+            mstatus_sie_r  <= csr_write_value[1];
+            mstatus_spie_r <= csr_write_value[5];
+            mstatus_spp_r  <= csr_write_value[8];
+            mstatus_sum_r  <= csr_write_value[18];
+            mstatus_mxr_r  <= csr_write_value[19];
+          end
+          CSR_SIE: begin
+            // SIE is a subset of MIE - only write S-mode interrupt bits [9,5,1]
+            mie_r[9] <= csr_write_value[9];  // SEIE
+            mie_r[5] <= csr_write_value[5];  // STIE
+            mie_r[1] <= csr_write_value[1];  // SSIE
+          end
+          CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          CSR_SSCRATCH: sscratch_r <= csr_write_value;
+          CSR_SEPC:     sepc_r     <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          CSR_SCAUSE:   scause_r   <= csr_write_value;
+          CSR_STVAL:    stval_r    <= csr_write_value;
+          CSR_SIP: begin
+            // SIP is a subset of MIP - only write S-mode interrupt bits [9,5,1]
+            // Note: typically only SSIP (bit 1) is writable from software
+            mip_r[1] <= csr_write_value[1];  // SSIP (software interrupt)
+          end
           // Floating-point CSRs
           CSR_FFLAGS:   fflags_r   <= csr_write_value[4:0];  // Write exception flags
           CSR_FRM:      frm_r      <= csr_write_value[2:0];  // Write rounding mode
@@ -388,18 +558,43 @@ module csr_file #(
   end
 
   // =========================================================================
-  // Trap Target Privilege Determination
+  // Trap Target Privilege Determination (Phase 2)
   // =========================================================================
-  // Phase 1: All traps go to M-mode (no delegation yet)
-  // Phase 2 will add medeleg/mideleg support for S-mode delegation
-  assign trap_target_priv = 2'b11;  // Always M-mode in Phase 1
+  // Determine trap target privilege based on delegation and current privilege
+  // Logic:
+  // 1. If current privilege is M-mode, trap goes to M-mode (no delegation)
+  // 2. If exception is delegated (medeleg bit set) and privilege < M-mode, trap goes to S-mode
+  // 3. Otherwise, trap goes to M-mode
+
+  function [1:0] get_trap_target_priv;
+    input [4:0] cause;
+    input [1:0] curr_priv;
+    input [XLEN-1:0] medeleg;
+    begin
+      // M-mode traps never delegate
+      if (curr_priv == 2'b11) begin
+        get_trap_target_priv = 2'b11;  // M-mode
+      end
+      // Check if exception is delegated to S-mode
+      else if (medeleg[cause] && (curr_priv <= 2'b01)) begin
+        get_trap_target_priv = 2'b01;  // S-mode
+      end
+      else begin
+        get_trap_target_priv = 2'b11;  // M-mode (default)
+      end
+    end
+  endfunction
+
+  assign trap_target_priv = get_trap_target_priv(trap_cause, current_priv, medeleg_r);
 
   // =========================================================================
   // Output Assignments
   // =========================================================================
 
-  assign trap_vector = mtvec_r;
+  // Select trap vector based on target privilege
+  assign trap_vector = (trap_target_priv == 2'b01) ? stvec_r : mtvec_r;
   assign mepc_out    = mepc_r;
+  assign sepc_out    = sepc_r;
   assign mstatus_mie = mstatus_mie_r;
 
   // Privilege mode outputs

@@ -30,6 +30,8 @@ module decoder #(
   output wire            is_ecall,      // ECALL instruction
   output wire            is_ebreak,     // EBREAK instruction
   output wire            is_mret,       // MRET instruction
+  output wire            is_sret,       // SRET instruction
+  output wire            is_sfence_vma, // SFENCE.VMA instruction
 
   // M extension outputs
   output wire            is_mul_div,    // M extension instruction
@@ -127,6 +129,22 @@ module decoder #(
   assign is_mret = (opcode == OPCODE_SYSTEM) &&
                    (funct3 == 3'b000) &&
                    (instruction[31:20] == 12'h302);
+
+  // SRET detection
+  // SRET: opcode=SYSTEM, funct3=0, imm[11:0]=0x102
+  // Full encoding: 0001000_00010_00000_000_00000_1110011
+  assign is_sret = (opcode == OPCODE_SYSTEM) &&
+                   (funct3 == 3'b000) &&
+                   (instruction[31:20] == 12'h102);
+
+  // SFENCE.VMA detection (TLB fence instruction)
+  // SFENCE.VMA: opcode=SYSTEM, funct3=0, funct7=0x09
+  // Full encoding: 0001001_rs2_rs1_000_00000_1110011
+  // rs1 and rs2 can specify vaddr and asid for selective flush
+  // For full flush: rs1=x0, rs2=x0
+  assign is_sfence_vma = (opcode == OPCODE_SYSTEM) &&
+                         (funct3 == 3'b000) &&
+                         (funct7 == 7'b0001001);
 
   // =========================================================================
   // M Extension Detection (RV32M / RV64M)
