@@ -233,13 +233,32 @@ module rvc_decoder #(
 
 ---
 
+## Known Issues
+
+For complete details, see `KNOWN_ISSUES.md` in the project root.
+
+### Active Issue: Mixed Compressed/Normal Instruction Addressing
+- **Status**: 🔴 Active - Medium Priority
+- **Symptoms**: test_rvc_simple produces x10=24 instead of expected 42
+- **Impact**: Affects programs mixing compressed and 32-bit instructions
+- **Pure compressed programs**: ✅ Working correctly (test_rvc_minimal passes)
+- **Investigation needed**: PC alignment and instruction fetch at transition boundaries
+
+### Resolved Issues
+- ✅ Icarus Verilog hang - RESOLVED
+- ✅ FPU state machine bugs - FIXED (70 lines, 5 files)
+- ✅ Test ebreak loop - RESOLVED with cycle-based termination
+
+---
+
 ## Next Steps (Future Work)
 
 ### Immediate (Optional)
-1. Fix assembly syntax in remaining test programs
-2. Test with alternative simulator (Verilator/ModelSim)
-3. FPGA synthesis and hardware validation
-4. Performance benchmarking (code density improvement)
+1. **Debug mixed instruction addressing issue** (see KNOWN_ISSUES.md #1)
+2. Fix assembly syntax in remaining test programs
+3. Test with alternative simulator (Verilator/ModelSim)
+4. FPGA synthesis and hardware validation
+5. Performance benchmarking (code density improvement)
 
 ### Integration (Phase 4)
 1. Move to next RISC-V extension (Zicsr - already partially implemented)

@@ -108,9 +108,28 @@ Tests Failed: 0
 - `docs/C_EXTENSION_PROGRESS.md` - Implementation progress (100% decoder)
 - `docs/C_EXTENSION_STATUS.md` - This file
 
-## Next Steps
+## Known Issues
 
-1. **Debug the simulation hang**:
+See `KNOWN_ISSUES.md` for complete details.
+
+### Issue #1: Mixed Compressed/Normal Instruction Addressing
+**Status**: 🔴 Active - Needs Investigation
+- **Symptoms**: test_rvc_simple produces incorrect results (x10=24 instead of 42)
+- **Impact**: Medium - affects programs mixing compressed and 32-bit instructions
+- **Pure compressed programs**: ✅ Working correctly (test_rvc_minimal passes)
+- **Root cause**: Under investigation - likely PC alignment issue
+- **Priority**: Medium
+
+### Resolved Issues
+- ✅ Icarus Verilog hang - RESOLVED
+- ✅ FPU state machine bugs - FIXED (70 lines, 5 files)
+- ✅ Test ebreak loop - RESOLVED with cycle-based termination
+
+## Next Steps (Archive)
+
+**Note**: The simulation hang has been resolved. Keeping for historical reference.
+
+1. ~~**Debug the simulation hang**~~:
    - Add more instrumentation to find exact stall point
    - Check for X propagation in waveforms
    - Try alternative simulators (Verilator, ModelSim)
