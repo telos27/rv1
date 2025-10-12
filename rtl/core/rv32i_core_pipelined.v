@@ -168,6 +168,7 @@ module rv_core_pipelined #(
   wire [4:0]      idex_fp_alu_op;
   wire [2:0]      idex_fp_rm;
   wire            idex_fp_use_dynamic_rm;
+  wire            idex_fp_fmt;
   wire [11:0]     idex_csr_addr;
   wire            idex_csr_we;
   wire            idex_csr_src;
@@ -251,11 +252,13 @@ module rv_core_pipelined #(
   wire            exmem_valid;
   wire [XLEN-1:0] exmem_mul_div_result;
   wire [XLEN-1:0] exmem_atomic_result;
+  wire            exmem_is_atomic;
   wire [XLEN-1:0] exmem_fp_result;
   wire [XLEN-1:0] exmem_int_result_fp;
   wire [4:0]      exmem_fp_rd_addr;
   wire            exmem_fp_reg_write;
   wire            exmem_int_reg_write_fp;
+  wire            exmem_fp_fmt;
   wire            exmem_fp_flag_nv;
   wire            exmem_fp_flag_dz;
   wire            exmem_fp_flag_of;
@@ -290,6 +293,7 @@ module rv_core_pipelined #(
   wire [4:0]      memwb_fp_rd_addr;
   wire            memwb_fp_reg_write;
   wire            memwb_int_reg_write_fp;
+  wire            memwb_fp_fmt;
   wire            memwb_fp_flag_nv;
   wire            memwb_fp_flag_dz;
   wire            memwb_fp_flag_of;
@@ -541,7 +545,7 @@ module rv_core_pipelined #(
     .wr_en(memwb_fp_reg_write),
     .rd_addr(memwb_fp_rd_addr),
     .rd_data(wb_fp_data),
-    .write_single(1'b0)  // TODO: Implement based on fp_fmt
+    .write_single(~memwb_fp_fmt)  // 1 for single-precision (fmt=0), 0 for double-precision (fmt=1)
   );
 
   // WB-to-ID FP Forwarding (FP Register File Bypass)
@@ -657,6 +661,7 @@ module rv_core_pipelined #(
     .fp_alu_op_in(id_fp_alu_op),
     .fp_rm_in(id_fp_rm),
     .fp_use_dynamic_rm_in(id_fp_use_dynamic_rm),
+    .fp_fmt_in(id_fp_fmt),
     // CSR inputs
     .csr_addr_in(id_csr_addr),
     .csr_we_in(id_csr_we_actual),
@@ -713,6 +718,7 @@ module rv_core_pipelined #(
     .fp_alu_op_out(idex_fp_alu_op),
     .fp_rm_out(idex_fp_rm),
     .fp_use_dynamic_rm_out(idex_fp_use_dynamic_rm),
+    .fp_fmt_out(idex_fp_fmt),
     // CSR outputs
     .csr_addr_out(idex_csr_addr),
     .csr_we_out(idex_csr_we),
@@ -861,6 +867,14 @@ module rv_core_pipelined #(
     .busy(ex_atomic_busy)
   );
 
+  // Atomic reservation invalidation on stores
+  // Invalidate LR reservation when any store writes to memory in MEM stage
+  wire reservation_invalidate;
+  wire [XLEN-1:0] reservation_inv_addr;
+
+  assign reservation_invalidate = exmem_mem_write && !exmem_is_atomic;
+  assign reservation_inv_addr = exmem_alu_result;
+
   reservation_station #(
     .XLEN(XLEN)
   ) reservation_station_inst (
@@ -871,8 +885,8 @@ module rv_core_pipelined #(
     .sc_valid(ex_sc_valid),
     .sc_addr(ex_sc_addr),
     .sc_success(ex_sc_success),
-    .invalidate(1'b0),              // TODO: invalidation on intervening writes
-    .inv_addr({XLEN{1'b0}}),
+    .invalidate(reservation_invalidate),
+    .inv_addr(reservation_inv_addr),
     .exception(exception),
     .interrupt(1'b0)                // TODO: connect to interrupt signal when implemented
   );
@@ -1006,6 +1020,8 @@ module rv_core_pipelined #(
     .start(fpu_start),
     .fp_alu_op(idex_fp_alu_op),
     .funct3(idex_funct3),
+    .rs2(idex_rs2_addr),
+    .funct7(idex_funct7),
     .rounding_mode(ex_fp_rounding_mode),
     .busy(ex_fpu_busy),
     .done(ex_fpu_done),
@@ -1048,6 +1064,7 @@ module rv_core_pipelined #(
     .valid_in(idex_valid && !exception_taken_r),  // Invalidate if exception occurred last cycle
     .mul_div_result_in(ex_mul_div_result),
     .atomic_result_in(ex_atomic_result),
+    .is_atomic_in(idex_is_atomic),
     // CSR inputs
     .csr_addr_in(idex_csr_addr),
     .csr_we_in(idex_csr_we),
@@ -1069,6 +1086,7 @@ module rv_core_pipelined #(
     .valid_out(exmem_valid),
     .mul_div_result_out(exmem_mul_div_result),
     .atomic_result_out(exmem_atomic_result),
+    .is_atomic_out(exmem_is_atomic),
     // FP inputs
     .fp_result_in(ex_fp_result),
     .int_result_fp_in(ex_int_result_fp),
@@ -1086,6 +1104,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_out(exmem_fp_rd_addr),
     .fp_reg_write_out(exmem_fp_reg_write),
     .int_reg_write_fp_out(exmem_int_reg_write_fp),
+    .fp_fmt_out(exmem_fp_fmt),
     .fp_flag_nv_out(exmem_fp_flag_nv),
     .fp_flag_dz_out(exmem_fp_flag_dz),
     .fp_flag_of_out(exmem_fp_flag_of),
@@ -1164,6 +1183,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_in(exmem_fp_rd_addr),
     .fp_reg_write_in(exmem_fp_reg_write),
     .int_reg_write_fp_in(exmem_int_reg_write_fp),
+    .fp_fmt_in(exmem_fp_fmt),
     .fp_flag_nv_in(exmem_fp_flag_nv),
     .fp_flag_dz_in(exmem_fp_flag_dz),
     .fp_flag_of_in(exmem_fp_flag_of),
@@ -1187,6 +1207,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_out(memwb_fp_rd_addr),
     .fp_reg_write_out(memwb_fp_reg_write),
     .int_reg_write_fp_out(memwb_int_reg_write_fp),
+    .fp_fmt_out(memwb_fp_fmt),
     .fp_flag_nv_out(memwb_fp_flag_nv),
     .fp_flag_dz_out(memwb_fp_flag_dz),
     .fp_flag_of_out(memwb_fp_flag_of),

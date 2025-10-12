@@ -31,6 +31,7 @@ module exmem_register #(
 
   // A extension result from EX stage
   input  wire [XLEN-1:0] atomic_result_in,
+  input  wire            is_atomic_in,       // Atomic instruction flag
 
   // F/D extension signals from EX stage
   input  wire [XLEN-1:0]  fp_result_in,          // FP result
@@ -43,6 +44,7 @@ module exmem_register #(
   input  wire             fp_flag_of_in,
   input  wire             fp_flag_uf_in,
   input  wire             fp_flag_nx_in,
+  input  wire             fp_fmt_in,             // FP format: 0=single, 1=double
 
   // CSR signals from EX stage
   input  wire [11:0]      csr_addr_in,
@@ -73,6 +75,7 @@ module exmem_register #(
 
   // A extension result to MEM stage
   output reg  [XLEN-1:0] atomic_result_out,
+  output reg             is_atomic_out,       // Atomic instruction flag
 
   // F/D extension signals to MEM stage
   output reg  [XLEN-1:0]  fp_result_out,
@@ -85,6 +88,7 @@ module exmem_register #(
   output reg              fp_flag_of_out,
   output reg              fp_flag_uf_out,
   output reg              fp_flag_nx_out,
+  output reg              fp_fmt_out,            // FP format: 0=single, 1=double
 
   // CSR signals to MEM stage
   output reg  [11:0]      csr_addr_out,
@@ -115,6 +119,7 @@ module exmem_register #(
       mul_div_result_out <= {XLEN{1'b0}};
 
       atomic_result_out  <= {XLEN{1'b0}};
+      is_atomic_out      <= 1'b0;
 
       fp_result_out      <= {XLEN{1'b0}};
       int_result_fp_out  <= {XLEN{1'b0}};
@@ -126,6 +131,7 @@ module exmem_register #(
       fp_flag_of_out     <= 1'b0;
       fp_flag_uf_out     <= 1'b0;
       fp_flag_nx_out     <= 1'b0;
+      fp_fmt_out         <= 1'b0;
 
       csr_addr_out       <= 12'h0;
       csr_we_out         <= 1'b0;
@@ -151,6 +157,7 @@ module exmem_register #(
       mul_div_result_out <= mul_div_result_in;
 
       atomic_result_out  <= atomic_result_in;
+      is_atomic_out      <= is_atomic_in;
 
       fp_result_out      <= fp_result_in;
       int_result_fp_out  <= int_result_fp_in;
@@ -162,6 +169,7 @@ module exmem_register #(
       fp_flag_of_out     <= fp_flag_of_in;
       fp_flag_uf_out     <= fp_flag_uf_in;
       fp_flag_nx_out     <= fp_flag_nx_in;
+      fp_fmt_out         <= fp_fmt_in;
 
       csr_addr_out       <= csr_addr_in;
       csr_we_out         <= csr_we_in;

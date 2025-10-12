@@ -31,6 +31,8 @@ module fpu #(
   input  wire              start,          // Start FP operation
   input  wire [4:0]        fp_alu_op,      // FP operation (from control unit)
   input  wire [2:0]        funct3,         // funct3 field (for compare ops: FEQ=010, FLT=001, FLE=000)
+  input  wire [4:0]        rs2,            // rs2 field (for FCVT: 00000=W, 00001=WU, 00010=L, 00011=LU)
+  input  wire [6:0]        funct7,         // funct7 field (for FCVT direction and format)
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode (from frm CSR or instruction)
   output wire              busy,           // FPU busy (multi-cycle operation in progress)
   output wire              done,           // Operation complete (1 cycle pulse)
@@ -312,10 +314,22 @@ module fpu #(
   wire [XLEN-1:0]   cvt_int_result;
   wire [FLEN-1:0]   cvt_fp_result;
   wire              cvt_flag_nv;
+  wire              cvt_flag_of;
+  wire              cvt_flag_uf;
   wire              cvt_flag_nx;
 
   assign cvt_start = start && (fp_alu_op == FP_CVT);
-  assign cvt_op = 4'b0000; // TODO: decode conversion type from funct5
+
+  // Decode conversion operation from funct7 and rs2
+  // funct7[1:0]: 00=single, 01=double (format bits)
+  // funct7[6]: direction (1=FP→INT, 0=INT→FP)
+  // rs2[1:0]: 00=W(signed int32), 01=WU(unsigned int32), 10=L(signed int64), 11=LU(unsigned int64)
+  // For FP↔FP: funct7 determines direction, rs2 determines source format
+  assign cvt_op = (funct7[1:0] == 2'b00 || funct7[1:0] == 2'b01) ?
+                    // INT↔FP conversions
+                    (funct7[6] ? {2'b00, rs2[1:0]} : {2'b01, rs2[1:0]}) :
+                    // FP↔FP conversions (FCVT.S.D = 1000, FCVT.D.S = 1001)
+                    (funct7[0] ? 4'b1001 : 4'b1000);
 
   fp_converter #(.FLEN(FLEN), .XLEN(XLEN)) u_fp_converter (
     .clk            (clk),
@@ -330,6 +344,8 @@ module fpu #(
     .int_result     (cvt_int_result),
     .fp_result      (cvt_fp_result),
     .flag_nv        (cvt_flag_nv),
+    .flag_of        (cvt_flag_of),
+    .flag_uf        (cvt_flag_uf),
     .flag_nx        (cvt_flag_nx)
   );
 
@@ -422,6 +438,8 @@ module fpu #(
         fp_result = cvt_fp_result;
         int_result = cvt_int_result;
         flag_nv = cvt_flag_nv;
+        flag_of = cvt_flag_of;
+        flag_uf = cvt_flag_uf;
         flag_nx = cvt_flag_nx;
       end
 

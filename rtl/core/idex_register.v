@@ -62,6 +62,7 @@ module idex_register #(
   input  wire [4:0]      fp_alu_op_in,        // FP ALU operation
   input  wire [2:0]      fp_rm_in,            // FP rounding mode
   input  wire            fp_use_dynamic_rm_in,// Use dynamic rounding mode
+  input  wire            fp_fmt_in,           // FP format: 0=single, 1=double
 
   // CSR signals from ID stage
   input  wire [11:0]      csr_addr_in,
@@ -125,6 +126,7 @@ module idex_register #(
   output reg  [4:0]      fp_alu_op_out,
   output reg  [2:0]      fp_rm_out,
   output reg             fp_use_dynamic_rm_out,
+  output reg             fp_fmt_out,           // FP format: 0=single, 1=double
 
   // CSR signals to EX stage
   output reg  [11:0]      csr_addr_out,
@@ -187,6 +189,7 @@ module idex_register #(
       fp_alu_op_out   <= 5'h0;
       fp_rm_out       <= 3'h0;
       fp_use_dynamic_rm_out <= 1'b0;
+      fp_fmt_out      <= 1'b0;
 
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;
@@ -246,6 +249,7 @@ module idex_register #(
       fp_alu_op_out   <= 5'h0;
       fp_rm_out       <= 3'h0;
       fp_use_dynamic_rm_out <= 1'b0;
+      fp_fmt_out      <= 1'b0;
 
       csr_addr_out    <= 12'h0;
       csr_we_out      <= 1'b0;          // Critical: no CSR write
@@ -303,6 +307,7 @@ module idex_register #(
       fp_alu_op_out   <= fp_alu_op_in;
       fp_rm_out       <= fp_rm_in;
       fp_use_dynamic_rm_out <= fp_use_dynamic_rm_in;
+      fp_fmt_out      <= fp_fmt_in;
 
       csr_addr_out    <= csr_addr_in;
       csr_we_out      <= csr_we_in;

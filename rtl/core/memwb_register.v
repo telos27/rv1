@@ -39,6 +39,7 @@ module memwb_register #(
   input  wire             fp_flag_of_in,
   input  wire             fp_flag_uf_in,
   input  wire             fp_flag_nx_in,
+  input  wire             fp_fmt_in,             // FP format: 0=single, 1=double
 
   // CSR signals from MEM stage
   input  wire [XLEN-1:0] csr_rdata_in,       // CSR read data
@@ -71,6 +72,7 @@ module memwb_register #(
   output reg              fp_flag_of_out,
   output reg              fp_flag_uf_out,
   output reg              fp_flag_nx_out,
+  output reg              fp_fmt_out,            // FP format: 0=single, 1=double
 
   // CSR signals to WB stage
   output reg  [XLEN-1:0] csr_rdata_out
@@ -102,6 +104,7 @@ module memwb_register #(
       fp_flag_of_out     <= 1'b0;
       fp_flag_uf_out     <= 1'b0;
       fp_flag_nx_out     <= 1'b0;
+      fp_fmt_out         <= 1'b0;
 
       csr_rdata_out      <= {XLEN{1'b0}};
     end else begin
@@ -129,6 +132,7 @@ module memwb_register #(
       fp_flag_of_out     <= fp_flag_of_in;
       fp_flag_uf_out     <= fp_flag_uf_in;
       fp_flag_nx_out     <= fp_flag_nx_in;
+      fp_fmt_out         <= fp_fmt_in;
 
       csr_rdata_out      <= csr_rdata_in;
     end

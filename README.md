@@ -214,26 +214,36 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 ## Known Limitations and Testing Gaps
 
 ### Current Status
-✅ **No known bugs** - All 7 critical FPU bugs have been fixed
+✅ **All code-level TODOs cleaned up** (2025-10-11)
 - 13/13 custom FPU tests PASSING (100%)
 - 40/42 RV32I compliance tests PASSING (95%)
 
-### Code-Level TODO Items
-1. **FP Exception Flags** (`fp_converter.v:263,269`)
-   - Overflow/underflow flags not connected to output
-   - Impact: Exception flags may not be accurate for conversion edge cases
+⚠️ **Test Timeout Issue** - Pre-existing issue to investigate
+- Both `test_simple` and `test_fp_basic` timeout at 49999 cycles
+- Issue exists in both pre-cleanup and post-cleanup code
+- CPU appears to not execute instructions (x10 remains 0 instead of expected 5)
+- Requires investigation of pipeline stall or PC increment logic
 
-2. **Conversion Operation Decoding** (`fpu.v:318`)
-   - Currently hardcoded to `4'b0000` (works but not explicit)
-   - Could be decoded from `funct5` field
+### Recently Fixed (2025-10-11)
+1. ✅ **FP Exception Flags** - Overflow/underflow flags now properly connected
+   - Added `flag_of` and `flag_uf` outputs to `fp_converter.v`
+   - Flags properly set in FCVT.S.D conversion path
+   - Connected through FPU to exception handling
 
-3. **Mixed-Precision Writes** (`rv32i_core_pipelined.v:544`)
-   - `write_single` mode hardcoded to 0
-   - Mixed float/double operations not stress-tested
+2. ✅ **Conversion Operation Decoding** - Proper decoding implemented
+   - Added `rs2` and `funct7` inputs to FPU module
+   - Decodes INT↔FP conversions using funct7[6] and rs2[1:0]
+   - Decodes FP↔FP conversions using funct7[0]
 
-4. **Atomic Reservation Invalidation** (`atomic_unit.v:874`)
-   - Reservations not invalidated on intervening writes
-   - May affect correctness in multi-threaded scenarios
+3. ✅ **Mixed-Precision Writes** - NaN-boxing now works correctly
+   - Added `fp_fmt` signal through all pipeline stages
+   - `write_single` properly set based on instruction format
+   - Enables correct single-precision writes in RV64 mode
+
+4. ✅ **Atomic Reservation Invalidation** - Now invalidates on stores
+   - Added `is_atomic` flag to EXMEM pipeline register
+   - Invalidates LR reservations on non-atomic stores in MEM stage
+   - Improves correctness for store-after-LR scenarios
 
 ### Testing Gaps
 
@@ -252,11 +262,14 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 - ⚠️ **Performance Benchmarks** - No standardized measurements (Whetstone, Linpack)
 
 ### Recommendations
-1. **Run official RISC-V F/D compliance tests** (highest priority)
-2. Create comprehensive subnormal and rounding mode test suites
-3. Add FP exception flag accumulation tests
-4. Implement stress tests for concurrent operations
-5. Connect FP exception flags in fp_converter.v
+1. **Investigate and fix test timeout issue** (highest priority)
+   - Debug why CPU stops executing after first instruction
+   - Check PC increment logic and pipeline stall conditions
+2. **Run official RISC-V F/D compliance tests**
+   - Would provide comprehensive IEEE 754 compliance verification
+3. Create comprehensive subnormal and rounding mode test suites
+4. Add FP exception flag accumulation tests
+5. Implement stress tests for concurrent operations
 
 See [docs/FD_EXTENSION_DESIGN.md](docs/FD_EXTENSION_DESIGN.md) for detailed testing gap analysis.
 

@@ -26,6 +26,8 @@ module fp_converter #(
 
   // Exception flags
   output reg               flag_nv,        // Invalid operation
+  output reg               flag_of,        // Overflow
+  output reg               flag_uf,        // Underflow
   output reg               flag_nx         // Inexact
 );
 
@@ -114,6 +116,8 @@ module fp_converter #(
       int_result <= {XLEN{1'b0}};
       fp_result <= {FLEN{1'b0}};
       flag_nv <= 1'b0;
+      flag_of <= 1'b0;
+      flag_uf <= 1'b0;
       flag_nx <= 1'b0;
     end else begin
       case (state)
@@ -260,13 +264,13 @@ module fp_converter #(
                 // Check for overflow
                 if (adjusted_exp >= 255) begin
                   fp_result <= {sign_d, 8'hFF, 23'b0};  // ±Infinity
-                  // flag_of <= 1'b1;  // TODO: Add flag_of output
+                  flag_of <= 1'b1;
                   flag_nx <= 1'b1;
                 end
                 // Check for underflow
                 else if (adjusted_exp < 1) begin
                   fp_result <= {sign_d, 31'b0};  // ±0
-                  // flag_uf <= 1'b1;  // TODO: Add flag_uf output
+                  flag_uf <= 1'b1;
                   flag_nx <= 1'b1;
                 end else begin
                   // Truncate mantissa (52 bits → 23 bits)
