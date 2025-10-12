@@ -35,6 +35,12 @@ module rv_core_pipelined #(
   wire trap_flush;         // Flush pipeline on trap
   wire mret_flush;         // Flush pipeline on MRET
 
+  // Privilege mode tracking
+  reg  [1:0] current_priv; // Current privilege mode: 00=U, 01=S, 11=M
+  wire [1:0] trap_target_priv;  // Target privilege for trap
+  wire [1:0] mpp;          // Machine Previous Privilege from MSTATUS
+  wire       spp;          // Supervisor Previous Privilege from MSTATUS
+
   //==========================================================================
   // IF Stage Signals
   //==========================================================================
@@ -315,6 +321,9 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] exception_val;
   wire [XLEN-1:0] trap_vector;
   wire [XLEN-1:0] mepc;
+  wire            mstatus_sum;  // MSTATUS.SUM bit (for MMU)
+  wire            mstatus_mxr;  // MSTATUS.MXR bit (for MMU)
+  wire [XLEN-1:0] satp;         // SATP register (for MMU)
   wire            mstatus_mie;
   wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
   wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
@@ -352,6 +361,25 @@ module rv_core_pipelined #(
       exception_taken_r <= 1'b0;
     else
       exception_taken_r <= exception;
+  end
+
+  //==========================================================================
+  // Privilege Mode Tracking
+  //==========================================================================
+  // Privilege mode state machine: updates on trap entry and xRET
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      current_priv <= 2'b11;  // Start in Machine mode on reset
+    end else begin
+      if (trap_flush) begin
+        // On trap entry, move to target privilege level
+        current_priv <= trap_target_priv;
+      end else if (mret_flush) begin
+        // On MRET, restore privilege from MSTATUS.MPP
+        current_priv <= mpp;
+      end
+      // Note: SRET handling will be added in Phase 2
+    end
   end
 
   // PC selection: priority order - trap > mret > branch/jump > PC+increment
@@ -987,6 +1015,15 @@ module rv_core_pipelined #(
     .mepc_out(mepc),
     .mstatus_mie(mstatus_mie),
     .illegal_csr(ex_illegal_csr),
+    // Privilege mode tracking (Phase 1)
+    .current_priv(current_priv),
+    .trap_target_priv(trap_target_priv),
+    .mpp_out(mpp),
+    .spp_out(spp),
+    // MMU-related outputs (for Phase 3)
+    .satp_out(satp),
+    .mstatus_sum(mstatus_sum),
+    .mstatus_mxr(mstatus_mxr),
     // Floating-point CSR connections
     .frm_out(csr_frm),
     .fflags_out(csr_fflags),
@@ -1002,6 +1039,8 @@ module rv_core_pipelined #(
   exception_unit #(
     .XLEN(XLEN)
   ) exception_unit_inst (
+    // Privilege mode (Phase 1)
+    .current_priv(current_priv),
     // IF stage - instruction fetch (check misaligned PC)
     // Note: IF exceptions are checked when instruction is in IFID register
     .if_pc(ifid_pc),
@@ -1022,6 +1061,9 @@ module rv_core_pipelined #(
     .mem_pc(exmem_pc),
     .mem_instruction(exmem_instruction),
     .mem_valid(exmem_valid),
+    // Page fault inputs (Phase 3 - stub for now)
+    .mem_page_fault(1'b0),          // Will connect to MMU in Phase 3
+    .mem_fault_vaddr({XLEN{1'b0}}), // Will connect to MMU in Phase 3
     // Outputs
     .exception(exception),
     .exception_code(exception_code),

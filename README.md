@@ -14,10 +14,11 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 
 ## Current Status
 
-**Phase**: Phase 9 - C Extension Integration ✅ **COMPLETE**
+**Phase**: Phase 10 - Supervisor Mode & MMU Integration 🚧 **IN PROGRESS**
 
 **Supported ISAs**: RV32IMAFDC, RV64IMAFDC
 **Architecture**: Parameterized 5-stage pipeline with full feature set
+**Privilege Modes**: M-mode (complete), S-mode (in progress), U-mode (planned)
 **Compliance**: **100% RV32I Compliant** ✅ | **C Extension: 100% Validated** ✅
 
 ### **Key Features Implemented:**
@@ -28,9 +29,10 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 - ✅ **D Extension** - Double-precision floating-point (26 instructions) - **Verified**
 - ✅ **C Extension** - Compressed instructions (40 instructions) - **100% validated**
 - ✅ **Zicsr** - CSR instructions and privilege system
-- ✅ **MMU** - Virtual memory with Sv32/Sv39 support
+- 🚧 **Privilege Modes** - M-mode complete, S-mode in progress (Phase 10.1 done)
+- ✅ **MMU** - Virtual memory with Sv32/Sv39 support (standalone, integration in progress)
 - ✅ **Hardware TLB** - 16-entry fully-associative TLB
-- ✅ **CSR System** - 13 Machine-mode CSRs + FCSR + SATP
+- ✅ **CSR System** - 13 Machine-mode CSRs + FCSR + SATP + MSTATUS extensions
 
 ### **Statistics:**
 - **Total Instructions**: 168+ RISC-V instructions implemented
@@ -41,6 +43,15 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 - **Configuration Support**: RV32/RV64, multiple extensions, compressed instructions
 
 ## Recent Achievements
+
+### **🚀 Phase 10 Started: Supervisor Mode & MMU Integration** (2025-10-12)
+✅ **Phase 10.1: Privilege Mode Infrastructure COMPLETE**
+- **Privilege Tracking**: 2-bit register tracks U/S/M modes
+- **MSTATUS Extensions**: Added SPP, SPIE, SIE fields
+- **Privilege-Aware ECALL**: Returns correct exception code per mode
+- **Page Fault Codes**: Ready for MMU integration (Phase 10.3)
+- **Clean Compilation**: All changes verified ✅
+- **Next**: Phase 10.2 - Add 8 S-mode CSRs and SRET instruction
 
 ### **🎉 C Extension 100% Complete and Production Ready!** (2025-10-12)
 ✅ **C Extension (Compressed Instructions) FULLY VALIDATED**

@@ -34,6 +34,12 @@ module csr_file #(
   output wire             mstatus_mie,    // Global interrupt enable
   output wire             illegal_csr,    // Invalid CSR access
 
+  // Privilege mode tracking (Phase 1)
+  input  wire [1:0]       current_priv,   // Current privilege mode
+  output wire [1:0]       trap_target_priv, // Target privilege for trap
+  output wire [1:0]       mpp_out,        // Machine Previous Privilege
+  output wire             spp_out,        // Supervisor Previous Privilege
+
   // MMU-related status outputs
   output wire [XLEN-1:0]  satp_out,       // SATP register (for MMU)
   output wire             mstatus_sum,    // SUM bit (for MMU)
@@ -92,10 +98,13 @@ module csr_file #(
   // =========================================================================
 
   // Machine Status Register (mstatus)
-  // We only implement the fields we need for M-mode
+  // Implements fields for M-mode and S-mode
+  reg        mstatus_sie_r;   // [1] - Supervisor Interrupt Enable
   reg        mstatus_mie_r;   // [3] - Machine Interrupt Enable
+  reg        mstatus_spie_r;  // [5] - Supervisor Previous Interrupt Enable
   reg        mstatus_mpie_r;  // [7] - Machine Previous Interrupt Enable
-  reg [1:0]  mstatus_mpp_r;   // [12:11] - Machine Previous Privilege (always 2'b11)
+  reg        mstatus_spp_r;   // [8] - Supervisor Previous Privilege (0=U, 1=S)
+  reg [1:0]  mstatus_mpp_r;   // [12:11] - Machine Previous Privilege (00=U, 01=S, 11=M)
   reg        mstatus_sum_r;   // [18] - Supervisor User Memory access
   reg        mstatus_mxr_r;   // [19] - Make eXecutable Readable
 
@@ -160,7 +169,7 @@ module csr_file #(
   // =========================================================================
 
   // Construct mstatus from individual fields
-  // RV32: Standard layout with fields at [19:18], [12:11], [7], [3]
+  // RV32: Standard layout with fields at [19:18], [12:11], [8], [7], [5], [3], [1]
   // RV64: Same fields, but wider register (upper bits reserved)
   generate
     if (XLEN == 32) begin : gen_mstatus_rv32
@@ -170,11 +179,16 @@ module csr_file #(
         mstatus_sum_r,        // [18] SUM
         5'b0,                 // [17:13] Reserved
         mstatus_mpp_r,        // [12:11] MPP
-        3'b0,                 // [10:8] Reserved
+        2'b0,                 // [10:9] Reserved
+        mstatus_spp_r,        // [8] SPP
         mstatus_mpie_r,       // [7] MPIE
-        3'b0,                 // [6:4] Reserved
+        1'b0,                 // [6] Reserved
+        mstatus_spie_r,       // [5] SPIE
+        1'b0,                 // [4] Reserved
         mstatus_mie_r,        // [3] MIE
-        3'b0                  // [2:0] Reserved
+        1'b0,                 // [2] Reserved
+        mstatus_sie_r,        // [1] SIE
+        1'b0                  // [0] Reserved
       };
     end else begin : gen_mstatus_rv64
       wire [63:0] mstatus_value = {
@@ -183,11 +197,16 @@ module csr_file #(
         mstatus_sum_r,        // [18] SUM
         5'b0,                 // [17:13] Reserved
         mstatus_mpp_r,        // [12:11] MPP
-        3'b0,                 // [10:8] Reserved
+        2'b0,                 // [10:9] Reserved
+        mstatus_spp_r,        // [8] SPP
         mstatus_mpie_r,       // [7] MPIE
-        3'b0,                 // [6:4] Reserved
+        1'b0,                 // [6] Reserved
+        mstatus_spie_r,       // [5] SPIE
+        1'b0,                 // [4] Reserved
         mstatus_mie_r,        // [3] MIE
-        3'b0                  // [2:0] Reserved
+        1'b0,                 // [2] Reserved
+        mstatus_sie_r,        // [1] SIE
+        1'b0                  // [0] Reserved
       };
     end
   endgenerate
@@ -289,9 +308,12 @@ module csr_file #(
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       // Reset all CSRs
-      mstatus_mie_r  <= 1'b0;
-      mstatus_mpie_r <= 1'b0;
-      mstatus_mpp_r  <= 2'b11;          // M-mode
+      mstatus_sie_r  <= 1'b0;           // Supervisor interrupt disabled
+      mstatus_mie_r  <= 1'b0;           // Machine interrupt disabled
+      mstatus_spie_r <= 1'b0;           // Supervisor previous IE = 0
+      mstatus_mpie_r <= 1'b0;           // Machine previous IE = 0
+      mstatus_spp_r  <= 1'b0;           // Supervisor previous privilege = U
+      mstatus_mpp_r  <= 2'b11;          // Machine previous privilege = M-mode
       mstatus_sum_r  <= 1'b0;           // Supervisor User Memory access disabled
       mstatus_mxr_r  <= 1'b0;           // Make eXecutable Readable disabled
       mie_r          <= {XLEN{1'b0}};
@@ -326,8 +348,11 @@ module csr_file #(
         // Normal CSR write
         case (csr_addr)
           CSR_MSTATUS: begin
+            mstatus_sie_r  <= csr_write_value[1];
             mstatus_mie_r  <= csr_write_value[3];
+            mstatus_spie_r <= csr_write_value[5];
             mstatus_mpie_r <= csr_write_value[7];
+            mstatus_spp_r  <= csr_write_value[8];
             mstatus_mpp_r  <= csr_write_value[12:11];
             mstatus_sum_r  <= csr_write_value[18];
             mstatus_mxr_r  <= csr_write_value[19];
@@ -363,12 +388,23 @@ module csr_file #(
   end
 
   // =========================================================================
+  // Trap Target Privilege Determination
+  // =========================================================================
+  // Phase 1: All traps go to M-mode (no delegation yet)
+  // Phase 2 will add medeleg/mideleg support for S-mode delegation
+  assign trap_target_priv = 2'b11;  // Always M-mode in Phase 1
+
+  // =========================================================================
   // Output Assignments
   // =========================================================================
 
   assign trap_vector = mtvec_r;
   assign mepc_out    = mepc_r;
   assign mstatus_mie = mstatus_mie_r;
+
+  // Privilege mode outputs
+  assign mpp_out     = mstatus_mpp_r;
+  assign spp_out     = mstatus_spp_r;
 
   // MMU-related outputs
   assign satp_out    = satp_r;

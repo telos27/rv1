@@ -9,6 +9,9 @@
 module exception_unit #(
   parameter XLEN = `XLEN
 ) (
+  // Privilege mode input (Phase 1)
+  input  wire [1:0]      current_priv,    // Current privilege mode
+
   // Instruction address misaligned (IF stage)
   input  wire [XLEN-1:0] if_pc,
   input  wire            if_valid,
@@ -29,6 +32,10 @@ module exception_unit #(
   input  wire [XLEN-1:0] mem_pc,
   input  wire [31:0]     mem_instruction,      // Instructions always 32-bit
   input  wire            mem_valid,
+
+  // Page fault inputs (Phase 3 - MMU integration)
+  input  wire            mem_page_fault,       // Page fault from MMU
+  input  wire [XLEN-1:0] mem_fault_vaddr,     // Faulting virtual address
 
   // Exception outputs
   output reg             exception,
@@ -52,6 +59,9 @@ module exception_unit #(
   localparam CAUSE_ECALL_FROM_U_MODE    = 5'd8;
   localparam CAUSE_ECALL_FROM_S_MODE    = 5'd9;
   localparam CAUSE_ECALL_FROM_M_MODE    = 5'd11;
+  localparam CAUSE_INST_PAGE_FAULT      = 5'd12;  // Phase 3: Instruction page fault
+  localparam CAUSE_LOAD_PAGE_FAULT      = 5'd13;  // Phase 3: Load page fault
+  localparam CAUSE_STORE_PAGE_FAULT     = 5'd15;  // Phase 3: Store/AMO page fault
 
   // funct3 encodings for load/store
   localparam FUNCT3_LB  = 3'b000;
@@ -79,8 +89,11 @@ module exception_unit #(
   // ID stage: Illegal instruction
   wire id_illegal = id_valid && id_illegal_inst;
 
-  // ID stage: ECALL
+  // ID stage: ECALL (privilege-aware exception code)
   wire id_ecall_exc = id_valid && id_ecall;
+  wire [4:0] ecall_cause = (current_priv == 2'b00) ? CAUSE_ECALL_FROM_U_MODE :
+                           (current_priv == 2'b01) ? CAUSE_ECALL_FROM_S_MODE :
+                                                     CAUSE_ECALL_FROM_M_MODE;
 
   // ID stage: EBREAK
   wire id_ebreak_exc = id_valid && id_ebreak;
@@ -145,7 +158,7 @@ module exception_unit #(
 
     end else if (id_ecall_exc) begin
       exception = 1'b1;
-      exception_code = CAUSE_ECALL_FROM_M_MODE;  // M-mode only for now
+      exception_code = ecall_cause;  // Privilege-aware (Phase 1)
       exception_pc = id_pc;
       exception_val = {XLEN{1'b0}};
 
