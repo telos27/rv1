@@ -163,18 +163,18 @@ module fp_fma #(
             // NaN propagation
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
-            next_state <= DONE;
+            state <= DONE;
           end else if ((is_inf_a && is_zero_b) || (is_zero_a && is_inf_b)) begin
             // 0 × ∞: Invalid
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
-            next_state <= DONE;
+            state <= DONE;
           end else if ((is_inf_a || is_inf_b) && is_inf_c &&
                        ((sign_a ^ sign_b ^ negate_product) != sign_c)) begin
             // ∞ + (-∞): Invalid
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_inf_a || is_inf_b || is_inf_c) begin
             // Result is ±∞
             if (is_inf_c)
@@ -182,16 +182,16 @@ module fp_fma #(
             else
               sign_result <= sign_a ^ sign_b ^ negate_product;
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end else if ((is_zero_a || is_zero_b) && is_zero_c) begin
             // 0 + 0
             sign_result <= (sign_a ^ sign_b ^ negate_product) && sign_c;
             result <= {sign_result, {FLEN-1{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_zero_a || is_zero_b) begin
             // Product is 0, return addend
             result <= {sign_c, exp_c, man_c[MAN_WIDTH-1:0]};
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_zero_c) begin
             // Addend is 0, return product
             sign_prod <= sign_a ^ sign_b ^ negate_product;
@@ -257,7 +257,7 @@ module fp_fma #(
           // Check for zero result
           if (sum == 0) begin
             result <= {sign_result, {FLEN-1{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
           // Check for overflow (carry out)
           else if (sum[(2*MAN_WIDTH+6)]) begin
@@ -279,7 +279,7 @@ module fp_fma #(
             flag_of <= 1'b1;
             flag_nx <= 1'b1;
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
         end
 

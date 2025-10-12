@@ -154,29 +154,29 @@ module fp_divider #(
               // NaN propagation
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
               flag_nv <= 1'b1;
-              next_state <= DONE;
+              state <= DONE;
             end else if ((is_inf_a && is_inf_b) || (is_zero_a && is_zero_b)) begin
               // ∞/∞ or 0/0: Invalid
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
               flag_nv <= 1'b1;
-              next_state <= DONE;
+              state <= DONE;
             end else if (is_inf_a) begin
               // ∞/x: return ±∞
               result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-              next_state <= DONE;
+              state <= DONE;
             end else if (is_inf_b) begin
               // x/∞: return ±0
               result <= {sign_result, {FLEN-1{1'b0}}};
-              next_state <= DONE;
+              state <= DONE;
             end else if (is_zero_a) begin
               // 0/x: return ±0
               result <= {sign_result, {FLEN-1{1'b0}}};
-              next_state <= DONE;
+              state <= DONE;
             end else if (is_zero_b) begin
               // x/0: Divide by zero, return ±∞
               result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
               flag_dz <= 1'b1;
-              next_state <= DONE;
+              state <= DONE;
             end else begin
               // Initialize division
               // Compute exponent: exp_a - exp_b + BIAS
@@ -246,14 +246,14 @@ module fp_divider #(
             flag_of <= 1'b1;
             flag_nx <= 1'b1;
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
           // Check for underflow
           else if (exp_diff < 1) begin
             flag_uf <= 1'b1;
             flag_nx <= 1'b1;
             result <= {sign_result, {FLEN-1{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
         end
 

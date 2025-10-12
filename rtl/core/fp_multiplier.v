@@ -145,20 +145,20 @@ module fp_multiplier #(
             // NaN propagation
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
-            next_state <= DONE;
+            state <= DONE;
           end else if ((is_inf_a && is_zero_b) || (is_zero_a && is_inf_b)) begin
             // 0 × ∞: Invalid
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_inf_a || is_inf_b) begin
             // ∞ × x: return ±∞
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_zero_a || is_zero_b) begin
             // 0 × x: return ±0
             result <= {sign_result, {FLEN-1{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end else begin
             // Normal multiplication
             // Multiply mantissas
@@ -199,7 +199,7 @@ module fp_multiplier #(
             flag_nx <= 1'b1;
             // Return ±infinity
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
           // Check for underflow
           else if (exp_sum < 1 || exp_result < 1) begin
@@ -207,7 +207,7 @@ module fp_multiplier #(
             flag_nx <= 1'b1;
             // Return ±0 (flush to zero for simplicity)
             result <= {sign_result, {FLEN-1{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
         end
 

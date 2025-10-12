@@ -154,33 +154,33 @@ module fp_adder #(
             // NaN propagation: return canonical NaN
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;  // Invalid operation
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_inf_a && is_inf_b && (sign_a != sign_b)) begin
             // ∞ - ∞: Invalid
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_inf_a) begin
             // a is ∞: return a
             result <= {sign_a, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_inf_b) begin
             // b is ∞: return b (with potentially flipped sign)
             result <= {sign_b, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_zero_a && is_zero_b) begin
             // 0 + 0: sign depends on rounding mode and operand signs
             sign_result <= (sign_a && sign_b) || ((sign_a || sign_b) && (rounding_mode == 3'b010));
             result <= {sign_result, {FLEN-1{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_zero_a) begin
             // a is 0: return b
             result <= {sign_b, exp_b, man_b[MAN_WIDTH-1:0]};
-            next_state <= DONE;
+            state <= DONE;
           end else if (is_zero_b) begin
             // b is 0: return a
             result <= {sign_a, exp_a, man_a[MAN_WIDTH-1:0]};
-            next_state <= DONE;
+            state <= DONE;
           end else begin
             // Normal case: align mantissas
             if (exp_a >= exp_b) begin
@@ -233,7 +233,7 @@ module fp_adder #(
           // Check for zero result
           if (sum == 0) begin
             result <= {sign_result, {FLEN-1{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
           // Check for overflow (carry out)
           else if (sum[MAN_WIDTH+4]) begin
@@ -259,7 +259,7 @@ module fp_adder #(
             flag_of <= 1'b1;
             // Return ±infinity based on rounding mode
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            next_state <= DONE;
+            state <= DONE;
           end
         end
 

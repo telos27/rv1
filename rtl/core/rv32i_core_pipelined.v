@@ -337,8 +337,8 @@ module rv_core_pipelined #(
   //==========================================================================
 
   // PC calculation (support both 2-byte and 4-byte increments for C extension)
-  assign pc_plus_2 = pc_current + {{(XLEN-2){1'b0}}, 2'b10};   // PC + 2
-  assign pc_plus_4 = pc_current + {{(XLEN-3){1'b0}}, 3'b100};  // PC + 4
+  assign pc_plus_2 = pc_current + 32'd2;
+  assign pc_plus_4 = pc_current + 32'd4;
   assign pc_increment = if_is_compressed ? pc_plus_2 : pc_plus_4;
 
   // Trap and MRET handling
@@ -401,8 +401,7 @@ module rv_core_pipelined #(
 
   // If PC[1] is set, we're at a 2-byte aligned but not 4-byte aligned address
   // In this case, take the upper 16 bits; otherwise take the lower 16 bits
-  assign if_compressed_instr_candidate = pc_current[1] ? if_instruction_raw[31:16] :
-                                                          if_instruction_raw[15:0];
+  assign if_compressed_instr_candidate = pc_current[1] ? if_instruction_raw[31:16] : if_instruction_raw[15:0];
 
   rvc_decoder #(
     .XLEN(XLEN)
@@ -1004,8 +1003,9 @@ module rv_core_pipelined #(
     .XLEN(XLEN)
   ) exception_unit_inst (
     // IF stage - instruction fetch (check misaligned PC)
-    .if_pc(pc_current),
-    .if_valid(!flush_ifid),         // IF invalid when flushing
+    // Note: IF exceptions are checked when instruction is in IFID register
+    .if_pc(ifid_pc),
+    .if_valid(ifid_valid),          // Use registered valid from IFID
     // ID stage - decode stage exceptions (in EX pipeline stage)
     // Note: Only consider illegal_csr if it's actually a CSR instruction
     .id_illegal_inst((idex_illegal_inst | (ex_illegal_csr && idex_csr_we)) && idex_valid),

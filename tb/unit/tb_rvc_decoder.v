@@ -87,19 +87,24 @@ module tb_rvc_decoder;
     // Test Quadrant 0 Instructions
     $display("\n--- Testing Quadrant 0 ---");
 
-    // C.ADDI4SPN: addi x8, x2, 256
-    // Format: 000 imm[5:4|9:6|2|3] rd' 00
-    // imm[9:2] = 10000000 = 0x40 (scaled by 4)
-    test_instruction(16'b000_10000000_000_00, 32'h10010513, 0, 0, "C.ADDI4SPN x8, 256");
+    // C.ADDI4SPN: addi rd', x2, 256 (rd'=x8+2=x10)
+    // Format: 000 nzuimm[5:4|9:6|2|3] rd' 00
+    // nzuimm=256: nzuimm[9:2]=01000000, so [5:4]=00,[9:6]=0100,[3:2]=00
+    // rd'=010 (binary) -> x8+2 = x10
+    // Encoded: inst[12:11]=00, inst[10:7]=0100, inst[6:5]=00, inst[4:2]=010
+    test_instruction(16'b000_00010000_010_00, 32'h10010513, 0, 0, "C.ADDI4SPN x10, 256");
 
     // C.LW: lw x9, 4(x10)
-    // Format: 010 imm[5:3] rs1' imm[2|6] rd' 00
-    // offset[6:2] = 00100 = 4
-    test_instruction(16'b010_001_010_01_001_00, 32'h00452483, 0, 0, "C.LW x9, 4(x10)");
+    // Format: 010 offset[5:3] rs1' offset[2|6] rd' 00
+    // offset=4 (0b100): offset[6]=0, offset[5:3]=000, offset[2]=1
+    // inst[12:10]=000, inst[6]=1, inst[5]=0
+    test_instruction(16'b010_000_010_10_001_00, 32'h00452483, 0, 0, "C.LW x9, 4(x10)");
 
     // C.SW: sw x9, 8(x10)
-    // Format: 110 imm[5:3] rs1' imm[2|6] rs2' 00
-    test_instruction(16'b110_010_010_00_001_00, 32'h00952423, 0, 0, "C.SW x9, 8(x10)");
+    // Format: 110 offset[5:3] rs1' offset[2|6] rs2' 00
+    // offset=8 (0b1000): offset[6]=0, offset[5:3]=001, offset[2]=0
+    // inst[12:10]=001, inst[6]=0, inst[5]=0
+    test_instruction(16'b110_001_010_00_001_00, 32'h00952423, 0, 0, "C.SW x9, 8(x10)");
 
     // Test Quadrant 1 Instructions
     $display("\n--- Testing Quadrant 1 ---");
@@ -120,7 +125,10 @@ module tb_rvc_decoder;
 
     // C.ADDI16SP: addi x2, x2, 16
     // Format: 011 nzimm[9] 00010 nzimm[4|6|8:7|5] 01
-    test_instruction(16'b011_0_00010_00100_01, 32'h01010113, 0, 0, "C.ADDI16SP 16");
+    // nzimm=16: nzimm[9]=0, [8:7]=00, [6]=0, [5]=0, [4]=1
+    // inst[6:2] = nzimm[4|6|8:7|5] = 1,0,00,0 (MSB first)
+    // In binary bits[6:2]: bit[6]=1, bit[5]=0, bit[4:3]=00, bit[2]=0 -> 10000
+    test_instruction(16'b011_0_00010_10000_01, 32'h01010113, 0, 0, "C.ADDI16SP 16");
 
     // C.SRLI: srli x8, x8, 2
     // Format: 100 imm[5] 00 rd'/rs1' imm[4:0] 01
@@ -147,15 +155,19 @@ module tb_rvc_decoder;
 
     // C.J: jal x0, offset
     // Format: 101 imm[11|4|9:8|10|6|7|3:1|5] 01
-    // offset = 8 (00000001000 in scrambled format)
-    test_instruction(16'b101_0_00000100_0_00_01, 32'h0080006f, 0, 0, "C.J 8");
+    // offset = 8: offset[3]=1, all others 0
+    // Scrambled: imm[11|4|9:8|10|6|7|3:1|5] = 0|0|00|0|0|0|100|0
+    test_instruction(16'b101_00000001000_01, 32'h0080006f, 0, 0, "C.J 8");
 
     // C.BEQZ: beq x8, x0, offset
     // Format: 110 offset[8|4:3] rs1' offset[7:6|2:1|5] 01
-    test_instruction(16'b110_000_000_00010_01, 32'h00040263, 0, 0, "C.BEQZ x8, 4");
+    // offset=4: offset[8|4:3]=0|00, offset[7:6|2:1|5]=00|10|0
+    test_instruction(16'b110_000_000_00100_01, 32'h00040263, 0, 0, "C.BEQZ x8, 4");
 
     // C.BNEZ: bne x9, x0, offset
-    test_instruction(16'b111_000_001_00010_01, 32'h00049263, 0, 0, "C.BNEZ x9, 4");
+    // Format: 111 offset[8|4:3] rs1' offset[7:6|2:1|5] 01
+    // offset=4: offset[8|4:3]=0|00, offset[7:6|2:1|5]=00|10|0
+    test_instruction(16'b111_000_001_00100_01, 32'h00049263, 0, 0, "C.BNEZ x9, 4");
 
     // Test Quadrant 2 Instructions
     $display("\n--- Testing Quadrant 2 ---");

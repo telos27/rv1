@@ -193,10 +193,23 @@ module csr_file #(
   endgenerate
 
   // CSR read multiplexer
+  // Note: Access to generate block signals must be inside generate blocks for Verilator
+  wire [XLEN-1:0] mstatus_value;
+  wire [XLEN-1:0] misa_value;
+  generate
+    if (XLEN == 32) begin : gen_csr_access
+      assign mstatus_value = gen_mstatus_rv32.mstatus_value;
+      assign misa_value = gen_misa_rv32.misa;
+    end else begin : gen_csr_access
+      assign mstatus_value = gen_mstatus_rv64.mstatus_value;
+      assign misa_value = gen_misa_rv64.misa;
+    end
+  endgenerate
+
   always @(*) begin
     case (csr_addr)
-      CSR_MSTATUS:   csr_rdata = (XLEN == 32) ? gen_mstatus_rv32.mstatus_value : gen_mstatus_rv64.mstatus_value;
-      CSR_MISA:      csr_rdata = (XLEN == 32) ? gen_misa_rv32.misa : gen_misa_rv64.misa;
+      CSR_MSTATUS:   csr_rdata = mstatus_value;
+      CSR_MISA:      csr_rdata = misa_value;
       CSR_MIE:       csr_rdata = mie_r;
       CSR_MTVEC:     csr_rdata = mtvec_r;
       CSR_MSCRATCH:  csr_rdata = mscratch_r;

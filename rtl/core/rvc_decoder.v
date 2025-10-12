@@ -85,15 +85,18 @@ module rvc_decoder #(
   // Note: Immediates are scrambled in compressed format for hardware efficiency
 
   // C.ADDI4SPN: nzuimm[9:2]
-  // Instruction bits [12:5] encode nzuimm[5:4|9:6|2|3]
-  // Reassemble as nzuimm[9:6|5:4|3:2] + scale by 4
+  // Format: 000 nzuimm[5:4|9:6|2|3] rd' 00
+  // inst[12:11] = nzuimm[5:4], inst[10:7] = nzuimm[9:6], inst[6] = nzuimm[2], inst[5] = nzuimm[3]
+  // Reassemble: nzuimm = {nzuimm[9:6], nzuimm[5:4], nzuimm[3], nzuimm[2], 2'b00}
   wire [9:0] imm_addi4spn = {compressed_instr[10:7], compressed_instr[12:11],
-                              compressed_instr[5], compressed_instr[6], 2'b0};
+                              compressed_instr[5], compressed_instr[6], 2'b00};
 
   // C.LW: offset[6:2]
-  // Instruction bits [12:10] encode uimm[5:3], bits [6:5] encode uimm[2|6]
-  wire [6:0] imm_lw = {2'b0, compressed_instr[5], compressed_instr[12:10],
-                        compressed_instr[6], 2'b0};
+  // Format: 010 offset[5:3] rs1' offset[2|6] rd' 00
+  // inst[12:10] = offset[5:3], inst[6] = offset[2], inst[5] = offset[6]
+  // Reassemble as: {offset[6], offset[5:3], offset[2], 2'b00}
+  wire [6:0] imm_lw = {compressed_instr[5], compressed_instr[12:10],
+                        compressed_instr[6], 2'b00};
 
   // C.LD: offset[7:3] (RV64)
   wire [7:0] imm_ld = {2'b0, compressed_instr[6:5], compressed_instr[12:10], 3'b0};
@@ -110,22 +113,34 @@ module rvc_decoder #(
                           compressed_instr[6:5], 3'b0};
 
   // C.SWSP: offset[7:2]
-  // bits [12:9] = uimm[5:2], bits [8:7] = uimm[7:6]
-  wire [7:0] imm_swsp = {compressed_instr[8:7], compressed_instr[12:9], 2'b0};
+  // Format: 110 offset[5:2|7:6] rs2 10
+  // inst[12:9] = offset[5:2], inst[8:7] = offset[7:6]
+  // Store format needs: imm[11:5] | rs2 | rs1 | 010 | imm[4:0] | 0100011
+  // offset[7:2] needs to be placed in imm[7:2], with imm[1:0] = 00
+  // Reassemble as: {offset[7:6], offset[5:2], 2'b00}
+  wire [7:0] imm_swsp = {compressed_instr[8:7], compressed_instr[12:9], 2'b00};
 
   // C.SDSP: offset[8:3] (RV64)
-  // bits [12:10] = uimm[5:3], bits [9:7] = uimm[8:6]
-  wire [8:0] imm_sdsp = {compressed_instr[9:7], compressed_instr[12:10], 3'b0};
+  // Format: 111 offset[5:3|8:6] rs2 10
+  // inst[12:10] = offset[5:3], inst[9:7] = offset[8:6]
+  // Store format needs: imm[11:5] | rs2 | rs1 | 011 | imm[4:0] | 0100011
+  // offset[8:3] needs to be placed in imm[8:3], with imm[2:0] = 000
+  // Reassemble as: {offset[8:6], offset[5:3], 3'b000}
+  wire [8:0] imm_sdsp = {compressed_instr[9:7], compressed_instr[12:10], 3'b000};
 
   // C.ADDI/C.LI: imm[5:0]
   wire [11:0] imm_addi = {{6{compressed_instr[12]}}, compressed_instr[12],
                            compressed_instr[6:2]};
 
   // C.ADDI16SP: nzimm[9:4]
-  // Bit 12 = nzimm[9], bits [6:2] = nzimm[4|6|8:7|5]
+  // Format: 011 nzimm[9] 00010 nzimm[4|6|8:7|5] 01
+  // inst[12] = nzimm[9], inst[6] = nzimm[4], inst[5] = nzimm[6],
+  // inst[4:3] = nzimm[8:7], inst[2] = nzimm[5]
+  // Reassemble as: {nzimm[9], nzimm[8:7], nzimm[6], nzimm[5], nzimm[4], 4'b0000}
+  // = {inst[12], inst[4:3], inst[5], inst[2], inst[6], 4'b0000}
   wire [11:0] imm_addi16sp = {{3{compressed_instr[12]}}, compressed_instr[12],
                                compressed_instr[4:3], compressed_instr[5],
-                               compressed_instr[2], compressed_instr[6], 4'b0};
+                               compressed_instr[2], compressed_instr[6], 4'b0000};
 
   // C.LUI: nzimm[17:12]
   wire [31:0] imm_lui = {{14{compressed_instr[12]}}, compressed_instr[12],
@@ -141,8 +156,12 @@ module rvc_decoder #(
   wire [6:0] shamt = is_rv64 ? shamt_64 : {1'b0, shamt_32};
 
   // C.J/C.JAL: offset[11:1]
-  // bits [12:2] encode imm[11|4|9:8|10|6|7|3:1|5]
+  // Format: 101 offset[11|4|9:8|10|6|7|3:1|5] 01
+  // inst[12] = offset[11], inst[11] = offset[4], inst[10:9] = offset[9:8],
+  // inst[8] = offset[10], inst[7] = offset[6], inst[6] = offset[7],
+  // inst[5:3] = offset[3:1], inst[2] = offset[5]
   // JAL format needs: imm[20|10:1|11|19:12]
+  // Reassemble offset as: {offset[11], offset[10], offset[9:8], offset[7], offset[6], offset[5], offset[4], offset[3:1], 1'b0}
   wire [20:0] imm_j = {{9{compressed_instr[12]}}, compressed_instr[12],
                         compressed_instr[8], compressed_instr[10:9],
                         compressed_instr[6], compressed_instr[7],
@@ -150,6 +169,13 @@ module rvc_decoder #(
                         compressed_instr[5:3], 1'b0};
 
   // C.BEQZ/C.BNEZ: offset[8:1]
+  // Format: 110/111 offset[8|4:3] rs1' offset[7:6|2:1|5] 01
+  // inst[12] = offset[8], inst[11:10] = offset[4:3], inst[6:5] = offset[7:6],
+  // inst[4:3] = offset[2:1], inst[2] = offset[5]
+  // Branch format needs: imm[12|10:5|4:1|11]
+  // Reassemble: {offset[8], offset[7:6], offset[5], offset[4:3], offset[2:1], 1'b0}
+  // For branch encoding: {imm[12], imm[10:5], imm[4:1], imm[11]}
+  // offset[12:1] maps to imm[12:1], so imm[11] = offset[11]
   wire [12:0] imm_b = {{4{compressed_instr[12]}}, compressed_instr[12],
                         compressed_instr[6:5], compressed_instr[2],
                         compressed_instr[11:10], compressed_instr[4:3], 1'b0};
@@ -191,15 +217,19 @@ module rvc_decoder #(
 
           3'b110: begin  // C.SW
             // SW rs2', offset(rs1')
-            decompressed_instr = {5'b0, imm_lw[6:2], rs2_exp, rs1_exp, F3_SW,
-                                   imm_lw[1:0], 3'b0, STORE};
+            // Use same offset encoding as C.LW
+            // Store format: imm[11:5] | rs2 | rs1 | 010 | imm[4:0] | 0100011
+            decompressed_instr = {5'b0, imm_lw[6:5], rs2_exp, rs1_exp, F3_SW,
+                                   imm_lw[4:0], STORE};
           end
 
           3'b111: begin  // C.SD (RV64) / C.FSW (RV32+F)
             if (is_rv64) begin
               // SD rs2', offset(rs1')
-              decompressed_instr = {4'b0, imm_ld[7:3], rs2_exp, rs1_exp, F3_SD,
-                                     imm_ld[2:0], 2'b0, STORE};
+              // Use same offset encoding as C.LD
+              // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
+              decompressed_instr = {4'b0, imm_ld[7:5], rs2_exp, rs1_exp, F3_SD,
+                                     imm_ld[4:0], STORE};
             end else begin
               // C.FSW not implemented (requires F extension)
               illegal_instr = 1'b1;
@@ -424,13 +454,13 @@ module rvc_decoder #(
                   illegal_instr = 1'b1;  // rs1 must be non-zero
                 end
               end else begin
-                // C.MV
+                // C.MV: should expand to ADDI rd, rs2, 0 (not ADD rd, x0, rs2)
                 if (rd != x0) begin
-                  // ADD rd, x0, rs2
-                  decompressed_instr = {7'b0000000, rs2, x0, F3_ADD, rd, OP};
+                  // ADDI rd, rs2, 0
+                  decompressed_instr = {12'b0, rs2, F3_ADD, rd, OP_IMM};
                 end else begin
                   // Hint (rd=x0)
-                  decompressed_instr = {7'b0000000, rs2, x0, F3_ADD, x0, OP};
+                  decompressed_instr = {12'b0, rs2, F3_ADD, x0, OP_IMM};
                 end
               end
             end else begin  // compressed_instr[12] == 1
@@ -458,15 +488,17 @@ module rvc_decoder #(
 
           3'b110: begin  // C.SWSP
             // SW rs2, offset(x2)
-            decompressed_instr = {4'b0, imm_swsp[7:2], rs2, x2, F3_SW,
-                                   imm_swsp[1:0], 3'b0, STORE};
+            // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
+            decompressed_instr = {4'b0, imm_swsp[7:5], rs2, x2, F3_SW,
+                                   imm_swsp[4:0], STORE};
           end
 
           3'b111: begin  // C.SDSP (RV64) / C.FSWSP (RV32+F)
             if (is_rv64) begin
               // SD rs2, offset(x2)
-              decompressed_instr = {3'b0, imm_sdsp[8:3], rs2, x2, F3_SD,
-                                     imm_sdsp[2:0], 2'b0, STORE};
+              // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
+              decompressed_instr = {3'b0, imm_sdsp[8:5], rs2, x2, F3_SD,
+                                     imm_sdsp[4:0], STORE};
             end else begin
               // C.FSWSP not implemented (requires F extension)
               illegal_instr = 1'b1;

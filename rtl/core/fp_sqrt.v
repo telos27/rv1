@@ -133,20 +133,20 @@ module fp_sqrt #(
             if (is_nan) begin
               // sqrt(NaN) = NaN
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
-              next_state <= DONE;
+              state <= DONE;
             end else if (is_negative) begin
               // sqrt(negative) = NaN, set invalid flag
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
               flag_nv <= 1'b1;
-              next_state <= DONE;
+              state <= DONE;
             end else if (is_inf) begin
               // sqrt(+∞) = +∞
               result <= {1'b0, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-              next_state <= DONE;
+              state <= DONE;
             end else if (is_zero) begin
               // sqrt(±0) = ±0 (preserve sign)
               result <= operand;
-              next_state <= DONE;
+              state <= DONE;
             end else begin
               // Initialize square root computation
               // Result exponent: (exp - BIAS) / 2 + BIAS
