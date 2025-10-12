@@ -41,7 +41,12 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] pc_current;
   wire [XLEN-1:0] pc_next;
   wire [XLEN-1:0] pc_plus_4;
-  wire [31:0]     if_instruction;  // Instructions always 32-bit
+  wire [XLEN-1:0] pc_plus_2;
+  wire [XLEN-1:0] pc_increment;      // +2 for compressed, +4 for normal
+  wire [31:0]     if_instruction_raw; // Raw instruction from memory
+  wire [31:0]     if_instruction;     // Final instruction (decompressed if needed)
+  wire            if_is_compressed;   // Instruction is compressed
+  wire            if_illegal_c_instr; // Illegal compressed instruction
 
   //==========================================================================
   // IF/ID Pipeline Register Outputs
@@ -331,8 +336,10 @@ module rv_core_pipelined #(
   // IF STAGE: Instruction Fetch
   //==========================================================================
 
-  // PC calculation
+  // PC calculation (support both 2-byte and 4-byte increments for C extension)
+  assign pc_plus_2 = pc_current + {{(XLEN-2){1'b0}}, 2'b10};   // PC + 2
   assign pc_plus_4 = pc_current + {{(XLEN-3){1'b0}}, 3'b100};  // PC + 4
+  assign pc_increment = if_is_compressed ? pc_plus_2 : pc_plus_4;
 
   // Trap and MRET handling
   assign trap_flush = exception;  // Exception occurred
@@ -347,11 +354,12 @@ module rv_core_pipelined #(
       exception_taken_r <= exception;
   end
 
-  // PC selection: priority order - trap > mret > branch/jump > PC+4
+  // PC selection: priority order - trap > mret > branch/jump > PC+increment
+  // Note: Branches/jumps can target 2-byte aligned addresses (for C extension)
   assign pc_next = trap_flush ? trap_vector :
                    mret_flush ? mepc :
                    ex_take_branch ? (idex_jump ? ex_jump_target : ex_branch_target) :
-                   pc_plus_4;
+                   pc_increment;
 
   // Pipeline flush: trap/MRET flushes all stages, branch flushes IF/ID and ID/EX
   assign flush_ifid = trap_flush | mret_flush | ex_take_branch;
@@ -377,13 +385,40 @@ module rv_core_pipelined #(
   ) imem (
     .clk(clk),
     .addr(pc_current),
-    .instruction(if_instruction),
+    .instruction(if_instruction_raw),
     // Write interface for self-modifying code (FENCE.I)
     .mem_write(exmem_mem_write && exmem_valid && !exception),
     .write_addr(exmem_alu_result),
     .write_data(exmem_mem_write_data),
     .funct3(exmem_funct3)
   );
+
+  // RVC Decoder (C Extension - Compressed Instruction Decompressor)
+  // Detects and expands 16-bit compressed instructions to 32-bit equivalents
+  // For the C extension, we need to select the correct 16 bits based on PC alignment
+  wire [15:0] if_compressed_instr_candidate;
+  wire [31:0] if_instruction_decompressed;
+
+  // If PC[1] is set, we're at a 2-byte aligned but not 4-byte aligned address
+  // In this case, take the upper 16 bits; otherwise take the lower 16 bits
+  assign if_compressed_instr_candidate = pc_current[1] ? if_instruction_raw[31:16] :
+                                                          if_instruction_raw[15:0];
+
+  rvc_decoder #(
+    .XLEN(XLEN)
+  ) rvc_dec (
+    .compressed_instr(if_compressed_instr_candidate),
+    .is_rv64(XLEN == 64),
+    .decompressed_instr(if_instruction_decompressed),
+    .illegal_instr(if_illegal_c_instr),
+    .is_compressed_out(if_is_compressed)
+  );
+
+  // Select final instruction: decompressed if compressed, otherwise full 32-bit from memory
+  // For 32-bit instructions, PC must be 4-byte aligned (PC[1:0] = 00)
+  // If PC[1]=1, this indicates an error for 32-bit instructions, but should not happen
+  // in correct code. For safety, we still handle it.
+  assign if_instruction = if_is_compressed ? if_instruction_decompressed : if_instruction_raw;
 
   // IF/ID Pipeline Register
   ifid_register #(
@@ -394,7 +429,7 @@ module rv_core_pipelined #(
     .stall(stall_ifid),
     .flush(flush_ifid),
     .pc_in(pc_current),
-    .instruction_in(if_instruction),
+    .instruction_in(if_instruction),  // Already decompressed if it was compressed
     .pc_out(ifid_pc),
     .instruction_out(ifid_instruction),
     .valid_out(ifid_valid)

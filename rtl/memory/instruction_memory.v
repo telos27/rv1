@@ -4,6 +4,7 @@
 // Date: 2025-10-09
 // Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit address support)
 // Updated: 2025-10-11 - Added write capability for FENCE.I compliance
+// Updated: 2025-10-11 - Added support for C extension (16-bit aligned access)
 
 `include "config/rv_config.vh"
 
@@ -56,11 +57,17 @@ module instruction_memory #(
     end
   end
 
-  // Word-aligned read (assemble 4 bytes into 32-bit instruction, little-endian)
+  // Read instruction (supports both 16-bit and 32-bit alignment for C extension)
+  // Fetches 32 bits starting at the given address (which can be 2-byte aligned)
+  // This allows fetching compressed (16-bit) instructions at any half-word boundary
   // Mask address to fit within memory size (handles different base addresses)
   wire [XLEN-1:0] masked_addr = addr & (MEM_SIZE - 1);  // Mask to memory size
-  wire [XLEN-1:0] word_addr = {masked_addr[XLEN-1:2], 2'b00};  // Align to word boundary
-  assign instruction = {mem[word_addr+3], mem[word_addr+2], mem[word_addr+1], mem[word_addr]};
+  wire [XLEN-1:0] halfword_addr = {masked_addr[XLEN-1:1], 1'b0};  // Align to halfword boundary
+
+  // Fetch 32 bits (4 bytes) starting at the half-word aligned address
+  // This enables reading a full 32-bit instruction or two 16-bit compressed instructions
+  assign instruction = {mem[halfword_addr+3], mem[halfword_addr+2],
+                        mem[halfword_addr+1], mem[halfword_addr]};
 
   // Write operation (for self-modifying code via FENCE.I)
   // This allows data stores to modify instruction memory
