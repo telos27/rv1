@@ -71,7 +71,10 @@ module exception_unit #(
   // =========================================================================
 
   // IF stage: Instruction address misaligned
-  wire if_inst_misaligned = if_valid && (if_pc[1:0] != 2'b00);
+  // With C extension: only bit [0] must be 0 (2-byte aligned)
+  // Without C extension: bits [1:0] must be 00 (4-byte aligned)
+  wire if_inst_misaligned = `ENABLE_C_EXT ? (if_valid && if_pc[0]) :
+                                             (if_valid && (if_pc[1:0] != 2'b00));
 
   // ID stage: Illegal instruction
   wire id_illegal = id_valid && id_illegal_inst;
