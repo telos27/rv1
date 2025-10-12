@@ -163,6 +163,7 @@ module rv_core_pipelined #(
   wire [4:0]      idex_fp_rd_addr;
   wire            idex_fp_reg_write;
   wire            idex_int_reg_write_fp;
+  wire            idex_fp_mem_op;
   wire            idex_fp_alu_en;
   wire [4:0]      idex_fp_alu_op;
   wire [2:0]      idex_fp_rm;
@@ -306,10 +307,7 @@ module rv_core_pipelined #(
   wire            mstatus_mie;
   wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
   wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
-
-  // TODO: Connect to CSR file when FP CSR support is added
-  assign csr_frm = 3'b000;       // Default: Round to Nearest, ties to Even
-  assign csr_fflags = 5'b00000;  // Default: No flags set
+  // Note: csr_frm and csr_fflags are now connected to CSR file outputs
 
   //==========================================================================
   // WB Stage Signals
@@ -576,17 +574,28 @@ module rv_core_pipelined #(
 
   // Hazard Detection Unit
   hazard_detection_unit hazard_unit (
+    // Integer load-use hazard inputs
     .idex_mem_read(idex_mem_read),
     .idex_rd(idex_rd_addr),
     .ifid_rs1(id_rs1),
     .ifid_rs2(id_rs2),
+    // FP load-use hazard inputs
+    .idex_fp_rd(idex_fp_rd_addr),
+    .idex_fp_mem_op(idex_fp_mem_op),
+    .ifid_fp_rs1(id_rs1),           // FP register addresses use same rs1/rs2/rs3 fields
+    .ifid_fp_rs2(id_rs2),
+    .ifid_fp_rs3(id_rs3),
+    // M extension
     .mul_div_busy(ex_mul_div_busy),
     .idex_is_mul_div(idex_is_mul_div),
+    // A extension
     .atomic_busy(ex_atomic_busy),
     .atomic_done(ex_atomic_done),
     .idex_is_atomic(idex_is_atomic),
+    // F/D extension
     .fpu_busy(ex_fpu_busy),
     .idex_fp_alu_en(idex_fp_alu_en),
+    // Outputs
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
     .bubble_idex(flush_idex_hazard)
@@ -640,6 +649,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_in(id_rd),
     .fp_reg_write_in(id_fp_reg_write),
     .int_reg_write_fp_in(id_int_reg_write_fp),
+    .fp_mem_op_in(id_fp_mem_op),
     .fp_alu_en_in(id_fp_alu_en),
     .fp_alu_op_in(id_fp_alu_op),
     .fp_rm_in(id_fp_rm),
@@ -695,6 +705,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_out(idex_fp_rd_addr),
     .fp_reg_write_out(idex_fp_reg_write),
     .int_reg_write_fp_out(idex_int_reg_write_fp),
+    .fp_mem_op_out(idex_fp_mem_op),
     .fp_alu_en_out(idex_fp_alu_en),
     .fp_alu_op_out(idex_fp_alu_op),
     .fp_rm_out(idex_fp_rm),
@@ -918,12 +929,12 @@ module rv_core_pipelined #(
     .mret(idex_is_mret && idex_valid),
     .mepc_out(mepc),
     .mstatus_mie(mstatus_mie),
-    .illegal_csr(ex_illegal_csr)
-    // TODO: F/D extension: Add FP CSR connections when csr_file is extended
-    // .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx}),
-    // .fflags_we(memwb_fp_reg_write && memwb_valid),
-    // .frm(csr_frm),
-    // .fflags(csr_fflags)
+    .illegal_csr(ex_illegal_csr),
+    // Floating-point CSR connections
+    .frm_out(csr_frm),
+    .fflags_out(csr_fflags),
+    .fflags_we(memwb_fp_reg_write && memwb_valid),  // Accumulate flags when FP instruction completes in WB
+    .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx})
   );
 
   //==========================================================================
@@ -989,6 +1000,7 @@ module rv_core_pipelined #(
     .reset_n(reset_n),
     .start(fpu_start),
     .fp_alu_op(idex_fp_alu_op),
+    .funct3(idex_funct3),
     .rounding_mode(ex_fp_rounding_mode),
     .busy(ex_fpu_busy),
     .done(ex_fpu_done),

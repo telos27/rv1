@@ -6,11 +6,16 @@
 module hazard_detection_unit (
   // Inputs from ID/EX register (instruction in EX stage)
   input  wire        idex_mem_read,    // Load instruction in EX stage
-  input  wire [4:0]  idex_rd,          // Destination register of load
+  input  wire [4:0]  idex_rd,          // Destination register of load (integer)
+  input  wire [4:0]  idex_fp_rd,       // Destination register of FP load
+  input  wire        idex_fp_mem_op,   // FP memory operation (FP load/store)
 
   // Inputs from IF/ID register (instruction in ID stage)
-  input  wire [4:0]  ifid_rs1,         // Source register 1
-  input  wire [4:0]  ifid_rs2,         // Source register 2
+  input  wire [4:0]  ifid_rs1,         // Source register 1 (integer)
+  input  wire [4:0]  ifid_rs2,         // Source register 2 (integer)
+  input  wire [4:0]  ifid_fp_rs1,      // Source register 1 (FP)
+  input  wire [4:0]  ifid_fp_rs2,      // Source register 2 (FP)
+  input  wire [4:0]  ifid_fp_rs3,      // Source register 3 (FP, for FMA)
 
   // M extension signals
   input  wire        mul_div_busy,     // M unit is busy
@@ -58,6 +63,25 @@ module hazard_detection_unit (
   // Load-use hazard exists if there's a load and either source has a hazard
   assign load_use_hazard = idex_mem_read && (rs1_hazard || rs2_hazard);
 
+  // FP load-use hazard detection
+  // Similar to integer load-use, but checks FP registers
+  // Hazard exists if:
+  //   1. Instruction in EX stage is an FP load (mem_read && fp_mem_op)
+  //   2. FP load's destination register matches any FP source register in ID stage
+  // Note: FP registers don't have a hardwired-zero register like x0
+  wire fp_rs1_hazard;
+  wire fp_rs2_hazard;
+  wire fp_rs3_hazard;
+  wire fp_load_use_hazard;
+
+  assign fp_rs1_hazard = (idex_fp_rd == ifid_fp_rs1);
+  assign fp_rs2_hazard = (idex_fp_rd == ifid_fp_rs2);
+  assign fp_rs3_hazard = (idex_fp_rd == ifid_fp_rs3);
+
+  // FP load-use hazard: FP load in EX writing to a register needed by FP instruction in ID
+  assign fp_load_use_hazard = idex_mem_read && idex_fp_mem_op &&
+                               (fp_rs1_hazard || fp_rs2_hazard || fp_rs3_hazard);
+
   // M extension hazard: stall IF/ID stages when M unit is busy OR when M instruction just entered EX
   // The M instruction is held in EX stage by hold signals on IDEX and EXMEM registers.
   // We also need to stall IF/ID to prevent new instructions from entering the pipeline.
@@ -80,11 +104,11 @@ module hazard_detection_unit (
   assign fp_extension_stall = fpu_busy || idex_fp_alu_en;
 
   // Generate control signals
-  // Stall if load-use hazard, M extension dependency, A extension dependency, or FP extension dependency
-  assign stall_pc    = load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
-  assign stall_ifid  = load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
-  // Note: Only bubble for load-use hazard, NOT for M/A/FP stall
+  // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency, or FP extension dependency
+  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
+  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
+  // Note: Only bubble for load-use hazard (integer or FP), NOT for M/A/FP stall
   // (M/A/FP stall uses hold signals on IDEX and EXMEM to keep instruction in place)
-  assign bubble_idex = load_use_hazard;
+  assign bubble_idex = load_use_hazard || fp_load_use_hazard;
 
 endmodule

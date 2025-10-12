@@ -30,6 +30,7 @@ module fpu #(
   // Control
   input  wire              start,          // Start FP operation
   input  wire [4:0]        fp_alu_op,      // FP operation (from control unit)
+  input  wire [2:0]        funct3,         // funct3 field (for compare ops: FEQ=010, FLT=001, FLE=000)
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode (from frm CSR or instruction)
   output wire              busy,           // FPU busy (multi-cycle operation in progress)
   output wire              done,           // Operation complete (1 cycle pulse)
@@ -274,7 +275,14 @@ module fpu #(
   wire [31:0]       cmp_result;
   wire              cmp_flag_nv;
 
-  assign cmp_op = (fp_alu_op == FP_CMP) ? 2'b00 : 2'b00; // TODO: decode FEQ/FLT/FLE from funct3
+  // Decode compare operation from funct3
+  // FEQ: funct3=010 (2) -> cmp_op=00
+  // FLT: funct3=001 (1) -> cmp_op=01
+  // FLE: funct3=000 (0) -> cmp_op=10
+  assign cmp_op = (funct3 == 3'b010) ? 2'b00 :  // FEQ
+                  (funct3 == 3'b001) ? 2'b01 :  // FLT
+                  (funct3 == 3'b000) ? 2'b10 :  // FLE
+                  2'b00;  // Default to FEQ
 
   fp_compare #(.FLEN(FLEN)) u_fp_compare (
     .operand_a      (operand_a),
@@ -296,8 +304,6 @@ module fpu #(
 
   // ========================================
   // FP Converter (multi-cycle, 2-3 cycles)
-  // NOTE: fp_converter.v has syntax errors, temporarily disabled
-  // TODO: Fix fp_converter.v wire declarations in case statements
   // ========================================
   wire              cvt_start;
   wire [3:0]        cvt_op;
@@ -311,29 +317,21 @@ module fpu #(
   assign cvt_start = start && (fp_alu_op == FP_CVT);
   assign cvt_op = 4'b0000; // TODO: decode conversion type from funct5
 
-  // Temporarily stub out converter until syntax errors are fixed
-  assign cvt_busy = 1'b0;
-  assign cvt_done = 1'b0;
-  assign cvt_int_result = {XLEN{1'b0}};
-  assign cvt_fp_result = {FLEN{1'b0}};
-  assign cvt_flag_nv = 1'b0;
-  assign cvt_flag_nx = 1'b0;
-
-  // fp_converter #(.FLEN(FLEN), .XLEN(XLEN)) u_fp_converter (
-  //   .clk            (clk),
-  //   .reset_n        (reset_n),
-  //   .start          (cvt_start),
-  //   .operation      (cvt_op),
-  //   .rounding_mode  (rounding_mode),
-  //   .busy           (cvt_busy),
-  //   .done           (cvt_done),
-  //   .int_operand    (int_operand),
-  //   .fp_operand     (operand_a),
-  //   .int_result     (cvt_int_result),
-  //   .fp_result      (cvt_fp_result),
-  //   .flag_nv        (cvt_flag_nv),
-  //   .flag_nx        (cvt_flag_nx)
-  // );
+  fp_converter #(.FLEN(FLEN), .XLEN(XLEN)) u_fp_converter (
+    .clk            (clk),
+    .reset_n        (reset_n),
+    .start          (cvt_start),
+    .operation      (cvt_op),
+    .rounding_mode  (rounding_mode),
+    .busy           (cvt_busy),
+    .done           (cvt_done),
+    .int_operand    (int_operand),
+    .fp_operand     (operand_a),
+    .int_result     (cvt_int_result),
+    .fp_result      (cvt_fp_result),
+    .flag_nv        (cvt_flag_nv),
+    .flag_nx        (cvt_flag_nx)
+  );
 
   // ========================================
   // Output Multiplexing

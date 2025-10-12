@@ -32,7 +32,15 @@ module csr_file #(
 
   // Status outputs
   output wire             mstatus_mie,    // Global interrupt enable
-  output wire             illegal_csr     // Invalid CSR access
+  output wire             illegal_csr,    // Invalid CSR access
+
+  // Floating-Point CSR outputs
+  output wire [2:0]       frm_out,        // FP rounding mode (for FPU)
+  output wire [4:0]       fflags_out,     // FP exception flags (for reading)
+
+  // Floating-Point flag accumulation (from FPU in WB stage)
+  input  wire             fflags_we,      // Write enable for flag accumulation
+  input  wire [4:0]       fflags_in       // Exception flags from FPU
 );
 
   // =========================================================================
@@ -305,6 +313,13 @@ module csr_file #(
           end
         endcase
       end
+
+      // Floating-point flag accumulation (OR operation, independent of CSR writes)
+      // This allows FPU to accumulate exception flags without a CSR instruction
+      // Flags are sticky - once set, they remain until explicitly cleared via CSR write
+      if (fflags_we) begin
+        fflags_r <= fflags_r | fflags_in;  // Accumulate (bitwise OR)
+      end
     end
   end
 
@@ -315,5 +330,9 @@ module csr_file #(
   assign trap_vector = mtvec_r;
   assign mepc_out    = mepc_r;
   assign mstatus_mie = mstatus_mie_r;
+
+  // Floating-point CSR outputs
+  assign frm_out     = frm_r;
+  assign fflags_out  = fflags_r;
 
 endmodule

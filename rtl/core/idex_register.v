@@ -57,6 +57,7 @@ module idex_register #(
   input  wire [4:0]      fp_rd_addr_in,       // FP rd address
   input  wire            fp_reg_write_in,     // FP register write enable
   input  wire            int_reg_write_fp_in, // Integer register write (FP compare/classify/FMV.X.W)
+  input  wire            fp_mem_op_in,        // FP memory operation (load/store)
   input  wire            fp_alu_en_in,        // FP ALU enable
   input  wire [4:0]      fp_alu_op_in,        // FP ALU operation
   input  wire [2:0]      fp_rm_in,            // FP rounding mode
@@ -119,6 +120,7 @@ module idex_register #(
   output reg  [4:0]      fp_rd_addr_out,
   output reg             fp_reg_write_out,
   output reg             int_reg_write_fp_out,
+  output reg             fp_mem_op_out,
   output reg             fp_alu_en_out,
   output reg  [4:0]      fp_alu_op_out,
   output reg  [2:0]      fp_rm_out,
@@ -180,6 +182,7 @@ module idex_register #(
       fp_rd_addr_out  <= 5'h0;
       fp_reg_write_out<= 1'b0;
       int_reg_write_fp_out <= 1'b0;
+      fp_mem_op_out   <= 1'b0;
       fp_alu_en_out   <= 1'b0;
       fp_alu_op_out   <= 5'h0;
       fp_rm_out       <= 3'h0;
@@ -238,6 +241,7 @@ module idex_register #(
       fp_rd_addr_out  <= 5'h0;          // Clear destination
       fp_reg_write_out<= 1'b0;          // Critical: no FP register write
       int_reg_write_fp_out <= 1'b0;     // Critical: no INT register write
+      fp_mem_op_out   <= 1'b0;
       fp_alu_en_out   <= 1'b0;
       fp_alu_op_out   <= 5'h0;
       fp_rm_out       <= 3'h0;
@@ -294,6 +298,7 @@ module idex_register #(
       fp_rd_addr_out  <= fp_rd_addr_in;
       fp_reg_write_out<= fp_reg_write_in;
       int_reg_write_fp_out <= int_reg_write_fp_in;
+      fp_mem_op_out   <= fp_mem_op_in;
       fp_alu_en_out   <= fp_alu_en_in;
       fp_alu_op_out   <= fp_alu_op_in;
       fp_rm_out       <= fp_rm_in;
