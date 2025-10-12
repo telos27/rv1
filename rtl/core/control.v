@@ -339,6 +339,7 @@ module control #(
           alu_src = 1'b1;             // Use immediate
           alu_control = 4'b0000;      // ADD (rs1 + offset)
           imm_sel = IMM_I;
+          wb_sel = 3'b001;            // Write-back from memory
         end else begin
           illegal_inst = 1'b1;
         end

@@ -128,16 +128,27 @@ module data_memory #(
   end
 
   // Initialize memory
-  integer i;
   initial begin
+    integer i;
+    reg [31:0] temp_mem [0:(MEM_SIZE/4)-1];  // Temporary word array for loading
+
     // Initialize to zero
     for (i = 0; i < MEM_SIZE; i = i + 1) begin
       mem[i] = 8'h0;
     end
 
     // Load from file if specified (for compliance tests with embedded data)
+    // Hex file contains 32-bit words, need to convert to byte array
     if (MEM_FILE != "") begin
-      $readmemh(MEM_FILE, mem);
+      $readmemh(MEM_FILE, temp_mem);
+
+      // Convert word array to byte array (little-endian)
+      for (i = 0; i < MEM_SIZE/4; i = i + 1) begin
+        mem[i*4]   = temp_mem[i][7:0];    // Byte 0 (LSB)
+        mem[i*4+1] = temp_mem[i][15:8];   // Byte 1
+        mem[i*4+2] = temp_mem[i][23:16];  // Byte 2
+        mem[i*4+3] = temp_mem[i][31:24];  // Byte 3 (MSB)
+      end
     end
   end
 

@@ -231,8 +231,10 @@ module rv_core_pipelined #(
   assign m_unit_start = idex_is_mul_div && idex_valid && !ex_mul_div_busy && !ex_mul_div_ready;
 
   // FPU start signal: pulse once when FP instruction first enters EX
+  // Start FPU when: (1) FP ALU op enabled, (2) valid instruction, (3) FPU not busy
+  // Note: Don't check !ex_fpu_done here - done is a completion flag, not a busy flag
   wire            fpu_start;
-  assign fpu_start = idex_fp_alu_en && idex_valid && !ex_fpu_busy && !ex_fpu_done;
+  assign fpu_start = idex_fp_alu_en && idex_valid && !ex_fpu_busy;
 
   //==========================================================================
   // EX/MEM Pipeline Register Outputs
@@ -977,16 +979,18 @@ module rv_core_pipelined #(
   //==========================================================================
 
   // FP Operand Forwarding Muxes
+  // FP Forwarding: Use wb_fp_data for MEMWB forwarding to handle FP loads correctly
+  // For FP loads, the data comes from memory (wb_fp_data), not from FPU (memwb_fp_result)
   assign ex_fp_operand_a = (fp_forward_a == 2'b10) ? exmem_fp_result :
-                           (fp_forward_a == 2'b01) ? memwb_fp_result :
+                           (fp_forward_a == 2'b01) ? wb_fp_data :
                            idex_fp_rs1_data;
 
   assign ex_fp_operand_b = (fp_forward_b == 2'b10) ? exmem_fp_result :
-                           (fp_forward_b == 2'b01) ? memwb_fp_result :
+                           (fp_forward_b == 2'b01) ? wb_fp_data :
                            idex_fp_rs2_data;
 
   assign ex_fp_operand_c = (fp_forward_c == 2'b10) ? exmem_fp_result :
-                           (fp_forward_c == 2'b01) ? memwb_fp_result :
+                           (fp_forward_c == 2'b01) ? wb_fp_data :
                            idex_fp_rs3_data;
 
   // FP Rounding Mode Selection (dynamic from frm CSR or static from instruction)
@@ -1018,6 +1022,10 @@ module rv_core_pipelined #(
     .flag_nx(ex_fp_flag_nx)
   );
 
+  // FSW data path: Use FP register data for FP stores, integer register data for integer stores
+  wire [XLEN-1:0] ex_mem_write_data_mux;
+  assign ex_mem_write_data_mux = (idex_mem_write && idex_fp_mem_op) ? ex_fp_operand_b : ex_rs2_data_forwarded;
+
   //==========================================================================
   // EX/MEM Pipeline Register
   //==========================================================================
@@ -1029,9 +1037,7 @@ module rv_core_pipelined #(
     .hold(hold_exmem),
     .alu_result_in(ex_alu_result),
     // For FP stores, use FP register data; for integer stores, use integer register data
-    // FP stores are detected by mem_write && fp_mem_op (Note: fp_mem_op not yet in IDEX, TODO)
-    // For now, use integer path - FP load/store will be added in refinement
-    .mem_write_data_in(ex_rs2_data_forwarded),  // TODO: Mux with ex_fp_operand_b for FP stores
+    .mem_write_data_in(ex_mem_write_data_mux),
     .rd_addr_in(idex_rd_addr),
     .pc_plus_4_in(ex_pc_plus_4),
     .funct3_in(idex_funct3),
