@@ -218,11 +218,26 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 - 13/13 custom FPU tests PASSING (100%)
 - 40/42 RV32I compliance tests PASSING (95%)
 
-⚠️ **Test Timeout Issue** - Pre-existing issue to investigate
-- Both `test_simple` and `test_fp_basic` timeout at 49999 cycles
-- Issue exists in both pre-cleanup and post-cleanup code
-- CPU appears to not execute instructions (x10 remains 0 instead of expected 5)
-- Requires investigation of pipeline stall or PC increment logic
+✅ **Memory Initialization Bug FIXED** (2025-10-11)
+- **Root Cause**: `$readmemh` was incorrectly reading byte-separated hex files using temporary word array
+- **Impact**: Instructions were not being loaded properly, causing CPU to execute NOPs and timeout
+- **Fix**: Removed temporary word array, now reads directly into byte array
+- **Files Fixed**: `rtl/memory/instruction_memory.v`, `rtl/memory/data_memory.v`
+- **Performance Impact**: Tests now complete in 20-120 cycles vs 50,000 cycle timeout (up to 2,380x faster)
+
+✅ **Test Success/Failure Mechanism Standardized** (2025-10-11)
+- **Problem**: Tests had inconsistent success indicators - some used EBREAK, others infinite loops causing timeouts
+- **Solution**:
+  - Enhanced testbench to recognize success/failure markers in x28 register
+  - Success markers: `0xFEEDFACE`, `0xDEADBEEF`, `0xC0FFEE00`, `0x0000BEEF`, `0x00000001`
+  - Failure markers: `0xDEADDEAD`, `0x0BADC0DE`
+  - Replaced infinite loops (`j end`) with `ebreak` in FP tests
+  - Added NOPs before EBREAK to ensure register write-back completes
+- **Files Updated**: `tb/integration/tb_core_pipelined.v`, FP test files
+- **Result**: Tests now clearly report PASS/FAIL with cycle counts
+  - `test_simple`: PASSED in 21 cycles (x28=0xDEADBEEF)
+  - `test_fp_basic`: PASSED in 116 cycles (x28=0xDEADBEEF)
+  - `test_fp_compare`: PASSED in 60 cycles (x28=0xFEEDFACE)
 
 ### Recently Fixed (2025-10-11)
 1. ✅ **FP Exception Flags** - Overflow/underflow flags now properly connected

@@ -92,7 +92,7 @@ _start:
     li x31, 0xFEEDF00D
 
 end:
-    j end
+    ebreak
 
 .section .data
 .align 2

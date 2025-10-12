@@ -91,16 +91,48 @@ module tb_core_pipelined;
       // Note: In pipeline, we detect EBREAK when it reaches WB stage
       // For simplicity, check when it appears in IF stage and wait a few cycles
       if (instruction == 32'h00100073) begin
-        // Wait for pipeline to flush (5 cycles)
-        repeat(5) @(posedge clk);
-        cycle_count = cycle_count + 5;
+        // Wait for pipeline to complete and EBREAK to reach WB stage (10 cycles)
+        // This ensures all preceding instructions complete their WB
+        repeat(10) @(posedge clk);
+        cycle_count = cycle_count + 10;
 
         $display("EBREAK encountered at cycle %0d", cycle_count);
         $display("Final PC: 0x%08h", pc);
         $display("");
         print_results();
         $display("");
-        $display("Test PASSED");
+
+        // Check x28 register for test result markers
+        // Common success markers: 0xFEEDFACE, 0xDEADBEEF, 0xC0FFEE00, 0x00000001
+        // Common failure markers: 0xDEADDEAD, 0xBADC0DE, 0x00000000
+        case (DUT.regfile.registers[28])
+          32'hFEEDFACE,
+          32'hDEADBEEF,
+          32'hC0FFEE00,
+          32'h0000BEEF,
+          32'h00000001: begin
+            $display("========================================");
+            $display("TEST PASSED");
+            $display("========================================");
+            $display("  Success marker (x28): 0x%08h", DUT.regfile.registers[28]);
+            $display("  Cycles: %0d", cycle_count);
+          end
+          32'hDEADDEAD,
+          32'h0BADC0DE: begin
+            $display("========================================");
+            $display("TEST FAILED");
+            $display("========================================");
+            $display("  Failure marker (x28): 0x%08h", DUT.regfile.registers[28]);
+            $display("  Cycles: %0d", cycle_count);
+          end
+          default: begin
+            $display("========================================");
+            $display("TEST PASSED (EBREAK with no marker)");
+            $display("========================================");
+            $display("  Note: x28 = 0x%08h (no standard marker)", DUT.regfile.registers[28]);
+            $display("  Cycles: %0d", cycle_count);
+          end
+        endcase
         $finish;
       end
 

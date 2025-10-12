@@ -31,7 +31,7 @@ _start:
 
     # Failure
     li x28, 0xBADC0DE
-    j end
+    ebreak
 
 success:
     li x28, 0xDEADBEEF

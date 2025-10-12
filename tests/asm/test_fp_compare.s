@@ -90,6 +90,9 @@ _start:
 
     # Set success marker
     li x28, 0xC0FFEE00
+    nop
+    nop
+    nop
 
     # Verify expected results
     # x11 should be 1 (1.0 == 1.0)
@@ -117,13 +120,14 @@ _start:
 
     # All tests passed
     li x28, 0xFEEDFACE
-    j end
+    nop
+    nop
+    nop
+    ebreak
 
 fail:
     li x28, 0xDEADDEAD
-
-end:
-    j end
+    ebreak
 
 # Expected Results:
 # x11 = 1  (FEQ: 1.0 == 1.0)

@@ -26,7 +26,7 @@ _start:
     beq x12, x13, success
 
     li x28, 0xBADC0DE
-    j end
+    ebreak
 
 success:
     li x28, 0xDEADBEEF

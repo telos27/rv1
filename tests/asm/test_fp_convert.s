@@ -124,13 +124,13 @@ _start:
 
     # All tests passed
     li x28, 0xFEEDFACE
-    j end
+    ebreak
 
 fail:
     li x28, 0xDEADDEAD
 
 end:
-    j end
+    ebreak
 
 # Expected Results:
 # Float to Int conversions:

@@ -32,4 +32,4 @@ _start:
     # End
 end:
     ebreak
-    j end
+    ebreak

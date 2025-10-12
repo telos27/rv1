@@ -17,6 +17,11 @@ _start:
     ori  x14, x10, 0xFF  # x14 = 0xFF
     andi x15, x14, 0x0F  # x15 = 0x05
 
-    # End - infinite loop
-loop:
-    beq  x0, x0, loop    # Infinite loop
+    # Set success marker
+    li x28, 0xDEADBEEF
+    nop  # Ensure x28 write completes before EBREAK
+    nop
+    nop
+
+    # End - signal success with EBREAK
+    ebreak

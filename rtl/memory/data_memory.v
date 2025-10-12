@@ -130,7 +130,6 @@ module data_memory #(
   // Initialize memory
   initial begin
     integer i;
-    reg [31:0] temp_mem [0:(MEM_SIZE/4)-1];  // Temporary word array for loading
 
     // Initialize to zero
     for (i = 0; i < MEM_SIZE; i = i + 1) begin
@@ -138,17 +137,12 @@ module data_memory #(
     end
 
     // Load from file if specified (for compliance tests with embedded data)
-    // Hex file contains 32-bit words, need to convert to byte array
+    // Hex file format from "objcopy -O verilog" contains space-separated hex bytes
+    // $readmemh treats each space-separated value as one byte
+    // Note: Memory addresses in hex file may be outside our address range, which is OK
+    // since we use address masking to wrap addresses into our memory space
     if (MEM_FILE != "") begin
-      $readmemh(MEM_FILE, temp_mem);
-
-      // Convert word array to byte array (little-endian)
-      for (i = 0; i < MEM_SIZE/4; i = i + 1) begin
-        mem[i*4]   = temp_mem[i][7:0];    // Byte 0 (LSB)
-        mem[i*4+1] = temp_mem[i][15:8];   // Byte 1
-        mem[i*4+2] = temp_mem[i][23:16];  // Byte 2
-        mem[i*4+3] = temp_mem[i][31:24];  // Byte 3 (MSB)
-      end
+      $readmemh(MEM_FILE, mem);
     end
   end
 

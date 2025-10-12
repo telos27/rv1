@@ -78,10 +78,12 @@ _start:
 
     # Set success flag
     li x28, 0xDEADBEEF
+    nop
+    nop
+    nop
 
-    # End of test - infinite loop
-end:
-    j end
+    # End of test - signal success with EBREAK
+    ebreak
 
 # Expected Results:
 # f5  (results+0)  = 3.0  = 0x40400000

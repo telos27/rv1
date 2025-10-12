@@ -86,13 +86,13 @@ _start:
 
     # All tests passed
     li x28, 0xFEEDFACE
-    j end
+    ebreak
 
 fail:
     li x28, 0xDEADDEAD
 
 end:
-    j end
+    ebreak
 
 # Expected Results (if hazard detection works correctly):
 # f5  = 2.0  (0x40000000) - load-use hazard handled

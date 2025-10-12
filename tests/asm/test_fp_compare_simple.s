@@ -33,10 +33,10 @@ _start:
     
     # Success
     li x28, 0xFEEDFACE
-    j end
+    ebreak
     
 fail:
     li x28, 0xDEADDEAD
     
 end:
-    j end
+    ebreak
