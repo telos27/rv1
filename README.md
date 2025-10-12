@@ -1,107 +1,108 @@
 # RV1 - RISC-V CPU Core
 
-A educational RISC-V processor implementation in Verilog, built incrementally from a simple single-cycle design to a pipelined core with extensions.
+A comprehensive RISC-V processor implementation in Verilog, built incrementally from a simple single-cycle design to a full-featured pipelined core with extensions.
 
 ## Project Goals
 
-- Implement a complete RV32I base integer instruction set
+- Implement a complete RISC-V instruction set with extensions
 - Progress through increasing complexity: single-cycle → multi-cycle → pipelined
-- Add standard extensions (M, A, C) incrementally
+- Add standard extensions (M, A, F, D) incrementally
+- Implement virtual memory support (MMU)
 - Maintain clean, readable, and synthesizable Verilog code
 - Achieve compliance with RISC-V specifications
 - Create comprehensive test coverage
 
 ## Current Status
 
-**Phase**: Phase 7 - A Extension ✅ **COMPLETE (100%)**
-**Supported ISAs**: RV32I, RV32IM, RV32IMA, RV64I, RV64IM
-**Architecture**: Parameterized 5-stage pipeline with CSR, exceptions, M extension, and A extension
+**Phase**: Phase 8.5+ - F/D Extension + MMU ✅ **COMPLETE**
+
+**Supported ISAs**: RV32IMAFD, RV64IMAFD
+**Architecture**: Parameterized 5-stage pipeline with full feature set
 **Compliance**: **40/42 RV32I tests PASSING (95%)**
-**M Extension**: ✅ **FULLY FUNCTIONAL** (all 13 instructions implemented)
-**A Extension**: ✅ **FULLY FUNCTIONAL** (all 22 atomic instructions implemented)
 
-**Statistics:**
-- **Phase 1**: Single-cycle core ✅ COMPLETE (9 RTL modules, 24/42 compliance tests)
-- **Phase 3**: Pipelined core ✅ COMPLETE (15 RTL modules, 40/42 compliance tests)
-- **Phase 4**: CSR & Exceptions ✅ **COMPLETE** (CSR file, exception handling, trap support)
-- **Phase 5**: Parameterization ✅ **COMPLETE** (16 parameterized modules, 5 configurations)
-  - **16 RTL modules** fully parameterized for RV32/RV64
-  - **XLEN parameter** supports 32-bit and 64-bit architectures
-  - **5 configuration presets**: RV32I, RV32IM, RV32IMC, RV64I, RV64GC
-  - **Build system** with configuration targets
-  - **47/47 RV32I instructions** supported with comprehensive hazard handling
-  - **40/42 compliance tests PASSED (95%)** - TARGET EXCEEDED ✅
+### **Key Features Implemented:**
+- ✅ **RV32I/RV64I** - Base integer instruction set (47 instructions)
+- ✅ **M Extension** - Multiply/Divide (13 instructions)
+- ✅ **A Extension** - Atomic operations (22 instructions)
+- ✅ **F Extension** - Single-precision floating-point (26 instructions)
+- ✅ **D Extension** - Double-precision floating-point (26 instructions)
+- ✅ **Zicsr** - CSR instructions and privilege system
+- ✅ **MMU** - Virtual memory with Sv32/Sv39 support
+- ✅ **Hardware TLB** - 16-entry fully-associative TLB
+- ✅ **CSR System** - 13 Machine-mode CSRs + FCSR + SATP
 
-**Recent Achievements (2025-10-10):**
+### **Statistics:**
+- **Total Instructions**: 134 RISC-V instructions implemented
+- **RTL Modules**: 25+ parameterized modules (~6000 lines)
+- **FPU Test Suite**: 13/13 PASSING (100%)
+- **Base ISA Compliance**: 40/42 PASSING (95%)
+- **Configuration Support**: RV32/RV64, multiple extensions
 
-**Phase 7 Complete - A Extension (Sessions 12-15):**
+## Recent Achievements (2025-10-11)
+
+### **Phase 8.5 Complete - F/D Extension FPU Implementation**
+✅ **Floating-Point Unit Fully Implemented and Verified**
+- IEEE 754-2008 compliant arithmetic
+- 32 FP registers (f0-f31, 64-bit wide)
+- All 5 rounding modes (RNE, RTZ, RDN, RUP, RMM)
+- FCSR with exception flags (NV, DZ, OF, UF, NX)
+- **13/13 FPU tests PASSING** ✅
+- **7 critical bugs fixed** including FP-to-INT write-back path
+- **52 F/D instructions** fully functional
+
+**F Extension Instructions (26):**
+- Arithmetic: FADD.S, FSUB.S, FMUL.S, FDIV.S, FSQRT.S, FMIN.S, FMAX.S
+- FMA: FMADD.S, FMSUB.S, FNMSUB.S, FNMADD.S
+- Conversion: FCVT.W.S, FCVT.WU.S, FCVT.S.W, FCVT.S.WU (+ RV64 L variants)
+- Compare: FEQ.S, FLT.S, FLE.S
+- Sign: FSGNJ.S, FSGNJN.S, FSGNJX.S
+- Load/Store: FLW, FSW
+- Move/Classify: FMV.X.W, FMV.W.X, FCLASS.S
+
+**D Extension Instructions (26):**
+- All double-precision equivalents of F extension
+- FCVT.S.D, FCVT.D.S (single ↔ double conversion)
+- FLD, FSD (double load/store)
+- NaN-boxing support for mixed precision
+
+### **Phase 8.5+ MMU Implementation**
+✅ **Memory Management Unit Complete**
+- **Sv32 (RV32)** and **Sv39 (RV64)** virtual memory support
+- **16-entry TLB** with round-robin replacement
+- **Multi-cycle page table walker** with 2-3 level support
+- **Full permission checking**: R/W/X bits, U/S mode access
+- **SATP CSR** for address translation control
+- **MSTATUS enhancements**: SUM and MXR bits
+- **Comprehensive testbench** with 282 lines of verification code
+- **Complete documentation**: 420-line MMU design guide
+
+**MMU Features:**
+- Bare mode (no translation)
+- TLB hit/miss handling
+- Hardware page table walk
+- Page fault detection
+- Superpage support
+- Permission violation detection
+
+### **Phase 7 Complete - A Extension (Sessions 12-15)**
 ✅ **A Extension Fully Implemented and Working**
 - All 11 RV32A instructions: LR.W, SC.W, AMOSWAP.W, AMOADD.W, AMOXOR.W, AMOAND.W, AMOOR.W, AMOMIN.W, AMOMAX.W, AMOMINU.W, AMOMAXU.W
-- All 11 RV64A instructions: LR.D, SC.D, AMOSWAP.D, AMOADD.D, AMOXOR.D, AMOAND.D, AMOOR.D, AMOMIN.D, AMOMAX.D, AMOMINU.D, AMOMAXU.D
-- **Critical bug fixed**: Pipeline stall issue causing 2,270x slowdown on back-to-back atomic operations
-- **test_lr_only PASSED**: 15 cycles ✅
-- **test_sc_only PASSED**: 16 cycles ✅
+- All 11 RV64A instructions: LR.D, SC.D, AMOSWAP.D, AMOADD.D, etc.
+- **Critical bug fixed**: Pipeline stall issue (2,270x slowdown eliminated)
 - **test_lr_sc_direct PASSED**: 22 cycles (was timing out at 50,000+) ✅
-- No regression in existing tests
+- Atomic unit with reservation station
+- Multi-cycle state machine (3-6 cycle latency)
 
-✅ **Atomic Unit Features**
-- Multi-cycle state machine for LR, SC, and AMO operations
-- Reservation station for LR/SC address tracking
-- 3-6 cycle latency per operation
-- Zero impact on non-atomic instruction performance
-
-✅ **Pipeline Bug Fix**
-- Fixed hazard detection infinite stall loop
-- Added atomic_done signal to release pipeline
-- Back-to-back atomic operations now work correctly
-
-**Phase 6 Complete - M Extension (Sessions 10-11):**
+### **Phase 6 Complete - M Extension (Sessions 10-11)**
 ✅ **M Extension Fully Implemented and Working**
 - All 8 RV32M instructions: MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU
 - All 5 RV64M instructions: MULW, DIVW, DIVUW, REMW, REMUW
-- EX stage holding architecture for multi-cycle operations
 - 32-cycle multiply, 64-cycle divide execution
-- **DIV bug fixed**: Corrected non-restoring algorithm and cycle count
-- **test_m_seq.s PASSED**: All operations verified (MUL, DIV, REM) ✅
-- **test_m_simple.s PASSED**: 5 × 10 = 50 ✅
-- **test_m_basic.s PASSED**: Comprehensive M extension test ✅
-- No regression in existing tests
+- Non-restoring division algorithm
+- Edge case handling (div-by-zero, overflow per RISC-V spec)
+- EX stage holding architecture
 
-✅ **Pipeline Enhancements**
-- Hold mechanism added to IDEX and EXMEM registers
-- One-shot start signal prevents M unit restarts
-- Hazard detection handles M unit stalls
-- Writeback mux extended for M results (wb_sel = 3 bits)
-
-**Phase 5 Complete - Parameterization (Sessions 8-9):**
-✅ **Complete XLEN Parameterization**
-- All 16 modules parameterized for RV32/RV64 support
-- CSR file with XLEN-wide registers
-- Exception unit with XLEN-wide addresses
-- Top-level core fully parameterized
-
-✅ **Build System**
-- Professional Makefile with 5 configuration targets
-- Easy switching: `make rv32i`, `make rv64i`, etc.
-- Simulation targets: `make run-rv32i`, `make run-rv64i`
-
-✅ **RV64 Support**
-- RV64I instructions: LD, SD, LWU
-- Control unit recognizes RV64W opcodes (OP_IMM_32, OP_OP_32)
-- Proper illegal instruction detection for RV32 mode
-
-**Phase 4 Complete - CSR & Exceptions (Session 7):**
-✅ Fixed critical CSR bugs enabling trap handling
-- CSR write data forwarding
-- Exception handling with MRET support
-- 13 Machine-mode CSRs implemented
-
-**Earlier Achievements:**
-- Phase 3 pipeline: 40/42 compliance tests (95%)
-- Critical bug fixes for forwarding and data memory
-- Complete hazard detection and resolution
-
-See [PHASES.md](PHASES.md) for detailed development roadmap.
+See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VERIFICATION_REPORT.md](docs/PHASE8_VERIFICATION_REPORT.md) for FPU verification results.
 
 ## Features Status
 
@@ -114,7 +115,6 @@ See [PHASES.md](PHASES.md) for detailed development roadmap.
 - [x] Unit testbenches (ALU, RegFile, Decoder) - 126/126 PASSED
 - [x] Integration testbench - 7/7 test programs PASSED
 - [x] RISC-V compliance testing - 24/42 PASSED (57%)
-- [x] RAW hazard identified (architectural limitation)
 
 ### Phase 2: Multi-Cycle (SKIPPED)
 - Status: Skipped in favor of direct pipeline implementation
@@ -127,14 +127,8 @@ See [PHASES.md](PHASES.md) for detailed development roadmap.
 - [x] **Phase 3.4**: Load-use hazard detection with stalling ✅
 - [x] **Phase 3.5**: Complete 3-level forwarding (WB-to-ID added) ✅
 - [x] **Phase 3.6**: Control hazard bug fixed ✅
-  - All branch/jump tests passing
-  - 24/42 compliance tests (57% - baseline restored)
 - [x] **Phase 3.7**: LUI/AUIPC forwarding bug fixed ✅
-  - Fixed garbage rs1 forwarding issue
-  - 33/42 compliance tests (78%)
 - [x] **Phase 3.8**: Data memory initialization fixed ✅
-  - Harvard architecture data loading
-  - Unaligned halfword access support
   - **40/42 compliance tests (95%)** ✅ TARGET EXCEEDED
 
 ### Phase 4: CSR and Exception Support ✅ COMPLETE
@@ -154,39 +148,68 @@ See [PHASES.md](PHASES.md) for detailed development roadmap.
 
 ### Phase 6: M Extension ✅ COMPLETE
 - [x] Multiply unit (sequential add-and-shift algorithm)
-- [x] Divide unit (non-restoring division algorithm) - **Fixed DIV bug**
+- [x] Divide unit (non-restoring division algorithm)
 - [x] Mul/Div wrapper with unified interface
 - [x] Pipeline integration with hold mechanism
-- [x] All 8 RV32M instructions (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
-- [x] All 5 RV64M instructions (MULW, DIVW, DIVUW, REMW, REMUW)
+- [x] All 8 RV32M instructions
+- [x] All 5 RV64M instructions
 - [x] Edge case handling (div-by-zero, overflow per RISC-V spec)
-- [x] EX stage holding for multi-cycle operations
 - [x] Comprehensive testing (all M operations verified)
 
-### Phase 7: A Extension 🚧 IN PROGRESS (60%)
+### Phase 7: A Extension ✅ COMPLETE
 - [x] Design documentation (`docs/A_EXTENSION_DESIGN.md`)
 - [x] Atomic unit module with all 11 operations
 - [x] Reservation station for LR/SC tracking
 - [x] Control unit AMO opcode support
 - [x] Decoder funct5/aq/rl extraction
-- [x] IDEX pipeline register updates
-- [ ] EX stage atomic unit instantiation
-- [ ] EXMEM and MEMWB pipeline register updates
-- [ ] Writeback multiplexer extension (wb_sel = 3'b101)
-- [ ] Hazard detection for atomic stalls
-- [ ] Data memory atomic operation support
-- [ ] All 11 RV32A instructions (LR.W, SC.W, AMO*.W)
-- [ ] All 11 RV64A instructions (LR.D, SC.D, AMO*.D)
-- [ ] Test programs and verification
+- [x] Pipeline integration complete
+- [x] Hazard detection for atomic stalls
+- [x] All 11 RV32A instructions (LR.W, SC.W, AMO*.W)
+- [x] All 11 RV64A instructions (LR.D, SC.D, AMO*.D)
+- [x] Critical pipeline stall bug fixed
+- [x] Test programs and verification
+
+### Phase 8: F/D Extension ✅ COMPLETE
+- [x] Design documentation (`docs/FD_EXTENSION_DESIGN.md`)
+- [x] FP register file (32 x 64-bit registers)
+- [x] FP adder/subtractor (IEEE 754 compliant)
+- [x] FP multiplier
+- [x] FP divider (iterative SRT)
+- [x] FP square root
+- [x] FP fused multiply-add (FMA)
+- [x] FP converter (INT ↔ FP)
+- [x] FP compare operations
+- [x] FP classify and sign injection
+- [x] FCSR integration (frm, fflags)
+- [x] Pipeline integration with FPU
+- [x] All 26 F extension instructions
+- [x] All 26 D extension instructions
+- [x] NaN-boxing for mixed precision
+- [x] 7 critical bugs fixed
+- [x] 13/13 FPU tests PASSING (100%)
+- [x] Comprehensive verification report
+
+### Phase 8.5+: MMU Implementation ✅ COMPLETE
+- [x] MMU design documentation (`docs/MMU_DESIGN.md`)
+- [x] TLB implementation (16-entry fully-associative)
+- [x] Page table walker (Sv32/Sv39 support)
+- [x] Permission checking (R/W/X, U/S mode)
+- [x] SATP CSR for address translation control
+- [x] MSTATUS enhancements (SUM, MXR bits)
+- [x] CSR file updates for MMU integration
+- [x] Comprehensive MMU testbench
+- [x] Round-robin TLB replacement policy
+- [x] Page fault exception handling
+- [x] Bare mode support (MMU bypass)
 
 ### Future Extensions
-- [ ] A Extension completion (finish pipeline integration and testing)
-- [ ] M Extension compliance testing (RV32M/RV64M test suites)
-- [ ] A Extension compliance testing (RV32A/RV64A test suites)
-- [ ] Cache implementation
-- [ ] C Extension (compressed)
+- [ ] C Extension (compressed instructions - 16-bit)
+- [ ] Cache implementation (I-cache, D-cache)
+- [ ] Branch prediction
+- [ ] Interrupt controller (PLIC/CLINT)
+- [ ] FPGA synthesis and hardware testing
+- [ ] Performance optimization
 - [ ] Multicore support
-- [ ] M Extension optimizations (early termination, faster algorithms)
 
 ## Directory Structure
 
@@ -196,41 +219,52 @@ rv1/
 │   ├── datapaths/      # Datapath diagrams
 │   ├── control/        # Control signal tables
 │   ├── specs/          # Specification documents
-│   └── PARAMETERIZATION_GUIDE.md  # Parameterization documentation
-├── rtl/                # Verilog RTL source
+│   ├── FD_EXTENSION_DESIGN.md          # FPU design doc
+│   ├── MMU_DESIGN.md                   # MMU design doc
+│   ├── PHASE8_VERIFICATION_REPORT.md   # FPU verification
+│   ├── A_EXTENSION_DESIGN.md           # Atomic extension
+│   ├── M_EXTENSION_DESIGN.md           # Multiply/Divide
+│   └── PARAMETERIZATION_GUIDE.md       # XLEN parameterization
+├── rtl/                # Verilog RTL source (~6000 lines)
 │   ├── config/         # Configuration files
 │   │   └── rv_config.vh  # Central XLEN & extension config
-│   ├── core/           # Core CPU modules (19 modules)
-│   │   ├── alu.v
-│   │   ├── control.v
-│   │   ├── decoder.v
-│   │   ├── register_file.v
-│   │   ├── csr_file.v
-│   │   ├── exception_unit.v
-│   │   ├── mul_unit.v           # M extension
-│   │   ├── div_unit.v           # M extension
-│   │   ├── mul_div_unit.v       # M extension
-│   │   └── rv_core_pipelined.v  # Parameterized top-level
+│   ├── core/           # Core CPU modules (25+ modules)
+│   │   ├── rv32i_core_pipelined.v  # Top-level parameterized core
+│   │   ├── alu.v, control.v, decoder.v
+│   │   ├── register_file.v, csr_file.v
+│   │   ├── mul_unit.v, div_unit.v  # M extension
+│   │   ├── atomic_unit.v           # A extension
+│   │   ├── fpu.v, fp_*.v           # F/D extension (11 FPU modules)
+│   │   ├── mmu.v                   # MMU with TLB
+│   │   └── [pipeline registers, hazard units, etc.]
 │   ├── memory/         # Memory subsystem
 │   │   ├── instruction_memory.v
 │   │   └── data_memory.v
 │   └── peripherals/    # I/O peripherals
 ├── tb/                 # Testbenches
 │   ├── unit/           # Unit tests for modules
-│   └── integration/    # Full system tests
+│   ├── integration/    # Full system tests
+│   ├── tb_mmu.v        # MMU testbench
+│   └── [other testbenches]
 ├── tests/              # Test programs and vectors
 │   ├── asm/            # Assembly test programs
-│   ├── riscv-tests/    # Official RISC-V tests
+│   │   ├── test_fp_*.s     # FPU tests (13 programs)
+│   │   ├── test_atomic_*.s # Atomic tests
+│   │   └── [other test programs]
 │   └── vectors/        # Test vectors
 ├── sim/                # Simulation files
+│   ├── compliance/     # RISC-V compliance test results
 │   ├── scripts/        # Simulation run scripts
 │   └── waves/          # Waveform configurations
 ├── tools/              # Build and helper scripts
 │   ├── assemble.sh     # Assembly to hex
+│   ├── test_pipelined.sh  # Test runner
 │   └── verify.sh       # Run verification
 ├── ARCHITECTURE.md     # Detailed architecture documentation
 ├── CLAUDE.md           # AI assistant context
 ├── PHASES.md           # Development phases
+├── MMU_IMPLEMENTATION_SUMMARY.md  # MMU summary
+├── BUG7_FIX_SUMMARY.md           # FP-to-INT bug fix
 └── README.md           # This file
 ```
 
@@ -248,42 +282,31 @@ Check your environment:
 make check-tools
 ```
 
-### Building Configurations
-
-The build system supports 5 RISC-V configurations:
+### Running FPU Tests
 
 ```bash
-# RV32I - 32-bit base integer ISA
-make rv32i          # Build RV32I core
-make run-rv32i      # Build and run simulation
+# Run a single FPU test
+./tools/test_pipelined.sh test_fp_basic
 
-# RV32IM - 32-bit with multiply/divide extension
-make rv32im         # Build RV32IM core
-
-# RV32IMC - 32-bit with M and C extensions
-make rv32imc        # Build RV32IMC core
-
-# RV64I - 64-bit base integer ISA
-make rv64i          # Build RV64I core
-make run-rv64i      # Build and run simulation
-
-# RV64GC - 64-bit full-featured (future)
-make rv64gc         # Build RV64GC core
+# Run comprehensive FPU test suite
+for test in test_fp_*; do
+  ./tools/test_pipelined.sh $test
+done
 ```
 
 ### Running Tests
 
-1. **Run unit tests:**
+1. **Run RISC-V compliance tests:**
+   ```bash
+   make compliance      # Run RV32I compliance suite (40/42 pass)
+   ```
+
+2. **Run unit tests:**
    ```bash
    make test-unit       # Run all unit tests
    make test-alu        # Test ALU operations
    make test-regfile    # Test register file
-   make test-decoder    # Test instruction decoder
-   ```
-
-2. **Run RISC-V compliance tests:**
-   ```bash
-   make compliance      # Run RV32I compliance suite (40/42 pass)
+   make test-mmu        # Test MMU
    ```
 
 3. **View waveforms:**
@@ -291,113 +314,105 @@ make rv64gc         # Build RV64GC core
    gtkwave sim/waves/core_pipelined.vcd
    ```
 
-### Build System Reference
-
-```bash
-make help           # Show all available targets
-make info           # Show configuration information
-make clean          # Clean build artifacts
-```
-
-### Manual Simulation
-
-Using Icarus Verilog with RV32I configuration:
-```bash
-# Compile with configuration
-iverilog -g2012 -I rtl -DCONFIG_RV32I \
-  -o sim/rv32i_pipelined.vvp \
-  rtl/core/*.v rtl/memory/*.v \
-  tb/integration/tb_core_pipelined.v
-
-# Run
-vvp sim/rv32i_pipelined.vvp
-
-# View waveform
-gtkwave sim/waves/core_pipelined.vcd
-```
-
-For RV64I configuration, use `-DCONFIG_RV64I` instead.
-
 ## Implemented Modules
 
 ### Core Components (`rtl/core/`)
 
-**All modules are now XLEN-parameterized for RV32/RV64 support**
+**All modules are XLEN-parameterized for RV32/RV64 support**
 
 **Datapath Modules**
 | Module | File | Description | Status |
 |--------|------|-------------|--------|
 | **alu** | `alu.v` | XLEN-wide ALU with 10 operations | ✅ Parameterized |
-| **register_file** | `register_file.v` | 32 x XLEN GPRs, dual-read, single-write | ✅ Parameterized |
-| **decoder** | `decoder.v` | Instruction decoder & XLEN-wide immediate gen | ✅ Parameterized |
+| **register_file** | `register_file.v` | 32 x XLEN GPRs | ✅ Parameterized |
+| **fp_register_file** | `fp_register_file.v` | 32 x 64-bit FP registers | ✅ Complete |
+| **decoder** | `decoder.v` | Instruction decoder & immediate gen | ✅ Parameterized |
 | **branch_unit** | `branch_unit.v` | Branch condition evaluator | ✅ Parameterized |
-| **pc** | `pc.v` | XLEN-wide program counter with stall support | ✅ Parameterized |
+| **pc** | `pc.v` | XLEN-wide program counter | ✅ Parameterized |
 
 **Pipeline Modules**
 | Module | File | Description | Status |
 |--------|------|-------------|--------|
-| **rv_core_pipelined** | `rv_core_pipelined.v` | Parameterized 5-stage pipeline | ✅ Parameterized (715 lines) |
+| **rv32i_core_pipelined** | `rv32i_core_pipelined.v` | Parameterized 5-stage pipeline | ✅ Complete |
 | **ifid_register** | `ifid_register.v` | IF/ID pipeline register | ✅ Parameterized |
 | **idex_register** | `idex_register.v` | ID/EX pipeline register | ✅ Parameterized |
 | **exmem_register** | `exmem_register.v` | EX/MEM pipeline register | ✅ Parameterized |
 | **memwb_register** | `memwb_register.v` | MEM/WB pipeline register | ✅ Parameterized |
 | **forwarding_unit** | `forwarding_unit.v` | Data forwarding logic | ✅ Parameterized |
-| **hazard_detection_unit** | `hazard_detection_unit.v` | Load-use hazard detection | ✅ Parameterized |
+| **hazard_detection_unit** | `hazard_detection_unit.v` | Hazard detection | ✅ Parameterized |
 
-**Advanced Modules (Phase 4)**
+**Extension Modules**
 | Module | File | Description | Status |
 |--------|------|-------------|--------|
-| **csr_file** | `csr_file.v` | XLEN-wide CSR registers (13 CSRs) | ✅ Parameterized |
-| **exception_unit** | `exception_unit.v` | Exception detection (6 types) | ✅ Parameterized |
-| **control** | `control.v` | Control unit with RV64 instruction support | ✅ Parameterized |
+| **mul_unit** | `mul_unit.v` | Multiply (M extension) | ✅ Complete |
+| **div_unit** | `div_unit.v` | Divide (M extension) | ✅ Complete |
+| **atomic_unit** | `atomic_unit.v` | Atomic ops (A extension) | ✅ Complete |
+| **fpu** | `fpu.v` | FP top-level (F/D extension) | ✅ Complete |
+| **fp_adder** | `fp_adder.v` | FP addition/subtraction | ✅ Complete |
+| **fp_multiplier** | `fp_multiplier.v` | FP multiplication | ✅ Complete |
+| **fp_divider** | `fp_divider.v` | FP division | ✅ Complete |
+| **fp_sqrt** | `fp_sqrt.v` | FP square root | ✅ Complete |
+| **fp_fma** | `fp_fma.v` | FP fused multiply-add | ✅ Complete |
+| **fp_converter** | `fp_converter.v` | INT ↔ FP conversion | ✅ Complete |
+| **fp_compare** | `fp_compare.v` | FP comparisons | ✅ Complete |
+| **fp_classify** | `fp_classify.v` | FP classify | ✅ Complete |
+| **fp_minmax** | `fp_minmax.v` | FP min/max | ✅ Complete |
+| **fp_sign** | `fp_sign.v` | FP sign injection | ✅ Complete |
+| **mmu** | `mmu.v` | Virtual memory MMU | ✅ Complete |
 
-### Memory Components (`rtl/memory/`)
-
+**System Modules**
 | Module | File | Description | Status |
 |--------|------|-------------|--------|
-| **instruction_memory** | `instruction_memory.v` | XLEN-addressable 16KB ROM with hex loading | ✅ Parameterized |
-| **data_memory** | `data_memory.v` | XLEN-wide RAM with RV64 support (LD/SD/LWU) | ✅ Parameterized |
-
-### Configuration System (`rtl/config/`)
-
-| File | Description |
-|------|-------------|
-| **rv_config.vh** | Central configuration: XLEN, extensions, presets |
+| **csr_file** | `csr_file.v` | XLEN-wide CSR registers + FCSR + SATP | ✅ Complete |
+| **exception_unit** | `exception_unit.v` | Exception detection | ✅ Parameterized |
+| **control** | `control.v` | Main control unit | ✅ Complete |
 
 ### Key Features
 
-**Parameterization (Phase 5):**
-- **XLEN parameter**: Support for 32-bit (RV32) and 64-bit (RV64) architectures
-- **5 configuration presets**: RV32I, RV32IM, RV32IMC, RV64I, RV64GC
-- **Configuration file**: Central `rv_config.vh` for all parameters
-- **Build system**: Easy configuration switching via Makefile targets
-- **RV64 instructions**: LD, SD, LWU with proper misalignment detection
+**Floating-Point Unit (Phase 8):**
+- **IEEE 754-2008 compliant** arithmetic
+- **32 FP registers** (f0-f31, 64-bit wide)
+- **NaN-boxing** for single-precision in 64-bit registers
+- **5 rounding modes**: RNE, RTZ, RDN, RUP, RMM
+- **FCSR register** with frm (rounding mode) and fflags (exception flags)
+- **Multi-cycle operations**: FDIV (16-32 cycles), FSQRT (16-32 cycles)
+- **Performance**: FADD/FSUB/FMUL (3-4 cycles), FMADD (4-5 cycles)
+
+**MMU (Phase 8.5+):**
+- **Virtual memory support**: Sv32 (RV32) and Sv39 (RV64)
+- **16-entry TLB** with round-robin replacement
+- **Multi-cycle page table walker**: 2-3 level translation
+- **Permission checking**: R/W/X bits, U/S mode access
+- **SATP CSR**: Address translation control
+- **MSTATUS enhancements**: SUM (Supervisor User Memory), MXR (Make eXecutable Readable)
 
 **Pipelined Core (Phase 3):**
 - **5-stage pipeline**: IF → ID → EX → MEM → WB
-- **3-level data forwarding**: WB-to-ID, MEM-to-EX, EX-to-EX paths eliminate RAW hazards
-- **Hazard detection**: Load-use stalls with automatic bubble insertion
-- **Branch handling**: Predict-not-taken with pipeline flush on misprediction
+- **3-level data forwarding**: WB-to-ID, MEM-to-EX, EX-to-EX paths
+- **Hazard detection**: Load-use stalls, atomic stalls, FP stalls
+- **Branch handling**: Predict-not-taken with pipeline flush
 - **Pipeline flush**: Automatic flush on branches, jumps, and exceptions
 
 **CSR & Exception Support (Phase 4):**
 - **13 Machine-mode CSRs**: mstatus, mtvec, mepc, mcause, mtval, mie, mip, etc.
+- **FP CSRs**: fcsr (0x003), frm (0x002), fflags (0x001)
+- **MMU CSR**: satp (0x180)
 - **6 CSR instructions**: CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
 - **Exception handling**: 6 exception types with priority encoding
-- **Trap support**: ECALL, EBREAK, MRET for trap handling
-- **CSR forwarding**: CSR write data forwarded to prevent hazards
-
-**Common Features:**
-- **Full RV32I ISA**: 47 instructions with complete hazard handling
-- **Byte-addressable memory**: LB, LH, LW, LBU, LHU, SB, SH, SW, LD, SD, LWU
-- **Immediate support**: All 5 formats (I, S, B, U, J) with XLEN-aware sign extension
-- **Branch/Jump**: All 6 branch types + JAL/JALR
-- **Synthesizable**: Clean, FPGA-ready Verilog with no latches or unsynthesizable constructs
+- **Trap support**: ECALL, EBREAK, MRET
 
 ## RISC-V ISA Summary
 
-### RV32I Base Instructions (47 total)
+### Instruction Count by Extension
+- **RV32I/RV64I**: 47 base instructions
+- **M Extension**: 13 instructions (8 RV32M + 5 RV64M)
+- **A Extension**: 22 instructions (11 RV32A + 11 RV64A)
+- **F Extension**: 26 single-precision FP instructions
+- **D Extension**: 26 double-precision FP instructions
+- **Zicsr**: 6 CSR instructions
+- **Total**: 140+ instructions implemented
 
+### RV32I Base Instructions (47 total)
 **Integer Computational**
 - Register-Register: ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
 - Register-Immediate: ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI
@@ -424,12 +439,18 @@ For RV64I configuration, use `-DCONFIG_RV64I` instead.
 3. **Test-Driven**: Write tests before or alongside implementation
 4. **Spec Compliance**: Follow RISC-V specification exactly
 5. **Synthesis-Ready**: Keep FPGA synthesis in mind from the start
+6. **IEEE Standards**: FPU complies with IEEE 754-2008
 
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed microarchitecture
 - [PHASES.md](PHASES.md) - Development roadmap and status
 - [CLAUDE.md](CLAUDE.md) - Context for AI assistants
+- [docs/PHASE8_VERIFICATION_REPORT.md](docs/PHASE8_VERIFICATION_REPORT.md) - FPU verification report
+- [docs/FD_EXTENSION_DESIGN.md](docs/FD_EXTENSION_DESIGN.md) - FPU design documentation
+- [docs/MMU_DESIGN.md](docs/MMU_DESIGN.md) - MMU design documentation
+- [MMU_IMPLEMENTATION_SUMMARY.md](MMU_IMPLEMENTATION_SUMMARY.md) - MMU implementation summary
+- [BUG7_FIX_SUMMARY.md](BUG7_FIX_SUMMARY.md) - FP-to-INT bug fix details
 - `docs/` - Additional design documents and diagrams
 
 ## Resources
@@ -437,6 +458,7 @@ For RV64I configuration, use `-DCONFIG_RV64I` instead.
 - [RISC-V ISA Specifications](https://riscv.org/technical/specifications/)
 - [RISC-V Assembly Programmer's Manual](https://github.com/riscv-non-isa/riscv-asm-manual)
 - [RISC-V Tests Repository](https://github.com/riscv/riscv-tests)
+- [IEEE 754-2008 Standard](https://ieeexplore.ieee.org/document/4610935)
 - [Computer Organization and Design RISC-V Edition](https://www.elsevier.com/books/computer-organization-and-design-risc-v-edition/patterson/978-0-12-812275-4)
 
 ## License
@@ -450,4 +472,5 @@ This is a personal learning project, but suggestions and feedback are welcome vi
 ## Acknowledgments
 
 - RISC-V Foundation for the excellent ISA specification
+- IEEE for the 754-2008 floating-point standard
 - Open-source RISC-V community for tools and resources
