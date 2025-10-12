@@ -201,7 +201,7 @@ $(TEST_DIR)/vectors/%.hex: $(TEST_DIR)/asm/%.s | $(SIM_DIR)
 
 # Unit tests
 .PHONY: test-unit
-test-unit: test-alu test-regfile test-decoder
+test-unit: test-alu test-regfile test-decoder test-mmu
 	@echo "All unit tests complete"
 
 .PHONY: test-alu
@@ -227,6 +227,14 @@ test-decoder: | $(SIM_DIR) $(WAVE_DIR)
 		$(RTL_DIR)/core/decoder.v $(TB_DIR)/unit/tb_decoder.v
 	@$(VVP) $(SIM_DIR)/tb_decoder.vvp | tee $(SIM_DIR)/decoder.log
 	@grep -q "PASS\|All tests passed" $(SIM_DIR)/decoder.log && echo "✓ Decoder test PASSED" || echo "✗ Decoder test FAILED"
+
+.PHONY: test-mmu
+test-mmu: | $(SIM_DIR) $(WAVE_DIR)
+	@echo "Running MMU test..."
+	@$(IVERILOG) $(IVERILOG_FLAGS) $(CONFIG_RV64I) -o $(SIM_DIR)/tb_mmu.vvp \
+		$(RTL_DIR)/core/mmu.v $(TB_DIR)/tb_mmu.v
+	@$(VVP) $(SIM_DIR)/tb_mmu.vvp | tee $(SIM_DIR)/mmu.log
+	@grep -q "PASS\|All tests passed\|ALL TESTS PASSED" $(SIM_DIR)/mmu.log && echo "✓ MMU test PASSED" || echo "✗ MMU test FAILED"
 
 # Integration tests
 .PHONY: test-core

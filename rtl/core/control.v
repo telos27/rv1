@@ -433,8 +433,9 @@ module control #(
                 // Check rs2 for conversion type
                 if (funct7[6] == 1'b1) begin
                   // FCVT.W.S/D, FCVT.WU.S/D, FCVT.L.S/D, FCVT.LU.S/D (FP to int)
-                  int_reg_write_fp = 1'b1;  // Write to integer register
-                  wb_sel = 3'b110;         // Write-back from FPU integer result
+                  reg_write = 1'b1;         // Enable write to integer register
+                  int_reg_write_fp = 1'b1;  // Mark as FP-to-INT operation
+                  wb_sel = 3'b110;          // Select FP int_result for write-back
                 end else begin
                   // FCVT.S.W, FCVT.S.WU, FCVT.S.L, FCVT.S.LU (int to FP)
                   fp_reg_write = 1'b1;  // Write to FP register
@@ -451,15 +452,18 @@ module control #(
               end
             end
             5'b10100: begin  // FEQ.S/D, FLT.S/D, FLE.S/D (comparisons)
-              int_reg_write_fp = 1'b1;  // Write result to integer register
+              reg_write = 1'b1;         // Enable write to integer register
+              int_reg_write_fp = 1'b1;  // Mark as FP-to-INT operation
               fp_alu_en = 1'b1;
               fp_alu_op = FP_CMP;
-              wb_sel = 3'b110;         // Write-back from FPU integer result
+              wb_sel = 3'b110;          // Select FP int_result for write-back
             end
             5'b11100: begin  // FMV.X.W/D, FCLASS.S/D
-              int_reg_write_fp = 1'b1;  // Write to integer register
-              wb_sel = 3'b110;         // Write-back from FPU integer result
+              reg_write = 1'b1;         // Enable write to integer register
+              int_reg_write_fp = 1'b1;  // Mark as FP-to-INT operation
+              wb_sel = 3'b110;          // Select FP int_result for write-back
               if (funct3 == 3'b000) begin
+                fp_alu_en = 1'b1;       // Enable FPU for FMV.X.W
                 fp_alu_op = FP_MV_XW;  // FMV.X.W/D
               end else if (funct3 == 3'b001) begin
                 fp_alu_en = 1'b1;
@@ -470,6 +474,7 @@ module control #(
             end
             5'b11110: begin  // FMV.W.X/D.X
               fp_reg_write = 1'b1;  // Write to FP register
+              fp_alu_en = 1'b1;     // Enable FPU for FMV.W.X
               fp_alu_op = FP_MV_WX;
             end
             default: begin

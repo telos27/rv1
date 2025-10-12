@@ -34,6 +34,11 @@ module csr_file #(
   output wire             mstatus_mie,    // Global interrupt enable
   output wire             illegal_csr,    // Invalid CSR access
 
+  // MMU-related status outputs
+  output wire [XLEN-1:0]  satp_out,       // SATP register (for MMU)
+  output wire             mstatus_sum,    // SUM bit (for MMU)
+  output wire             mstatus_mxr,    // MXR bit (for MMU)
+
   // Floating-Point CSR outputs
   output wire [2:0]       frm_out,        // FP rounding mode (for FPU)
   output wire [4:0]       fflags_out,     // FP exception flags (for reading)
@@ -66,6 +71,9 @@ module csr_file #(
   localparam CSR_MTVAL     = 12'h343;
   localparam CSR_MIP       = 12'h344;
 
+  // Supervisor Address Translation and Protection
+  localparam CSR_SATP      = 12'h180;
+
   // Floating-Point CSRs (F/D extension)
   localparam CSR_FFLAGS    = 12'h001;  // Floating-point exception flags
   localparam CSR_FRM       = 12'h002;  // Floating-point rounding mode
@@ -88,6 +96,8 @@ module csr_file #(
   reg        mstatus_mie_r;   // [3] - Machine Interrupt Enable
   reg        mstatus_mpie_r;  // [7] - Machine Previous Interrupt Enable
   reg [1:0]  mstatus_mpp_r;   // [12:11] - Machine Previous Privilege (always 2'b11)
+  reg        mstatus_sum_r;   // [18] - Supervisor User Memory access
+  reg        mstatus_mxr_r;   // [19] - Make eXecutable Readable
 
   // Machine ISA Register (misa) - read-only
   // RV32: [31:30] = 2'b01 (MXL=1), [25:0] = extensions (bit 8 = I)
@@ -126,6 +136,9 @@ module csr_file #(
   reg [4:0] fflags_r;  // Floating-point exception flags: [4] NV, [3] DZ, [2] OF, [1] UF, [0] NX
   reg [2:0] frm_r;     // Floating-point rounding mode
 
+  // Supervisor Address Translation and Protection (SATP)
+  reg [XLEN-1:0] satp_r;
+
   // =========================================================================
   // Read-Only CSRs (hardwired)
   // =========================================================================
@@ -147,12 +160,15 @@ module csr_file #(
   // =========================================================================
 
   // Construct mstatus from individual fields
-  // RV32: Standard layout with fields at [12:11], [7], [3]
+  // RV32: Standard layout with fields at [19:18], [12:11], [7], [3]
   // RV64: Same fields, but wider register (upper bits reserved)
   generate
     if (XLEN == 32) begin : gen_mstatus_rv32
       wire [31:0] mstatus_value = {
-        19'b0,                // [31:13] Reserved
+        12'b0,                // [31:20] Reserved
+        mstatus_mxr_r,        // [19] MXR
+        mstatus_sum_r,        // [18] SUM
+        5'b0,                 // [17:13] Reserved
         mstatus_mpp_r,        // [12:11] MPP
         3'b0,                 // [10:8] Reserved
         mstatus_mpie_r,       // [7] MPIE
@@ -162,7 +178,10 @@ module csr_file #(
       };
     end else begin : gen_mstatus_rv64
       wire [63:0] mstatus_value = {
-        51'b0,                // [63:13] Reserved
+        44'b0,                // [63:20] Reserved
+        mstatus_mxr_r,        // [19] MXR
+        mstatus_sum_r,        // [18] SUM
+        5'b0,                 // [17:13] Reserved
         mstatus_mpp_r,        // [12:11] MPP
         3'b0,                 // [10:8] Reserved
         mstatus_mpie_r,       // [7] MPIE
@@ -185,6 +204,7 @@ module csr_file #(
       CSR_MCAUSE:    csr_rdata = mcause_r;
       CSR_MTVAL:     csr_rdata = mtval_r;
       CSR_MIP:       csr_rdata = mip_r;
+      CSR_SATP:      csr_rdata = satp_r;
       CSR_MVENDORID: csr_rdata = {{(XLEN-32){1'b0}}, mvendorid};  // Zero-extend to XLEN
       CSR_MARCHID:   csr_rdata = {{(XLEN-32){1'b0}}, marchid};    // Zero-extend to XLEN
       CSR_MIMPID:    csr_rdata = {{(XLEN-32){1'b0}}, mimpid};     // Zero-extend to XLEN
@@ -259,6 +279,8 @@ module csr_file #(
       mstatus_mie_r  <= 1'b0;
       mstatus_mpie_r <= 1'b0;
       mstatus_mpp_r  <= 2'b11;          // M-mode
+      mstatus_sum_r  <= 1'b0;           // Supervisor User Memory access disabled
+      mstatus_mxr_r  <= 1'b0;           // Make eXecutable Readable disabled
       mie_r          <= {XLEN{1'b0}};
       mtvec_r        <= {XLEN{1'b0}};   // Trap vector at address 0
       mscratch_r     <= {XLEN{1'b0}};
@@ -266,6 +288,7 @@ module csr_file #(
       mcause_r       <= {XLEN{1'b0}};
       mtval_r        <= {XLEN{1'b0}};
       mip_r          <= {XLEN{1'b0}};
+      satp_r         <= {XLEN{1'b0}};   // No translation (bare mode)
       // Reset floating-point CSRs
       fflags_r       <= 5'b0;            // No exceptions
       frm_r          <= 3'b000;          // RNE (Round to Nearest, ties to Even)
@@ -293,6 +316,8 @@ module csr_file #(
             mstatus_mie_r  <= csr_write_value[3];
             mstatus_mpie_r <= csr_write_value[7];
             mstatus_mpp_r  <= csr_write_value[12:11];
+            mstatus_sum_r  <= csr_write_value[18];
+            mstatus_mxr_r  <= csr_write_value[19];
           end
           CSR_MIE:      mie_r      <= csr_write_value;
           CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
@@ -301,6 +326,7 @@ module csr_file #(
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
           CSR_MIP:      mip_r      <= csr_write_value;
+          CSR_SATP:     satp_r     <= csr_write_value;
           // Floating-point CSRs
           CSR_FFLAGS:   fflags_r   <= csr_write_value[4:0];  // Write exception flags
           CSR_FRM:      frm_r      <= csr_write_value[2:0];  // Write rounding mode
@@ -330,6 +356,11 @@ module csr_file #(
   assign trap_vector = mtvec_r;
   assign mepc_out    = mepc_r;
   assign mstatus_mie = mstatus_mie_r;
+
+  // MMU-related outputs
+  assign satp_out    = satp_r;
+  assign mstatus_sum = mstatus_sum_r;
+  assign mstatus_mxr = mstatus_mxr_r;
 
   // Floating-point CSR outputs
   assign frm_out     = frm_r;

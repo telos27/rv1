@@ -4,11 +4,40 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 8.5 - FPU Testing & Bug Fixes ✅ **MAJOR PROGRESS (90%)**
-**Completion**: 90% ✅ | **7 critical bugs fixed, FP load/store/arithmetic/compare working!**
-**Next Milestone**: Test remaining FP operations and run F extension compliance tests
+**Active Phase**: Phase 8.5 - FPU Testing & Bug Fixes + MMU Implementation ✅ **MAJOR PROGRESS (92%)**
+**Completion**: 92% ✅ | **7 critical FPU bugs fixed + MMU implemented, FP operations working!**
+**Next Milestone**: Test remaining FP operations, run F extension compliance tests, integrate MMU into pipeline
 
-**Recent Progress (2025-10-11 - Session 22 - Phase 8.5 Critical Bug #7 Fixed):**
+**Recent Progress (2025-10-11 - Session 23 - Merge + MMU Implementation + FPU Enhancements):**
+- ✅ **MERGED GITHUB CHANGES** - Successfully merged Bug #7 fix from remote
+  - Merged commit bfaf898 with local MMU work
+  - Resolved conflicts in control.v and rv32i_core_pipelined.v
+  - Enhanced FP-to-INT operations with complete `reg_write` signal
+- ✅ **MMU IMPLEMENTATION COMPLETE** - Full virtual memory support added!
+  - **New Module**: `rtl/core/mmu.v` (467 lines) - Complete MMU with TLB and page table walker
+  - **Features**: Sv32 (RV32) and Sv39 (RV64) support, 16-entry TLB, multi-cycle page walk
+  - **CSR Updates**: Added SATP register, MSTATUS.SUM and MSTATUS.MXR bits to csr_file.v
+  - **Testbench**: `tb/tb_mmu.v` (282 lines) - Comprehensive MMU testing
+  - **Documentation**: `docs/MMU_DESIGN.md` (420 lines) - Complete design documentation
+  - **Build System**: Added `test-mmu` target to Makefile
+  - **Status**: MMU unit complete, not yet integrated into pipeline (Phase 9 work)
+- ✅ **FPU ENHANCEMENTS** - Additional signal completeness
+  - Added `reg_write = 1'b1` for FCVT FP-to-INT operations (control.v:436)
+  - Added `reg_write = 1'b1` for FP compare operations FEQ/FLT/FLE (control.v:455)
+  - Added `reg_write = 1'b1` for FMV.X.W and FCLASS operations (control.v:462)
+  - Added `fp_alu_en = 1'b1` for FMV.X.W operation (control.v:466)
+  - Added `fp_alu_en = 1'b1` for FMV.W.X operation (control.v:477)
+  - **Impact**: More complete control signal generation for FP-to-INT path
+- ✅ **SIMPLE TEST SUITE** - Basic instruction validation
+  - Created `tests/asm/test_simple.s` - Basic arithmetic and logic tests
+  - Created testbenches: `tb_simple_test.v`, `tb_simple_exec.v`, `tb_simple_with_program.v`
+  - Test programs working with pipeline
+- 📝 **Documentation Updates**:
+  - Created `MMU_IMPLEMENTATION_SUMMARY.md` - Complete MMU work summary
+  - Created `SIMPLE_TEST_SUMMARY.md` - Test program documentation
+  - Updated PHASES.md with merged and new work
+
+**Earlier Progress (2025-10-11 - Session 22 - Phase 8.5 Critical Bug #7 Fixed):**
 - ✅ **CRITICAL BUG #7 FIXED** - FP-to-INT Write-Back Path (FP compare now working!)
   - **Bug #7**: FP compare/classify/FMV.X.W/FCVT.W.S returning zeros instead of results
     - **Root Cause 1**: Control unit not setting `wb_sel = 3'b110` for FP-to-INT operations
