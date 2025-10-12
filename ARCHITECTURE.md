@@ -4,8 +4,8 @@
 
 This document details the microarchitecture of the RV1 RISC-V processor core across all development phases.
 
-**Implementation Status**: Phase 1 Complete (Single-Cycle)
-**Last Updated**: 2025-10-09
+**Implementation Status**: Phase 10.2 Complete (Pipelined + Forwarding + Supervisor Mode + Extensions)
+**Last Updated**: 2025-10-12 (Phase 10.2 - Supervisor CSRs & SRET)
 
 ## Actual Implementation Status
 
@@ -412,42 +412,248 @@ struct {
 
 #### 1. Data Hazards (RAW - Read After Write)
 
-**Forwarding/Bypass**:
-```
-Forward from EX/MEM if:
-    (EX/MEM.rd == ID/EX.rs1 || EX/MEM.rd == ID/EX.rs2) && EX/MEM.reg_write
+**Centralized Forwarding Architecture** (Phase 12):
 
-Forward from MEM/WB if:
-    (MEM/WB.rd == ID/EX.rs1 || MEM/WB.rd == ID/EX.rs2) && MEM/WB.reg_write
-    && !(EX/MEM.rd == ID/EX.rs1/rs2 && EX/MEM.reg_write)  // EX has priority
+The RV1 core implements a **dual-stage forwarding system** with centralized control in `forwarding_unit.v`:
+
+**ID Stage Forwarding** (for early branch resolution):
+- Forward from EX stage (IDEX register) → Priority 1
+- Forward from MEM stage (EXMEM register) → Priority 2
+- Forward from WB stage (MEMWB register) → Priority 3
+- 3-bit encoding: `3'b100`=EX, `3'b010`=MEM, `3'b001`=WB, `3'b000`=NONE
+
+**EX Stage Forwarding** (for ALU operations):
+- Forward from MEM stage (EXMEM register) → Priority 1
+- Forward from WB stage (MEMWB register) → Priority 2
+- 2-bit encoding: `2'b10`=MEM, `2'b01`=WB, `2'b00`=NONE
+
+```verilog
+// Forwarding Unit Interface (simplified)
+module forwarding_unit (
+    // ID Stage (branch resolution)
+    input  [4:0] id_rs1, id_rs2,
+    output [2:0] id_forward_a, id_forward_b,    // 3-bit: EX/MEM/WB/NONE
+
+    // EX Stage (ALU operations)
+    input  [4:0] idex_rs1, idex_rs2,
+    output [1:0] forward_a, forward_b,          // 2-bit: MEM/WB/NONE
+
+    // Pipeline write ports
+    input  [4:0] idex_rd, exmem_rd, memwb_rd,
+    input        idex_reg_write, exmem_reg_write, memwb_reg_write,
+    // ... FP and cross-file forwarding signals
+);
 ```
 
-**Load-Use Stall**:
+**Priority Resolution**:
 ```
-Stall if:
-    ID/EX.mem_read && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)
+EX→ID forwarding (highest priority):
+    if (idex_reg_write && idex_rd != 0 && idex_rd == id_rs1)
+        id_forward_a = 3'b100
+
+MEM→ID forwarding (medium priority):
+    else if (exmem_reg_write && exmem_rd != 0 && exmem_rd == id_rs1)
+        id_forward_a = 3'b010
+
+WB→ID forwarding (lowest priority):
+    else if (memwb_reg_write && memwb_rd != 0 && memwb_rd == id_rs1)
+        id_forward_a = 3'b001
 ```
+
+**Load-Use Hazards**:
+
+Cannot be resolved by forwarding alone - requires 1-cycle stall:
+```verilog
+// In hazard_detection_unit.v
+assign load_use_hazard = idex_mem_read &&
+                         ((idex_rd == id_rs1) || (idex_rd == id_rs2)) &&
+                         (idex_rd != 5'h0);
+
+assign stall_pc   = load_use_hazard || fp_load_use_hazard ||
+                    m_extension_stall || a_extension_stall ||
+                    fp_extension_stall || mmu_stall;
+assign stall_ifid = stall_pc;
+```
+
+**MMU Stall Propagation** (Phase 12 critical fix):
+```verilog
+// MMU busy during page table walk - must stall entire pipeline
+wire mmu_stall;
+assign mmu_stall = mmu_busy;
+```
+
+**Forwarding Coverage**:
+- ✅ Integer register forwarding (EX→ID, MEM→ID, WB→ID, MEM→EX, WB→EX)
+- ✅ FP register forwarding (same paths as integer)
+- ✅ Cross-file forwarding (INT→FP for FMV.W.X, FP→INT for FMV.X.W)
+- ✅ 3-operand FP forwarding (FMADD/FMSUB/FNMADD/FNMSUB)
+
+See `docs/FORWARDING_ARCHITECTURE.md` for detailed forwarding documentation.
 
 #### 2. Control Hazards
 
-**Branch Prediction**:
-- Phase 3.1: Predict not-taken (flush on taken)
-- Phase 3.2: 1-bit predictor
-- Phase 3.3: 2-bit saturating counter
-
 **Branch Resolution**:
-- Resolve in EX stage
-- Flush IF/ID and ID/EX if mispredicted
+- Early branch resolution in **ID stage** (not EX)
+- Branch target computed in ID stage
+- Branch condition evaluated in ID stage using forwarded values
+- Reduces control hazard penalty from 3 cycles to 1 cycle
+
+**Branch Handling**:
+```verilog
+// Branch taken signal generated in ID stage
+wire ex_take_branch;
+
+// Flush pipeline on branch/jump
+assign flush_idex = ex_take_branch;  // Flush instruction in ID/EX
+
+// PC update on branch
+wire [31:0] branch_target;  // Computed in ID stage
+assign pc_next = ex_take_branch ? branch_target : pc_plus_4;
+```
+
+**Branch Prediction** (not yet implemented):
+- Phase 3.1: Predict not-taken (flush on taken) ← Current
+- Phase 3.2: 1-bit predictor (future)
+- Phase 3.3: 2-bit saturating counter (future)
+
+### Forwarding Unit Architecture (Phase 12)
+
+**Module**: `rtl/core/forwarding_unit.v` (268 lines)
+
+The forwarding unit is the centralized control module for all data forwarding in the pipeline. It monitors pipeline register write ports and generates forwarding control signals for both ID and EX stages.
+
+#### Design Principles
+
+1. **Centralized Control**: Single source of truth for all forwarding decisions
+2. **Multi-Level Forwarding**: Supports forwarding from 3 pipeline stages (EX, MEM, WB)
+3. **Priority-Based**: Most recent instruction data has highest priority
+4. **Dual-Stage Support**: Separate forwarding paths for ID (branches) and EX (ALU) stages
+5. **Scalable**: Clean interface designed for future superscalar extension
+
+#### Forwarding Paths
+
+**ID Stage Forwarding Paths**:
+```
+EX  → ID  (IDEX.rd  → ID.rs1/rs2)  [Priority 1 - Most Recent]
+MEM → ID  (EXMEM.rd → ID.rs1/rs2)  [Priority 2]
+WB  → ID  (MEMWB.rd → ID.rs1/rs2)  [Priority 3 - Least Recent]
+```
+
+**EX Stage Forwarding Paths**:
+```
+MEM → EX  (EXMEM.rd → IDEX.rs1/rs2)  [Priority 1]
+WB  → EX  (MEMWB.rd → IDEX.rs1/rs2)  [Priority 2]
+```
+
+Note: EX→EX forwarding is impossible (circular dependency) - such cases are load-use hazards requiring stalls.
+
+#### Signal Encoding
+
+**3-bit ID Stage Encoding**:
+- `3'b100`: Forward from EX stage (IDEX register)
+- `3'b010`: Forward from MEM stage (EXMEM register)
+- `3'b001`: Forward from WB stage (MEMWB register)
+- `3'b000`: No forwarding (use register file)
+
+**2-bit EX Stage Encoding**:
+- `2'b10`: Forward from MEM stage (EXMEM register)
+- `2'b01`: Forward from WB stage (MEMWB register)
+- `2'b00`: No forwarding (use IDEX register value)
+
+#### Implementation Example
+
+ID Stage rs1 forwarding logic:
+```verilog
+always @(*) begin
+    id_forward_a = 3'b000;  // Default: no forwarding
+
+    // Priority 1: Forward from EX stage (most recent)
+    if (idex_reg_write && (idex_rd != 5'h0) && (idex_rd == id_rs1))
+        id_forward_a = 3'b100;
+
+    // Priority 2: Forward from MEM stage
+    else if (exmem_reg_write && (exmem_rd != 5'h0) && (exmem_rd == id_rs1))
+        id_forward_a = 3'b010;
+
+    // Priority 3: Forward from WB stage
+    else if ((memwb_reg_write | memwb_int_reg_write_fp) &&
+             (memwb_rd != 5'h0) && (memwb_rd == id_rs1))
+        id_forward_a = 3'b001;
+end
+```
+
+Key protection: `idex_rd != 5'h0` prevents forwarding to x0 (zero register).
+
+#### Cross-File Forwarding
+
+Supports forwarding between integer and FP register files:
+- **INT→FP**: `memwb_fp_reg_write_int` (FMV.W.X, FCVT.S.W instructions)
+- **FP→INT**: `memwb_int_reg_write_fp` (FMV.X.W, FCVT.W.S instructions)
+
+#### Forwarding Muxes
+
+Forwarding muxes are located in `rv32i_core_pipelined.v`:
+
+**ID Stage Integer Forwarding**:
+```verilog
+assign id_rs1_data = (id_forward_a == 3'b100) ? ex_alu_result :      // EX stage
+                     (id_forward_a == 3'b010) ? exmem_alu_result :   // MEM stage
+                     (id_forward_a == 3'b001) ? wb_data :            // WB stage
+                     id_rs1_data_raw;                                // Register file
+```
+
+**EX Stage Integer Forwarding**:
+```verilog
+assign ex_operand_a = (forward_a == 2'b10) ? exmem_alu_result :  // MEM stage
+                      (forward_a == 2'b01) ? wb_data :            // WB stage
+                      idex_rs1_data;                              // IDEX register
+```
+
+#### Timing Considerations
+
+**ID Stage Critical Path**:
+```
+Register File → Forwarding Comparison → 4:1 Mux → Branch Unit
+```
+This path is timing-critical for branch resolution. Forwarding comparisons are done in parallel with register file read to minimize delay.
+
+**EX Stage Critical Path**:
+```
+ALU Result → Forwarding Mux → ALU Input
+```
+Less critical - no register file in path, simpler 3:1 mux.
+
+#### Verification Results
+
+**Test Coverage**: 41/42 RISC-V RV32I compliance tests passing (97.6%)
+- Only failure: `rv32ui-p-ma_data` (misaligned access - expected without trap handler)
+
+**Forwarding Scenarios Tested**:
+- ✅ EX→ID forwarding (branch after ALU)
+- ✅ MEM→ID forwarding (branch after load)
+- ✅ WB→ID forwarding (branch after register write)
+- ✅ MEM→EX forwarding (ALU after ALU)
+- ✅ WB→EX forwarding (ALU after register write)
+- ✅ Load-use hazard detection and stalling
+- ✅ MMU stall propagation (Phase 12 critical fix)
 
 ### Performance Metrics
 
 **CPI (Cycles Per Instruction)**:
 - Ideal: 1.0 (no hazards)
-- With hazards: 1.2-1.5 (depends on code)
+- With forwarding: 1.0-1.2 (load-use hazards only)
+- Without forwarding: 1.3-1.8 (frequent stalls)
+
+**CPI Improvement from Forwarding**: ~30-40% for typical code
 
 **Speedup vs Single-Cycle**:
 - Theoretical: 5x (5 stages)
-- Practical: 3-4x (due to hazards)
+- Practical: 3-4x (due to remaining hazards)
+
+**Area Cost**:
+- Forwarding unit: ~5% of total core area
+- Comparators: 12x 5-bit (60 bits)
+- Muxes: 12x 32-bit 4:1 (integer + FP)
 
 ## Phase 4: Extensions
 
@@ -491,6 +697,73 @@ mtval     (0x343): Trap value
 1. Restore PC from mepc
 2. Restore privilege
 3. Re-enable interrupts
+
+### Supervisor Mode (Phase 10.2)
+
+**Privilege Levels**:
+- 00 (U-mode): User applications
+- 01 (S-mode): Operating system kernel
+- 11 (M-mode): Firmware/bootloader
+
+**Supervisor CSRs** (8 registers):
+```
+sstatus   (0x100): Supervisor status (subset of mstatus)
+sie       (0x104): Supervisor interrupt enable (subset of mie)
+stvec     (0x105): Supervisor trap vector
+sscratch  (0x140): Supervisor scratch register
+sepc      (0x141): Supervisor exception PC
+scause    (0x142): Supervisor trap cause
+stval     (0x143): Supervisor trap value
+sip       (0x144): Supervisor interrupt pending (subset of mip)
+```
+
+**Trap Delegation CSRs**:
+```
+medeleg   (0x302): Machine exception delegation to S-mode
+mideleg   (0x303): Machine interrupt delegation to S-mode
+```
+
+**Key Features**:
+- **SSTATUS**: Read-only view of MSTATUS (only S-mode fields visible)
+  - Visible: SIE[1], SPIE[5], SPP[8], SUM[18], MXR[19]
+  - Hidden: MIE[3], MPIE[7], MPP[12:11]
+- **SIE/SIP**: Subset masks of MIE/MIP (only bits 1, 5, 9)
+- **SRET Instruction**: Return from supervisor trap
+  - Restores PC from SEPC
+  - Restores privilege from SPP
+  - Restores interrupt enable: SIE ← SPIE
+- **CSR Privilege Checking**: S-mode cannot access M-mode CSRs
+  - Violation triggers illegal instruction exception
+
+**Trap Routing**:
+```
+┌─────────────────┐
+│  Exception      │
+└────────┬────────┘
+         │
+         ▼
+   ┌─────────────┐
+   │ Current     │
+   │ Priv = M?   │
+   └──┬──────┬───┘
+      │Yes   │No
+      ▼      ▼
+   M-mode  ┌──────────┐
+   Handler │Delegated?│
+           │(medeleg) │
+           └──┬───┬───┘
+              │Y  │N
+              ▼   ▼
+           S-mode M-mode
+           Handler Handler
+```
+
+**Implementation**:
+- `rtl/core/csr_file.v`: All S-mode CSRs + delegation logic
+- `rtl/core/decoder.v`: SRET instruction detection
+- `rtl/core/control.v`: SRET control signals
+- `rtl/core/rv32i_core_pipelined.v`: Privilege tracking + transitions
+- `rtl/core/exception_unit.v`: Privilege-aware ECALL
 
 ### Cache (Future)
 
