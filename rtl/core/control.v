@@ -434,6 +434,7 @@ module control #(
                 if (funct7[6] == 1'b1) begin
                   // FCVT.W.S/D, FCVT.WU.S/D, FCVT.L.S/D, FCVT.LU.S/D (FP to int)
                   int_reg_write_fp = 1'b1;  // Write to integer register
+                  wb_sel = 3'b110;         // Write-back from FPU integer result
                 end else begin
                   // FCVT.S.W, FCVT.S.WU, FCVT.S.L, FCVT.S.LU (int to FP)
                   fp_reg_write = 1'b1;  // Write to FP register
@@ -453,9 +454,11 @@ module control #(
               int_reg_write_fp = 1'b1;  // Write result to integer register
               fp_alu_en = 1'b1;
               fp_alu_op = FP_CMP;
+              wb_sel = 3'b110;         // Write-back from FPU integer result
             end
             5'b11100: begin  // FMV.X.W/D, FCLASS.S/D
               int_reg_write_fp = 1'b1;  // Write to integer register
+              wb_sel = 3'b110;         // Write-back from FPU integer result
               if (funct3 == 3'b000) begin
                 fp_alu_op = FP_MV_XW;  // FMV.X.W/D
               end else if (funct3 == 3'b001) begin

@@ -513,17 +513,17 @@ module rv_core_pipelined #(
     .rs2_addr(id_rs2),
     .rd_addr(memwb_rd_addr),          // Write from WB stage
     .rd_data(wb_data),                // Write data from WB stage
-    .rd_wen(memwb_reg_write),         // Write enable from WB stage
+    .rd_wen(memwb_reg_write | memwb_int_reg_write_fp),  // Write enable: normal ops OR FP-to-INT ops
     .rs1_data(id_rs1_data_raw),
     .rs2_data(id_rs2_data_raw)
   );
 
   // WB-to-ID Forwarding (Register File Bypass)
   // Forward from WB stage if reading the same register being written
-  assign id_rs1_data = (memwb_reg_write && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs1))
+  assign id_rs1_data = ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs1))
                        ? wb_data : id_rs1_data_raw;
 
-  assign id_rs2_data = (memwb_reg_write && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs2))
+  assign id_rs2_data = ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs2))
                        ? wb_data : id_rs2_data_raw;
 
   // FP Register File
@@ -1207,6 +1207,7 @@ module rv_core_pipelined #(
                    (memwb_wb_sel == 3'b011) ? memwb_csr_rdata :       // CSR data
                    (memwb_wb_sel == 3'b100) ? memwb_mul_div_result :  // M extension result
                    (memwb_wb_sel == 3'b101) ? memwb_atomic_result :   // A extension result
+                   (memwb_wb_sel == 3'b110) ? memwb_int_result_fp :   // FPU integer result (FP compare, FCLASS, FMV.X.W, FCVT.W.S)
                    {XLEN{1'b0}};
 
   // F/D Extension: FP Write-Back Data Selection
@@ -1216,9 +1217,10 @@ module rv_core_pipelined #(
   assign wb_fp_data = (memwb_wb_sel == 3'b001) ? memwb_mem_read_data :  // FP load
                       memwb_fp_result;                                    // FP ALU result
 
-  // FP-to-INT conversion results go to integer register file
-  // (handled through memwb_int_result_fp which is already part of wb_sel muxing if needed)
-  // Note: Current design assumes FP ops write to FP regfile, INT ops to INT regfile
-  // FMV.X.W/FCLASS.S write to integer regfile via int_result_fp path
+  // FP-to-INT operations write to integer register file via memwb_int_result_fp:
+  // - FP compare (FEQ, FLT, FLE): wb_sel = 3'b110
+  // - FP classify (FCLASS): wb_sel = 3'b110
+  // - FP move to int (FMV.X.W): wb_sel = 3'b110
+  // - FP to int convert (FCVT.W.S, FCVT.WU.S): wb_sel = 3'b110
 
 endmodule
