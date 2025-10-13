@@ -56,3 +56,4 @@ dist/
 
 # OS generated
 Thumbs.db
+riscv-tests/

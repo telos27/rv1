@@ -657,15 +657,29 @@ module rv_core_pipelined #(
   // Driven by centralized forwarding_unit outputs
   // Priority: EX > MEM > WB > Register File
 
-  assign id_rs1_data = (id_forward_a == 3'b100) ? ex_alu_result :      // Forward from EX stage
-                       (id_forward_a == 3'b010) ? exmem_alu_result :   // Forward from MEM stage
-                       (id_forward_a == 3'b001) ? wb_data :            // Forward from WB stage
-                       id_rs1_data_raw;                                 // Use register file value
+  // Forward data from EX stage: use atomic_result for atomic instructions, alu_result otherwise
+  // For atomic instructions, always forward atomic_result (even if 0 initially)
+  wire [XLEN-1:0] ex_forward_data;
+  assign ex_forward_data = idex_is_atomic ? ex_atomic_result : ex_alu_result;
 
-  assign id_rs2_data = (id_forward_b == 3'b100) ? ex_alu_result :      // Forward from EX stage
-                       (id_forward_b == 3'b010) ? exmem_alu_result :   // Forward from MEM stage
-                       (id_forward_b == 3'b001) ? wb_data :            // Forward from WB stage
-                       id_rs2_data_raw;                                 // Use register file value
+  assign id_rs1_data = (id_forward_a == 3'b100) ? ex_forward_data :     // Forward from EX stage (atomic or ALU)
+                       (id_forward_a == 3'b010) ? exmem_forward_data :  // Forward from MEM stage (atomic or ALU)
+                       (id_forward_a == 3'b001) ? wb_data :             // Forward from WB stage
+                       id_rs1_data_raw;                                  // Use register file value
+
+  assign id_rs2_data = (id_forward_b == 3'b100) ? ex_forward_data :     // Forward from EX stage (atomic or ALU)
+                       (id_forward_b == 3'b010) ? exmem_forward_data :  // Forward from MEM stage (atomic or ALU)
+                       (id_forward_b == 3'b001) ? wb_data :             // Forward from WB stage
+                       id_rs2_data_raw;                                  // Use register file value
+
+  `ifdef DEBUG_ATOMIC
+  always @(posedge clk) begin
+    if (id_opcode == 7'b0110011 && id_rd == 5'd14 && id_rs1 == 5'd14) begin // ADD to x14 from x14
+      $display("[ID_ADD] @%0t ADD x14, x%0d, x%0d: rs1_data=%h (fwd_a=%b), rs2_data=%h (fwd_b=%b)",
+               $time, id_rs1, id_rs2, id_rs1_data, id_forward_a, id_rs2_data, id_forward_b);
+    end
+  end
+  `endif
 
   // FP Register File
   fp_register_file #(
@@ -746,6 +760,9 @@ module rv_core_pipelined #(
     .atomic_busy(ex_atomic_busy),
     .atomic_done(ex_atomic_done),
     .idex_is_atomic(idex_is_atomic),
+    // ID stage forwarding signals (for atomic forwarding hazard detection)
+    .id_forward_a(id_forward_a),
+    .id_forward_b(id_forward_b),
     // F/D extension
     .fpu_busy(ex_fpu_busy),
     .fpu_done(ex_fpu_done),
@@ -963,17 +980,32 @@ module rv_core_pipelined #(
   end
   `endif
 
+  // Forward data selection: use atomic_result for atomic instructions, alu_result otherwise
+  wire [XLEN-1:0] exmem_forward_data;
+  assign exmem_forward_data = exmem_is_atomic ? exmem_atomic_result : exmem_alu_result;
+
   // rs1 data forwarding (for SFENCE.VMA and other instructions that use rs1 data directly)
   wire [XLEN-1:0] ex_rs1_data_forwarded;
-  assign ex_rs1_data_forwarded = (forward_a == 2'b10) ? exmem_alu_result :         // EX hazard
+  assign ex_rs1_data_forwarded = (forward_a == 2'b10) ? exmem_forward_data :       // EX hazard
                                   (forward_a == 2'b01) ? wb_data :                  // MEM hazard
                                   idex_rs1_data;                                     // No hazard
 
   // ALU Operand B selection (with forwarding)
   wire [XLEN-1:0] ex_rs2_data_forwarded;
-  assign ex_rs2_data_forwarded = (forward_b == 2'b10) ? exmem_alu_result :         // EX hazard
+  assign ex_rs2_data_forwarded = (forward_b == 2'b10) ? exmem_forward_data :       // EX hazard
                                   (forward_b == 2'b01) ? wb_data :                  // MEM hazard
                                   idex_rs2_data;                                     // No hazard
+
+  `ifdef DEBUG_ATOMIC
+  always @(*) begin
+    if (idex_is_atomic && a_unit_start) begin
+      $display("[FORWARD_ATOMIC] @%0t SC/LR start: rs2=x%0d, forward_b=%b, idex_rs2=%h, exmem_fwd=%h, wb=%h → result=%h",
+               $time, idex_rs2_addr, forward_b, idex_rs2_data, exmem_forward_data, wb_data, ex_rs2_data_forwarded);
+      $display("[FORWARD_ATOMIC] exmem_is_atomic=%b, exmem_atomic_result=%h, exmem_alu_result=%h, exmem_rd=x%0d",
+               exmem_is_atomic, exmem_atomic_result, exmem_alu_result, exmem_rd_addr);
+    end
+  end
+  `endif
 
   `ifdef DEBUG_M_OPERANDS
   always @(*) begin

@@ -55,6 +55,10 @@ module data_memory #(
   // Write operation
   always @(posedge clk) begin
     if (mem_write) begin
+      `ifdef DEBUG_ATOMIC
+      if (addr >= 32'h80002000 && addr < 32'h80002010)
+        $display("[DMEM] WRITE @ 0x%08h = 0x%08h (funct3=%b)", addr, write_data, funct3);
+      `endif
       case (funct3)
         3'b000: begin  // SB (store byte)
           mem[masked_addr] <= write_data[7:0];

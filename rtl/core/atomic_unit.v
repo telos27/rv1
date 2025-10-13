@@ -168,6 +168,12 @@ module atomic_unit #(
             current_size <= funct3;
             current_aq <= aq;
             current_rl <= rl;
+            `ifdef DEBUG_ATOMIC
+            if (funct5 == ATOMIC_SC)
+                $display("[ATOMIC] SC START: addr=0x%08h, src_data(rs2)=0x%08h", addr, src_data);
+            else if (funct5 == ATOMIC_LR)
+                $display("[ATOMIC] LR START: addr=0x%08h", addr);
+            `endif
         end
     end
 
@@ -290,9 +296,16 @@ module atomic_unit #(
             if (is_lr || is_amo) begin
                 // LR and AMO return the loaded value
                 result <= mem_rdata;
+                `ifdef DEBUG_ATOMIC
+                if (is_lr) $display("[ATOMIC] LR @ 0x%08h -> 0x%08h", current_addr, mem_rdata);
+                if (is_amo) $display("[ATOMIC] AMO @ 0x%08h -> 0x%08h (op=%d)", current_addr, mem_rdata, current_op);
+                `endif
             end else if (is_sc) begin
                 // SC returns 0 on success, 1 on failure
                 result <= sc_success ? {XLEN{1'b0}} : {{(XLEN-1){1'b0}}, 1'b1};
+                `ifdef DEBUG_ATOMIC
+                $display("[ATOMIC] SC @ 0x%08h %s (wdata=0x%08h)", current_addr, sc_success ? "SUCCESS" : "FAILED", current_src);
+                `endif
             end
         end
     end

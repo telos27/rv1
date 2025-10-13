@@ -50,19 +50,33 @@ module reservation_station #(
             // Clear reservation on exception or interrupt
             if (exception || interrupt) begin
                 reserved <= 1'b0;
+                `ifdef DEBUG_ATOMIC
+                $display("[RESERVATION] Cleared by exception/interrupt");
+                `endif
             end
             // Clear reservation on external invalidation
             else if (invalidate && reserved && (reserved_addr == inv_addr_masked)) begin
                 reserved <= 1'b0;
+                `ifdef DEBUG_ATOMIC
+                $display("[RESERVATION] Invalidated by write to 0x%08h", inv_addr);
+                `endif
             end
             // SC consumes or invalidates reservation
             else if (sc_valid) begin
                 reserved <= 1'b0;  // Always clear on SC (success or fail)
+                `ifdef DEBUG_ATOMIC
+                $display("[RESERVATION] SC at 0x%08h, reserved=%b, match=%b -> %s",
+                         sc_addr, reserved, (reserved_addr == sc_addr_masked),
+                         (reserved && (reserved_addr == sc_addr_masked)) ? "SUCCESS" : "FAIL");
+                `endif
             end
             // LR sets reservation
             else if (lr_valid) begin
                 reserved <= 1'b1;
                 reserved_addr <= lr_addr_masked;
+                `ifdef DEBUG_ATOMIC
+                $display("[RESERVATION] LR at 0x%08h (masked: 0x%08h)", lr_addr, lr_addr_masked);
+                `endif
             end
         end
     end

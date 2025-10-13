@@ -26,6 +26,10 @@ module hazard_detection_unit (
   input  wire        atomic_done,      // A unit operation complete
   input  wire        idex_is_atomic,   // A instruction in EX stage
 
+  // ID stage forwarding signals (to detect forwarding from in-progress atomics)
+  input  wire [2:0]  id_forward_a,     // ID forward select for rs1
+  input  wire [2:0]  id_forward_b,     // ID forward select for rs2
+
   // F/D extension signals
   input  wire        fpu_busy,         // FPU is busy (multi-cycle operation in progress)
   input  wire        fpu_done,         // FPU operation complete (1 cycle pulse)
@@ -101,6 +105,17 @@ module hazard_detection_unit (
   wire a_extension_stall;
   assign a_extension_stall = (atomic_busy || idex_is_atomic) && !atomic_done;
 
+  // A extension forwarding hazard: stall when ID stage would forward from in-progress atomic in EX
+  // This prevents forwarding atomic results before they're ready.
+  // Forward from EX is indicated by id_forward_a/b == 3'b100
+  // Stall if: forwarding from EX AND atomic in EX AND not done
+  // This catches all cases including the first cycle when atomic enters EX
+  wire atomic_forward_hazard;
+  assign atomic_forward_hazard =
+    ((id_forward_a == 3'b100) || (id_forward_b == 3'b100)) &&  // Forwarding from EX stage
+    idex_is_atomic &&                                            // EX has atomic instruction
+    !atomic_done;                                                // Not yet complete
+
   // FP extension hazard: stall IF/ID stages when FPU is busy with multi-cycle operations
   // FP multi-cycle operations (FDIV, FSQRT, FMA, etc.) hold the pipeline.
   // Similar to A extension, stall while FPU is busy but NOT when operation completes.
@@ -115,11 +130,13 @@ module hazard_detection_unit (
   assign mmu_stall = mmu_busy;
 
   // Generate control signals
-  // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency, FP extension dependency, or MMU dependency
-  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall || mmu_stall;
-  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall || mmu_stall;
+  // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency,
+  // A extension forwarding hazard, FP extension dependency, or MMU dependency
+  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || mmu_stall;
+  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || mmu_stall;
   // Note: Only bubble for load-use hazard (integer or FP), NOT for M/A/FP/MMU stall
   // (M/A/FP/MMU stall uses hold signals on IDEX and EXMEM to keep instruction in place)
-  assign bubble_idex = load_use_hazard || fp_load_use_hazard;
+  // For atomic_forward_hazard, we bubble to prevent the dependent instruction from using stale data
+  assign bubble_idex = load_use_hazard || fp_load_use_hazard || atomic_forward_hazard;
 
 endmodule
