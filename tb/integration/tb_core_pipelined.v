@@ -2,6 +2,7 @@
 // Tests the complete 5-stage pipelined processor with test programs
 // Author: RV1 Project
 // Date: 2025-10-10
+// Updated: 2025-10-12 - Added performance metrics and improved EBREAK detection
 
 `timescale 1ns/1ps
 
@@ -10,6 +11,13 @@ module tb_core_pipelined;
   // Clock parameters
   parameter CLK_PERIOD = 10;          // 100MHz
   parameter TIMEOUT = 50000;          // Maximum cycles
+
+  // Debug level (can be overridden with -D)
+  `ifdef DEBUG_LEVEL
+    parameter DEBUG = `DEBUG_LEVEL;
+  `else
+    parameter DEBUG = 0;              // 0=none, 1=basic, 2=detailed, 3=verbose
+  `endif
 
   // Memory file (can be overridden with -D)
   `ifdef MEM_FILE
@@ -24,8 +32,13 @@ module tb_core_pipelined;
   wire [31:0] pc;
   wire [31:0] instruction;
 
-  // Cycle counter
+  // Cycle counter and performance metrics
   integer cycle_count;
+  integer total_instructions;
+  integer stall_cycles;
+  integer flush_cycles;
+  integer load_use_stalls;
+  integer branch_flushes;
 
   // RISC-V compliance tests start at 0x80000000
   `ifdef COMPLIANCE_TEST
@@ -63,15 +76,26 @@ module tb_core_pipelined;
     end else begin
       $display("No program loaded (using NOPs)");
     end
+    `ifdef COMPLIANCE_TEST
+      $display("Mode: RISC-V Compliance Test");
+    `endif
+    if (DEBUG > 0) begin
+      $display("Debug level: %0d", DEBUG);
+    end
     $display("");
 
     // Dump waveforms
     $dumpfile("sim/waves/core_pipelined.vcd");
     $dumpvars(0, tb_core_pipelined);
 
-    // Initialize
+    // Initialize counters
     reset_n = 0;
     cycle_count = 0;
+    total_instructions = 0;
+    stall_cycles = 0;
+    flush_cycles = 0;
+    load_use_stalls = 0;
+    branch_flushes = 0;
 
     // Hold reset for a few cycles
     repeat(5) @(posedge clk);
@@ -84,12 +108,40 @@ module tb_core_pipelined;
       @(posedge clk);
       cycle_count = cycle_count + 1;
 
-      // Debug: print PC and instruction every cycle (can be commented out)
-      // $display("[%0d] PC=0x%08h, Instr=0x%08h", cycle_count, pc, instruction);
+      // Performance monitoring
+      if (DUT.idex_valid && !DUT.flush_idex) begin
+        total_instructions = total_instructions + 1;
+      end
+      if (DUT.stall_pc) begin
+        stall_cycles = stall_cycles + 1;
+        // Check if it's a load-use stall
+        if (DUT.hazard_unit.load_use_hazard) begin
+          load_use_stalls = load_use_stalls + 1;
+        end
+      end
+      if (DUT.flush_idex) begin
+        flush_cycles = flush_cycles + 1;
+        // Check if it's a branch flush
+        if (DUT.ex_take_branch) begin
+          branch_flushes = branch_flushes + 1;
+        end
+      end
 
-      // Check for EBREAK (0x00100073) or ECALL (0x00000073)
-      // Note: In pipeline, we detect EBREAK when it reaches WB stage
-      // For simplicity, check when it appears in IF stage and wait a few cycles
+      // Debug output (controlled by DEBUG parameter)
+      if (DEBUG >= 3) begin
+        $display("[%0d] IF: PC=%h | ID: PC=%h | EX: PC=%h rd=x%0d | MEM: PC=%h | WB: rd=x%0d wen=%b",
+                 cycle_count, pc, DUT.ifid_pc, DUT.idex_pc, DUT.idex_rd_addr,
+                 DUT.exmem_pc, DUT.memwb_rd_addr, DUT.memwb_reg_write);
+        if (DEBUG >= 4) begin
+          $display("       Forwarding: id_fwd_a=%b id_fwd_b=%b ex_fwd_a=%b ex_fwd_b=%b",
+                   DUT.id_forward_a, DUT.id_forward_b, DUT.forward_a, DUT.forward_b);
+          $display("       Hazards: stall=%b flush=%b | Data: rs1=%h rs2=%h",
+                   DUT.stall_pc, DUT.flush_idex, DUT.id_rs1_data, DUT.id_rs2_data);
+        end
+      end
+
+      // Check for EBREAK (0x00100073) in IF stage
+      // We'll wait for it to reach WB stage before checking results
       if (instruction == 32'h00100073) begin
         // Wait for pipeline to complete and EBREAK to reach WB stage (10 cycles)
         // This ensures all preceding instructions complete their WB
@@ -184,6 +236,9 @@ module tb_core_pipelined;
   // Task to print register file contents
   task print_results;
     integer i;
+    real cpi;
+    real stall_rate;
+    real flush_rate;
     begin
       $display("=== Final Register File Contents ===");
       $display("x0  (zero) = 0x%08h", DUT.regfile.registers[0]);
@@ -219,25 +274,38 @@ module tb_core_pipelined;
       $display("x30 (t5)   = 0x%08h", DUT.regfile.registers[30]);
       $display("x31 (t6)   = 0x%08h", DUT.regfile.registers[31]);
       $display("");
-      $display("Total cycles: %0d", cycle_count);
+
+      // Performance metrics
+      if (DEBUG >= 1 || total_instructions > 0) begin
+        $display("=== Performance Metrics ===");
+        $display("Total cycles:        %0d", cycle_count);
+        $display("Total instructions:  %0d", total_instructions);
+        if (total_instructions > 0) begin
+          cpi = cycle_count * 1.0 / total_instructions;
+          $display("CPI (Cycles/Instr):  %0.3f", cpi);
+        end else begin
+          $display("CPI (Cycles/Instr):  N/A (no instructions)");
+        end
+
+        if (cycle_count > 0) begin
+          stall_rate = stall_cycles * 100.0 / cycle_count;
+          flush_rate = flush_cycles * 100.0 / cycle_count;
+          $display("Stall cycles:        %0d (%0.1f%%)", stall_cycles, stall_rate);
+          $display("  Load-use stalls:   %0d", load_use_stalls);
+          $display("Flush cycles:        %0d (%0.1f%%)", flush_cycles, flush_rate);
+          $display("  Branch flushes:    %0d", branch_flushes);
+        end
+        $display("");
+      end
     end
   endtask
 
-  // Pipeline stage monitoring (optional - enable for debug)
-  /*
-  always @(posedge clk) begin
-    if (reset_n) begin
-      $display("[%0d] IF: PC=0x%h | ID: PC=0x%h | EX: PC=0x%h | MEM: rd=%0d | WB: rd=%0d wr=%0d",
-        cycle_count,
-        pc,
-        DUT.ifid_pc,
-        DUT.idex_pc,
-        DUT.exmem_rd_addr,
-        DUT.memwb_rd_addr,
-        DUT.memwb_reg_write
-      );
-    end
-  end
-  */
+  // Pipeline stage monitoring (controlled by DEBUG level)
+  // Use -DDEBUG_LEVEL=3 or -DDEBUG_LEVEL=4 for detailed pipeline tracing
+  // DEBUG=0: No debug output
+  // DEBUG=1: Performance metrics only
+  // DEBUG=2: Basic execution info
+  // DEBUG=3: Detailed pipeline stages
+  // DEBUG=4: Very verbose (includes forwarding and hazards)
 
 endmodule
