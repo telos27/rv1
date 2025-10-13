@@ -14,12 +14,12 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 
 ## Current Status
 
-**Phase**: Phase 10 - Supervisor Mode & MMU Integration ✅ **COMPLETE**
+**Phase**: Phase 13 - MMU Bare Mode Fix ✅ **COMPLETE**
 
 **Supported ISAs**: RV32IMAFDC, RV64IMAFDC
 **Architecture**: Parameterized 5-stage pipeline with full privilege & virtual memory support
 **Privilege Modes**: M-mode (complete) ✅, S-mode (complete) ✅, U-mode (ready)
-**Compliance**: **100% RV32I Compliant** ✅ | **C Extension: 100% Validated** ✅
+**Compliance**: **100% RV32I Compliant (42/42)** ✅ | **C Extension: 100% Validated** ✅
 
 ### **Key Features Implemented:**
 - ✅ **RV32I/RV64I** - Base integer instruction set (47 instructions) - **100% compliant**
@@ -44,6 +44,26 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 - **Configuration Support**: RV32/RV64, multiple extensions, compressed instructions
 
 ## Recent Achievements
+
+### **🎉 Phase 13 COMPLETE: 100% RV32I Compliance Restored!** (2025-10-12)
+✅ **Phase 13: MMU Bare Mode Fix**
+- **Achievement**: Fixed MMU bare mode stale address bug → **42/42 RV32I tests passing (100%)** 🎉
+- **Root Cause**: MMU integration caused stale address bug in bare mode (satp.MODE = 0)
+- **Issue**: Pipeline used MMU's registered `req_paddr` output from previous cycle
+- **Symptom**: Test #92 (ma_data) loaded from 0x80002001 instead of 0x80002002 (off by -1)
+- **Fix**: Added `translation_enabled` check before using MMU translation
+- **Code Change**: 3 lines in `rv32i_core_pipelined.v`
+- **Result**: 41/42 → 42/42 tests passing (97.6% → 100%) ✅
+- **Impact**: Preserved MMU functionality for virtual memory while fixing bare mode addressing
+
+**Technical Details**:
+```verilog
+// Check if translation is enabled: satp.MODE != 0
+wire translation_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
+wire use_mmu_translation = translation_enabled && mmu_req_ready && !mmu_req_page_fault;
+```
+
+See: `docs/PHASE13_COMPLETE.md`
 
 ### **🎉 Phase 11 COMPLETE: Official RISC-V Compliance Infrastructure!** (2025-10-12)
 ✅ **Phase 11: Official RISC-V Compliance Testing Setup**

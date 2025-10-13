@@ -1435,7 +1435,10 @@ module rv_core_pipelined #(
 
   // When PTW is active, it gets priority
   // When PTW is not active, use translated address from MMU (or bypass if no MMU)
-  wire use_mmu_translation = mmu_req_ready && !mmu_req_page_fault;
+  // Check if translation is enabled: satp.MODE != 0
+  // RV32: satp[31] (1-bit mode), RV64: satp[63:60] (4-bit mode)
+  wire translation_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
+  wire use_mmu_translation = translation_enabled && mmu_req_ready && !mmu_req_page_fault;
   wire [XLEN-1:0] translated_addr = use_mmu_translation ? mmu_req_paddr : dmem_addr;
 
   assign arb_mem_addr       = mmu_ptw_req_valid ? mmu_ptw_req_addr : translated_addr;

@@ -4,29 +4,33 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 10 - Supervisor Mode & Virtual Memory ✅ **COMPLETE**
-**Completion**: 100% ✅ | **RV32I Compliance: 41/42 (97.6%)**
+**Active Phase**: Phase 13 - MMU Bare Mode Fix ✅ **COMPLETE**
+**Completion**: 100% ✅ | **RV32I Compliance: 42/42 (100%)** 🎉
 **Phase 7 (A Extension)**: ✅ **COMPLETE** (100%) - Fully integrated
-**Next Milestone**: Phase 13 - Misaligned Access Debug (investigate test 92 failure for 100% RV32I)
+**Phase 10 (Supervisor Mode & MMU)**: ✅ **COMPLETE** (100%)
+**Next Milestone**: Phase 8.5 - FPU Testing & Verification OR Further Extensions
 
-**Recent Progress (2025-10-12 - Session 30 - Phase 7 Verification + ma_data Investigation):**
+**Recent Progress (2025-10-12 - Session 31 - Phase 13 Complete - 100% RV32I Compliance!):**
+- ✅ **PHASE 13 COMPLETE** - Fixed MMU bare mode stale address bug → **100% RV32I COMPLIANCE!** 🎉
+  - **Root Cause**: MMU integration caused stale address bug in bare mode (satp.MODE = 0)
+  - **Issue**: Pipeline used MMU's registered `req_paddr` output from previous cycle
+  - **Symptom**: Test #92 loaded from 0x80002001 instead of 0x80002002 (off by -1)
+  - **Fix**: Added translation_enabled check before using MMU translation
+  - **Code Change**: 3 lines in rv32i_core_pipelined.v:1440-1441
+  - **Result**: 41/42 → 42/42 tests passing (97.6% → 100%) ✅
+  - **File**: rtl/core/rv32i_core_pipelined.v
+  - **Documentation**: Created docs/PHASE13_COMPLETE.md with full analysis
+
+**Earlier Progress (2025-10-12 - Session 30 - Phase 7 Verification + ma_data Investigation):**
 - ✅ **PHASE 7 (A EXTENSION) VERIFIED COMPLETE** - Atomic operations fully integrated!
   - **Modules**: atomic_unit.v (250+ lines), reservation_station.v (80+ lines)
   - **Operations**: All 11 atomic operations (LR, SC, SWAP, ADD, XOR, AND, OR, MIN, MAX, MINU, MAXU)
   - **Integration**: Fully integrated in rv32i_core_pipelined.v with proper stall logic
   - **Status**: 100% complete, ready for use
-  - **Documentation**: Updated PHASES.md with Phase 7 complete status
 - 🔍 **ma_data Test Investigation**: Deep dive into last failing RV32I compliance test
-  - **Current**: 41/42 tests passing (97.6%) - only `rv32ui-p-ma_data` fails
   - **Finding**: Test fails at test #92 (GP=185=0xb9, actual test = (185-1)/2 = 92)
   - **Test 92**: Misaligned halfword store + signed byte load
-    - Store 0x9b9a at s0+1 (misaligned) → mem[s0+1]=0x9a, mem[s0+2]=0x9b
-    - Load signed byte from s0+2 → should get 0xffffff9b (-101)
-  - **Hardware**: Memory DOES support misaligned access (lines 43-53 in data_memory.v)
-  - **Data Loading**: Verified .data section properly loaded at 0x2000 offset
-  - **Requires**: Deeper waveform analysis or additional debug output to find root cause
-  - 📝 **Note**: 97.6% pass rate is excellent! Test 92 failure needs targeted debugging session
-- 🎯 **Next**: Either continue Phase 13 debugging OR move to Phase 8.5 (FPU testing)
+  - **Analysis**: Load from s0+2 should return 0xffffff9b but returns 0xffffff9a (off by -1)
 
 **Earlier Progress (2025-10-12 - Session 29 - Phase 10 Complete Verification - MMU Already Integrated!):**
 - ✅ **PHASE 10 FULLY COMPLETE** - All 3 sub-phases verified complete!
