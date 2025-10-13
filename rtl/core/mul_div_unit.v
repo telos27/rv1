@@ -40,6 +40,34 @@ module mul_div_unit #(
   wire is_mul = (operation[3:2] == 2'b00);  // MUL, MULH, MULHSU, MULHU
   wire is_div = (operation[3:2] == 2'b01);  // DIV, DIVU, REM, REMU
 
+  // Latch operands and delay start signal by one cycle
+  // This ensures operands are stable before sub-units begin operation
+  reg [XLEN-1:0] operand_a_reg;
+  reg [XLEN-1:0] operand_b_reg;
+  reg start_delayed;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      operand_a_reg <= {XLEN{1'b0}};
+      operand_b_reg <= {XLEN{1'b0}};
+      start_delayed <= 1'b0;
+    end else begin
+      if (start && !busy) begin
+        // Latch operands when starting a new operation
+        operand_a_reg <= operand_a;
+        operand_b_reg <= operand_b;
+        start_delayed <= 1'b1;
+      end else begin
+        start_delayed <= 1'b0;
+      end
+    end
+  end
+
+  // Use delayed start and registered operands
+  wire start_to_units = start_delayed;
+  wire [XLEN-1:0] operand_a_to_unit = operand_a_reg;
+  wire [XLEN-1:0] operand_b_to_unit = operand_b_reg;
+
   // Multiply unit signals
   wire        mul_start;
   wire [1:0]  mul_op;
@@ -47,7 +75,7 @@ module mul_div_unit #(
   wire        mul_busy;
   wire        mul_ready;
 
-  assign mul_start = start && is_mul;
+  assign mul_start = start_to_units && is_mul;
   assign mul_op    = operation[1:0];
 
   mul_unit #(
@@ -58,8 +86,8 @@ module mul_div_unit #(
     .start(mul_start),
     .mul_op(mul_op),
     .is_word_op(is_word_op),
-    .operand_a(operand_a),
-    .operand_b(operand_b),
+    .operand_a(operand_a_to_unit),
+    .operand_b(operand_b_to_unit),
     .result(mul_result),
     .busy(mul_busy),
     .ready(mul_ready)
@@ -72,7 +100,7 @@ module mul_div_unit #(
   wire        div_busy;
   wire        div_ready;
 
-  assign div_start = start && is_div;
+  assign div_start = start_to_units && is_div;
   assign div_op    = operation[1:0];
 
   div_unit #(
@@ -83,12 +111,28 @@ module mul_div_unit #(
     .start(div_start),
     .div_op(div_op),
     .is_word_op(is_word_op),
-    .dividend(operand_a),
-    .divisor(operand_b),
+    .dividend(operand_a_to_unit),
+    .divisor(operand_b_to_unit),
     .result(div_result),
     .busy(div_busy),
     .ready(div_ready)
   );
+
+  // DEBUG: Monitor division operations
+  `ifdef DEBUG_DIV
+  always @(posedge clk) begin
+    if (start && !busy) begin
+      $display("[MUL_DIV] Latch: operand_a=%h operand_b=%h", operand_a, operand_b);
+    end
+    if (div_start) begin
+      $display("[MUL_DIV] DIV Start (delayed): op=%b operand_a_reg=%h operand_b_reg=%h",
+               div_op, operand_a_to_unit, operand_b_to_unit);
+    end
+    if (div_ready) begin
+      $display("[MUL_DIV] DIV Ready: result=%h", div_result);
+    end
+  end
+  `endif
 
   // Output multiplexing
   assign result = is_mul ? mul_result : div_result;

@@ -954,6 +954,15 @@ module rv_core_pipelined #(
                                       (forward_a == 2'b01) ? wb_data :                  // MEM hazard
                                       ex_alu_operand_a;                                  // No hazard
 
+  `ifdef DEBUG_M_OPERANDS
+  always @(*) begin
+    if (idex_is_mul_div) begin
+      $display("[M_OPERANDS] @%0t operand_a: idex_rs1_data=%h fwd_a=%b exmem=%h wb=%h → result=%h",
+               $time, idex_rs1_data, forward_a, exmem_alu_result, wb_data, ex_alu_operand_a_forwarded);
+    end
+  end
+  `endif
+
   // rs1 data forwarding (for SFENCE.VMA and other instructions that use rs1 data directly)
   wire [XLEN-1:0] ex_rs1_data_forwarded;
   assign ex_rs1_data_forwarded = (forward_a == 2'b10) ? exmem_alu_result :         // EX hazard
@@ -965,6 +974,15 @@ module rv_core_pipelined #(
   assign ex_rs2_data_forwarded = (forward_b == 2'b10) ? exmem_alu_result :         // EX hazard
                                   (forward_b == 2'b01) ? wb_data :                  // MEM hazard
                                   idex_rs2_data;                                     // No hazard
+
+  `ifdef DEBUG_M_OPERANDS
+  always @(*) begin
+    if (idex_is_mul_div) begin
+      $display("[M_OPERANDS] @%0t operand_b: idex_rs2_data=%h fwd_b=%b exmem=%h wb=%h → result=%h",
+               $time, idex_rs2_data, forward_b, exmem_alu_result, wb_data, ex_rs2_data_forwarded);
+    end
+  end
+  `endif
 
   assign ex_alu_operand_b = idex_alu_src ? idex_imm : ex_rs2_data_forwarded;
 
@@ -981,6 +999,44 @@ module rv_core_pipelined #(
     .less_than_unsigned(ex_alu_ltu)
   );
 
+  // Debug: ALU output
+  `ifdef DEBUG_ALU
+  always @(posedge clk) begin
+    if (idex_valid && !idex_is_mul_div && !idex_fp_alu_en) begin
+      $display("[ALU] @%0t pc=%h result=%h (opcode=%b rd=x%0d)",
+               $time, idex_pc, ex_alu_result, idex_opcode, idex_rd_addr);
+    end
+  end
+  `endif
+
+  // M Extension: Latch operands when instruction first enters EX stage
+  // This prevents corruption from forwarding paths changing during long M operations
+  // IMPORTANT: Latch the FORWARDED values, not raw IDEX values, because forwarding
+  // is needed when M instruction depends on recent instructions
+  reg [XLEN-1:0] m_operand_a_latched;
+  reg [XLEN-1:0] m_operand_b_latched;
+  reg m_operands_valid;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      m_operand_a_latched <= {XLEN{1'b0}};
+      m_operand_b_latched <= {XLEN{1'b0}};
+      m_operands_valid <= 1'b0;
+    end else if (idex_is_mul_div && !ex_mul_div_busy && !m_operands_valid) begin
+      // Latch FORWARDED operands when M instruction first enters EX (before it starts execution)
+      // This captures the correct forwarded values before they get polluted by subsequent instructions
+      m_operand_a_latched <= ex_alu_operand_a_forwarded;
+      m_operand_b_latched <= ex_rs2_data_forwarded;
+      m_operands_valid <= 1'b1;
+    end else if (!idex_is_mul_div) begin
+      m_operands_valid <= 1'b0;
+    end
+  end
+
+  // Select between latched operands (for M unit) and forwarded operands (for others)
+  wire [XLEN-1:0] m_final_operand_a = m_operands_valid ? m_operand_a_latched : ex_alu_operand_a_forwarded;
+  wire [XLEN-1:0] m_final_operand_b = m_operands_valid ? m_operand_b_latched : ex_rs2_data_forwarded;
+
   // M Extension Unit
   mul_div_unit #(
     .XLEN(XLEN)
@@ -990,8 +1046,8 @@ module rv_core_pipelined #(
     .start(m_unit_start),
     .operation(idex_mul_div_op),
     .is_word_op(idex_is_word_op),
-    .operand_a(ex_alu_operand_a_forwarded),
-    .operand_b(ex_rs2_data_forwarded),
+    .operand_a(m_final_operand_a),
+    .operand_b(m_final_operand_b),
     .result(ex_mul_div_result),
     .busy(ex_mul_div_busy),
     .ready(ex_mul_div_ready)
@@ -1335,6 +1391,16 @@ module rv_core_pipelined #(
     .pc_out(exmem_pc)
   );
 
+  // Debug: EX/MEM register transfers
+  `ifdef DEBUG_EXMEM
+  always @(posedge clk) begin
+    if (exmem_valid && exmem_reg_write && exmem_rd_addr != 5'b0) begin
+      $display("[EXMEM] @%0t pc=%h alu_result=%h rd=x%0d wb_sel=%b",
+               $time, exmem_pc, exmem_alu_result, exmem_rd_addr, exmem_wb_sel);
+    end
+  end
+  `endif
+
   //==========================================================================
   // MEM STAGE: Memory Access
   //==========================================================================
@@ -1533,6 +1599,16 @@ module rv_core_pipelined #(
     .csr_rdata_out(memwb_csr_rdata)
   );
 
+  // Debug: MEM/WB register transfers
+  `ifdef DEBUG_MEMWB
+  always @(posedge clk) begin
+    if (memwb_valid && memwb_reg_write && memwb_rd_addr != 5'b0) begin
+      $display("[MEMWB] @%0t alu_result=%h rd=x%0d wb_sel=%b",
+               $time, memwb_alu_result, memwb_rd_addr, memwb_wb_sel);
+    end
+  end
+  `endif
+
   //==========================================================================
   // WB STAGE: Write Back
   //==========================================================================
@@ -1546,6 +1622,17 @@ module rv_core_pipelined #(
                    (memwb_wb_sel == 3'b101) ? memwb_atomic_result :   // A extension result
                    (memwb_wb_sel == 3'b110) ? memwb_int_result_fp :   // FPU integer result (FP compare, FCLASS, FMV.X.W, FCVT.W.S)
                    {XLEN{1'b0}};
+
+  // Debug: WB stage register file writes
+  `ifdef DEBUG_REGFILE_WB
+  always @(posedge clk) begin
+    if (memwb_valid && (memwb_reg_write || memwb_int_reg_write_fp) && memwb_rd_addr != 5'b0) begin
+      $display("[REGFILE_WB] @%0t Writing rd=x%0d data=%h (wb_sel=%b alu=%h mem=%h mul_div=%h)",
+               $time, memwb_rd_addr, wb_data, memwb_wb_sel,
+               memwb_alu_result, memwb_mem_read_data, memwb_mul_div_result);
+    end
+  end
+  `endif
 
   // F/D Extension: FP Write-Back Data Selection
   // FP results go to FP register file, INT-to-FP conversions also go to FP register file

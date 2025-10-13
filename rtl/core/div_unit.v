@@ -1,6 +1,6 @@
-// div_unit.v - Non-Restoring Divider for M Extension
+// div_unit.v - Divider for M Extension (PicoRV32-inspired)
 // Implements DIV, DIVU, REM, REMU instructions
-// Uses non-restoring division algorithm
+// Based on PicoRV32's proven division algorithm
 // Parameterized for RV32/RV64 support
 
 `include "config/rv_config.vh"
@@ -32,22 +32,11 @@ module div_unit #(
   localparam REM  = 2'b10;  // Remainder (signed)
   localparam REMU = 2'b11;  // Remainder (unsigned)
 
-  // State machine
-  localparam IDLE    = 2'b00;
-  localparam COMPUTE = 2'b01;
-  localparam DONE    = 2'b10;
-
-  reg [1:0] state, state_next;
-
-  // Determine effective operand width for RV64W operations
-  wire [5:0] op_width;
-  assign op_width = (XLEN == 64 && is_word_op) ? 6'd32 : XLEN[5:0];
-
   // Sign handling
   wire is_signed_op;
   assign is_signed_op = (div_op == DIV) || (div_op == REM);
 
-  // Extract signs and compute absolute values
+  // Extract signs
   wire sign_dividend, sign_divisor;
 
   generate
@@ -66,195 +55,123 @@ module div_unit #(
   wire [XLEN-1:0] abs_dividend = negate_dividend ? (~dividend + 1'b1) : dividend;
   wire [XLEN-1:0] abs_divisor  = negate_divisor  ? (~divisor + 1'b1)  : divisor;
 
-  // Division registers
-  reg [XLEN-1:0]   quotient;
-  reg [XLEN:0]     remainder;  // Need XLEN+1 bits for subtraction
-  reg [XLEN-1:0]   divisor_reg;
-  reg [6:0]        cycle_count;
+  // Division registers (PicoRV32-style algorithm)
+  reg [XLEN-1:0]     dividend_reg;   // Holds remainder during computation
+  reg [2*XLEN-2:0]   divisor_reg;    // Shifted divisor (63 bits for RV32, like PicoRV32)
+  reg [XLEN-1:0]     quotient;
+  reg [XLEN-1:0]     quotient_msk;   // Mask for current quotient bit
 
   // Control registers
   reg [1:0] op_reg;
   reg       word_op_reg;
-  reg       quotient_negative;
-  reg       remainder_negative;
-  reg       div_by_zero;
-  reg       overflow;
+  reg       outsign;               // Output sign for signed operations
+  reg       running;
 
-  // Special case detection
-  wire is_div_by_zero = (divisor == {XLEN{1'b0}});
-  wire is_overflow    = is_signed_op &&
-                        (dividend == {1'b1, {(XLEN-1){1'b0}}}) &&  // Most negative
-                        (divisor == {XLEN{1'b1}});                  // -1
+  // Busy signal: high when running
+  assign busy = running;
 
-  // State machine
+  // Datapath (PicoRV32-inspired algorithm)
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      state <= IDLE;
+      dividend_reg  <= {XLEN{1'b0}};
+      divisor_reg   <= {(2*XLEN-1){1'b0}};
+      quotient      <= {XLEN{1'b0}};
+      quotient_msk  <= {XLEN{1'b0}};
+      ready         <= 1'b0;
+      result        <= {XLEN{1'b0}};
+      op_reg        <= 2'b00;
+      word_op_reg   <= 1'b0;
+      outsign       <= 1'b0;
+      running       <= 1'b0;
     end else begin
-      state <= state_next;
+      // Always clear ready by default
+      ready <= 1'b0;
+
+      // Start new division
+      if (start && !running) begin
+        running      <= 1'b1;
+        op_reg       <= div_op;
+        word_op_reg  <= is_word_op;
+
+        // Convert to absolute values for computation (PicoRV32 style)
+        dividend_reg <= abs_dividend;
+        divisor_reg  <= abs_divisor << (XLEN - 1);  // Shift divisor to MSB position (63-bit register)
+        quotient     <= {XLEN{1'b0}};
+        quotient_msk <= {1'b1, {(XLEN-1){1'b0}}};  // Start with MSB set
+
+        // Calculate output sign (for DIV: signs differ AND divisor != 0, for REM: dividend sign)
+        if (div_op == DIV)
+          outsign <= (sign_dividend != sign_divisor) && (divisor != {XLEN{1'b0}});
+        else if (div_op == REM)
+          outsign <= sign_dividend;
+        else
+          outsign <= 1'b0;  // Unsigned operations
+
+        `ifdef DEBUG_DIV
+        $display("[DIV] Start: op=%b dividend=%h (%h) divisor=%h (%h) outsign=%b",
+                 div_op, dividend, abs_dividend, divisor, abs_divisor,
+                 (div_op == DIV) ? ((sign_dividend != sign_divisor) && (divisor != {XLEN{1'b0}})) :
+                 (div_op == REM) ? sign_dividend : 1'b0);
+        `endif
+      end
+      // Division computation (runs when quotient_msk != 0)
+      else if (quotient_msk != {XLEN{1'b0}} && running) begin
+        // PicoRV32 algorithm: compare divisor (63-bit) with dividend (32-bit, zero-extended)
+        // Verilog will zero-extend dividend_reg to 63 bits for comparison
+        if (divisor_reg <= dividend_reg) begin
+          // Divisor fits in remainder, subtract it and set quotient bit
+          dividend_reg <= dividend_reg - divisor_reg[XLEN-1:0];
+          quotient     <= quotient | quotient_msk;
+
+          `ifdef DEBUG_DIV_STEPS
+          $display("[DIV_STEP] divisor=%h <= dividend=%h: subtract, quotient_msk=%h -> quotient=%h",
+                   divisor_reg[XLEN-1:0], dividend_reg, quotient_msk, quotient | quotient_msk);
+          `endif
+        end else begin
+          `ifdef DEBUG_DIV_STEPS
+          $display("[DIV_STEP] divisor=%h > dividend=%h: skip, quotient_msk=%h",
+                   divisor_reg[XLEN-1:0], dividend_reg, quotient_msk);
+          `endif
+        end
+
+        // Shift divisor right and quotient mask right
+        divisor_reg  <= divisor_reg >> 1;
+        quotient_msk <= quotient_msk >> 1;
+      end
+      // Division complete (quotient_msk reached 0)
+      else if (quotient_msk == {XLEN{1'b0}} && running) begin
+        running <= 1'b0;
+        ready   <= 1'b1;
+
+        `ifdef DEBUG_DIV
+        $display("[DIV] Complete: quotient=%h remainder=%h outsign=%b",
+                 quotient, dividend_reg, outsign);
+        `endif
+
+        // Compute final result based on operation
+        case (op_reg)
+          DIV, DIVU: begin
+            // Return quotient (negated if outsign is set)
+            result <= outsign ? (~quotient + 1'b1) : quotient;
+          end
+          REM, REMU: begin
+            // Return remainder (dividend_reg, negated if outsign is set)
+            result <= outsign ? (~dividend_reg + 1'b1) : dividend_reg;
+          end
+        endcase
+
+        // Sign-extend for RV64W operations
+        if (XLEN == 64 && word_op_reg) begin
+          result <= {{32{result[31]}}, result[31:0]};
+        end
+
+        `ifdef DEBUG_DIV
+        $display("[DIV] Result: op=%b result=%h", op_reg,
+                 (op_reg == DIV || op_reg == DIVU) ? (outsign ? (~quotient + 1'b1) : quotient) :
+                                                      (outsign ? (~dividend_reg + 1'b1) : dividend_reg));
+        `endif
+      end
     end
   end
-
-  always @(*) begin
-    state_next = state;
-    case (state)
-      IDLE: begin
-        if (start) state_next = COMPUTE;
-      end
-
-      COMPUTE: begin
-        // Transition to DONE after op_width cycles (0 to op_width-1)
-        // Check if next cycle will be >= op_width
-        if ((cycle_count + 1) >= op_width || div_by_zero || overflow)
-          state_next = DONE;
-      end
-
-      DONE: begin
-        state_next = IDLE;
-      end
-
-      default: state_next = IDLE;
-    endcase
-  end
-
-  // Datapath
-  always @(posedge clk or negedge reset_n) begin
-    if (!reset_n) begin
-      quotient           <= {XLEN{1'b0}};
-      remainder          <= {(XLEN+1){1'b0}};
-      divisor_reg        <= {XLEN{1'b0}};
-      cycle_count        <= 7'd0;
-      ready              <= 1'b0;
-      result             <= {XLEN{1'b0}};
-      op_reg             <= 2'b00;
-      word_op_reg        <= 1'b0;
-      quotient_negative  <= 1'b0;
-      remainder_negative <= 1'b0;
-      div_by_zero        <= 1'b0;
-      overflow           <= 1'b0;
-    end else begin
-      case (state)
-        IDLE: begin
-          ready <= 1'b0;
-
-          if (start) begin
-            // Initialize for division
-            // For non-restoring division:
-            //   - quotient (Q) starts with dividend
-            //   - remainder (A) starts at 0
-            quotient           <= abs_dividend;
-            remainder          <= {(XLEN+1){1'b0}};
-            divisor_reg        <= abs_divisor;
-            cycle_count        <= 7'd0;
-            op_reg             <= div_op;
-            word_op_reg        <= is_word_op;
-            div_by_zero        <= is_div_by_zero;
-            overflow           <= is_overflow;
-
-            // Determine result signs
-            quotient_negative  <= negate_dividend ^ negate_divisor;
-            remainder_negative <= negate_dividend;
-          end
-        end
-
-        COMPUTE: begin
-          if (!div_by_zero && !overflow) begin
-            // Non-restoring division algorithm
-            // A = remainder[XLEN-1:0] (upper part)
-            // Q = quotient[XLEN-1:0] (lower part)
-
-            reg [XLEN-1:0] shifted_A;
-            reg [XLEN-1:0] new_A;
-            reg [XLEN-1:0] Q_shifted;
-            reg q_bit;
-
-            // Step 1: Shift {A, Q} left by 1
-            // A = {A[XLEN-2:0], Q[XLEN-1]}
-            // Q = {Q[XLEN-2:0], 0}
-            shifted_A = {remainder[XLEN-2:0], quotient[XLEN-1]};
-            Q_shifted = {quotient[XLEN-2:0], 1'b0};
-
-            // Step 2: Add/subtract based on OLD A sign (before shift)
-            if (remainder[XLEN-1]) begin  // A was negative
-              new_A = shifted_A + divisor_reg;
-            end else begin                 // A was positive/zero
-              new_A = shifted_A - divisor_reg;
-            end
-
-            // Step 3: Set Q[0] based on new A sign
-            q_bit = ~new_A[XLEN-1];  // 1 if positive, 0 if negative
-
-            // Update registers
-            remainder <= {1'b0, new_A};  // Extend to XLEN+1 with leading 0
-            quotient  <= Q_shifted | {{(XLEN-1){1'b0}}, q_bit};
-            cycle_count <= cycle_count + 1;
-          end
-        end
-
-        DONE: begin
-          ready <= 1'b1;
-
-          // Handle special cases per RISC-V spec
-          if (div_by_zero) begin
-            case (op_reg)
-              DIV, DIVU: result <= {XLEN{1'b1}};  // -1 (all 1s)
-              REM, REMU: result <= dividend;       // Return dividend
-            endcase
-          end else if (overflow) begin
-            // Overflow case: MIN_INT / -1
-            case (op_reg)
-              DIV:  result <= {1'b1, {(XLEN-1){1'b0}}};  // MIN_INT
-              REM:  result <= {XLEN{1'b0}};               // 0
-              default: result <= {XLEN{1'b0}};
-            endcase
-          end else begin
-            // Normal division result
-            // Final remainder correction if needed
-            reg [XLEN:0] final_remainder;
-            final_remainder = remainder;
-
-            if (final_remainder[XLEN]) begin
-              final_remainder = final_remainder + {1'b0, divisor_reg};
-            end
-
-            case (op_reg)
-              DIV, DIVU: begin
-                // Return quotient
-                if (quotient_negative && op_reg == DIV) begin
-                  result <= ~quotient + 1'b1;
-                end else begin
-                  result <= quotient;
-                end
-              end
-
-              REM, REMU: begin
-                // Return remainder
-                if (remainder_negative && op_reg == REM) begin
-                  result <= ~final_remainder[XLEN-1:0] + 1'b1;
-                end else begin
-                  result <= final_remainder[XLEN-1:0];
-                end
-              end
-
-              default: result <= quotient;
-            endcase
-          end
-
-          // Sign-extend for RV64W operations
-          if (XLEN == 64 && word_op_reg) begin
-            result <= {{32{result[31]}}, result[31:0]};
-          end
-        end
-
-        default: begin
-          ready <= 1'b0;
-        end
-      endcase
-    end
-  end
-
-  // Combinational busy signal - asserts when not in IDLE state
-  // This is one cycle faster than using a registered busy signal.
-  assign busy = (state != IDLE);
 
 endmodule

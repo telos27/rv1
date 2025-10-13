@@ -146,6 +146,22 @@ module idex_register #(
   output reg  [31:0] instruction_out
 );
 
+  `ifdef DEBUG_IDEX
+  always @(posedge clk) begin
+    if (hold) begin
+      $display("[IDEX] @%0t HELD: rs1=x%0d[%h] rs2=x%0d[%h] rd=x%0d mul_div=%0b",
+               $time, rs1_addr_out, rs1_data_out, rs2_addr_out, rs2_data_out, rd_addr_out, is_mul_div_out);
+    end else if (!flush) begin
+      $display("[IDEX] @%0t UPDATE: rs1=x%0d[%h]→[%h] rs2=x%0d[%h]→[%h] rd=x%0d→x%0d mul_div=%0b→%0b",
+               $time, rs1_addr_out, rs1_data_out, rs1_data_in,
+               rs2_addr_out, rs2_data_out, rs2_data_in,
+               rd_addr_out, rd_addr_in, is_mul_div_out, is_mul_div_in);
+    end else begin
+      $display("[IDEX] @%0t FLUSH: inserting NOP bubble", $time);
+    end
+  end
+  `endif
+
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       // Reset: clear all outputs

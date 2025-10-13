@@ -135,12 +135,23 @@ module forwarding_unit (
     // Condition: EX/MEM.reg_write AND EX/MEM.rd != 0 AND EX/MEM.rd == ID/EX.rs1
     if (exmem_reg_write && (exmem_rd != 5'h0) && (exmem_rd == idex_rs1)) begin
       forward_a = 2'b10;
+      `ifdef DEBUG_FORWARD
+      $display("[FORWARD_A] @%0t MEM hazard: rs1=x%0d matches exmem_rd=x%0d (fwd=2'b10)", $time, idex_rs1, exmem_rd);
+      `endif
     end
     // WB hazard: Forward from MEM/WB (only if no MEM hazard)
     // Condition: MEM/WB.reg_write AND MEM/WB.rd != 0 AND MEM/WB.rd == ID/EX.rs1
     else if (memwb_reg_write && (memwb_rd != 5'h0) && (memwb_rd == idex_rs1)) begin
       forward_a = 2'b01;
+      `ifdef DEBUG_FORWARD
+      $display("[FORWARD_A] @%0t WB hazard: rs1=x%0d matches memwb_rd=x%0d (fwd=2'b01)", $time, idex_rs1, memwb_rd);
+      `endif
     end
+    `ifdef DEBUG_FORWARD
+    else if (idex_rs1 != 5'h0) begin
+      $display("[FORWARD_A] @%0t No forward: rs1=x%0d (fwd=2'b00)", $time, idex_rs1);
+    end
+    `endif
   end
 
   always @(*) begin
@@ -150,11 +161,22 @@ module forwarding_unit (
     // MEM hazard (highest priority): Forward from EX/MEM
     if (exmem_reg_write && (exmem_rd != 5'h0) && (exmem_rd == idex_rs2)) begin
       forward_b = 2'b10;
+      `ifdef DEBUG_FORWARD
+      $display("[FORWARD_B] @%0t MEM hazard: rs2=x%0d matches exmem_rd=x%0d (fwd=2'b10)", $time, idex_rs2, exmem_rd);
+      `endif
     end
     // WB hazard: Forward from MEM/WB
     else if (memwb_reg_write && (memwb_rd != 5'h0) && (memwb_rd == idex_rs2)) begin
       forward_b = 2'b01;
+      `ifdef DEBUG_FORWARD
+      $display("[FORWARD_B] @%0t WB hazard: rs2=x%0d matches memwb_rd=x%0d (fwd=2'b01)", $time, idex_rs2, memwb_rd);
+      `endif
     end
+    `ifdef DEBUG_FORWARD
+    else if (idex_rs2 != 5'h0) begin
+      $display("[FORWARD_B] @%0t No forward: rs2=x%0d (fwd=2'b00)", $time, idex_rs2);
+    end
+    `endif
   end
 
   // ========================================
