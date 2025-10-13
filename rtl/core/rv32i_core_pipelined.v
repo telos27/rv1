@@ -675,8 +675,19 @@ module rv_core_pipelined #(
   `ifdef DEBUG_ATOMIC
   always @(posedge clk) begin
     if (id_opcode == 7'b0110011 && id_rd == 5'd14 && id_rs1 == 5'd14) begin // ADD to x14 from x14
-      $display("[ID_ADD] @%0t ADD x14, x%0d, x%0d: rs1_data=%h (fwd_a=%b), rs2_data=%h (fwd_b=%b)",
-               $time, id_rs1, id_rs2, id_rs1_data, id_forward_a, id_rs2_data, id_forward_b);
+      $display("[ID_ADD] @%0t ADD x14, x%0d, x%0d: rs1_data=%h (fwd_a=%b), rs2_data=%h (fwd_b=%b), PC=%h",
+               $time, id_rs1, id_rs2, id_rs1_data, id_forward_a, id_rs2_data, id_forward_b, ifid_pc);
+      $display("[ID_ADD_DBG] regfile_x14=%h, idex_is_atomic=%b, idex_rd=%d, exmem_rd=%d, memwb_rd=%d",
+               id_rs1_data_raw, idex_is_atomic, idex_rd_addr, exmem_rd_addr, memwb_rd_addr);
+      $display("[ID_ADD_FWD] idex_is_atomic=%b, exmem_is_atomic=%b, exmem_rd=%d, id_forward_a=%b",
+               idex_is_atomic, exmem_is_atomic, exmem_rd_addr, id_forward_a);
+      $display("[ID_ADD_FWD2] exmem_alu=%h, exmem_atomic=%h, exmem_fwd=%h, hold_exmem=%b",
+               exmem_alu_result, exmem_atomic_result, exmem_forward_data, hold_exmem);
+    end
+    // Track writeback to x14
+    if (memwb_reg_write && memwb_rd_addr == 5'd14) begin
+      $display("[WB_X14] @%0t Writing x14 <= %h (wb_sel=%b, alu_result=%h, atomic_result=%h)",
+               $time, wb_data, memwb_wb_sel, memwb_alu_result, memwb_atomic_result);
     end
   end
   `endif
@@ -719,7 +730,9 @@ module rv_core_pipelined #(
                           id_fp_rs3_data_raw;                                // Use FP register file value
 
   // Immediate Selection
-  assign id_immediate = (id_imm_sel == 3'b000) ? id_imm_i :
+  // For atomic operations, force immediate to 0 (address is rs1 + 0)
+  assign id_immediate = id_is_atomic_dec ? {XLEN{1'b0}} :
+                        (id_imm_sel == 3'b000) ? id_imm_i :
                         (id_imm_sel == 3'b001) ? id_imm_s :
                         (id_imm_sel == 3'b010) ? id_imm_b :
                         (id_imm_sel == 3'b011) ? id_imm_u :
@@ -760,9 +773,8 @@ module rv_core_pipelined #(
     .atomic_busy(ex_atomic_busy),
     .atomic_done(ex_atomic_done),
     .idex_is_atomic(idex_is_atomic),
-    // ID stage forwarding signals (for atomic forwarding hazard detection)
-    .id_forward_a(id_forward_a),
-    .id_forward_b(id_forward_b),
+    .exmem_is_atomic(exmem_is_atomic),
+    .exmem_rd(exmem_rd_addr),
     // F/D extension
     .fpu_busy(ex_fpu_busy),
     .fpu_done(ex_fpu_done),
@@ -926,6 +938,7 @@ module rv_core_pipelined #(
     // Pipeline stage write ports
     .idex_rd(idex_rd_addr),
     .idex_reg_write(idex_reg_write),
+    .idex_is_atomic(idex_is_atomic),
     .exmem_rd(exmem_rd_addr),
     .exmem_reg_write(exmem_reg_write),
     .memwb_rd(memwb_rd_addr),

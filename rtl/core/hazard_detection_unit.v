@@ -25,10 +25,8 @@ module hazard_detection_unit (
   input  wire        atomic_busy,      // A unit is busy
   input  wire        atomic_done,      // A unit operation complete
   input  wire        idex_is_atomic,   // A instruction in EX stage
-
-  // ID stage forwarding signals (to detect forwarding from in-progress atomics)
-  input  wire [2:0]  id_forward_a,     // ID forward select for rs1
-  input  wire [2:0]  id_forward_b,     // ID forward select for rs2
+  input  wire        exmem_is_atomic,  // A instruction in MEM stage
+  input  wire [4:0]  exmem_rd,         // MEM stage destination register
 
   // F/D extension signals
   input  wire        fpu_busy,         // FPU is busy (multi-cycle operation in progress)
@@ -105,16 +103,30 @@ module hazard_detection_unit (
   wire a_extension_stall;
   assign a_extension_stall = (atomic_busy || idex_is_atomic) && !atomic_done;
 
-  // A extension forwarding hazard: stall when ID stage would forward from in-progress atomic in EX
+  // A extension forwarding hazard: stall when ID stage has dependency on in-progress atomic
   // This prevents forwarding atomic results before they're ready.
-  // Forward from EX is indicated by id_forward_a/b == 3'b100
-  // Stall if: forwarding from EX AND atomic in EX AND not done
-  // This catches all cases including the first cycle when atomic enters EX
+  // Similar to load-use hazard, check register dependencies directly
+  // Stall if:
+  //   1. Atomic in EX AND (rd matches rs1 or rs2) AND not done, OR
+  //   2. Atomic in MEM AND (rd matches rs1 or rs2) but exmem_is_atomic not set yet
+  wire atomic_rs1_hazard_ex;
+  wire atomic_rs2_hazard_ex;
+  wire atomic_rs1_hazard_mem;
+  wire atomic_rs2_hazard_mem;
   wire atomic_forward_hazard;
+
+  // Check EX stage dependencies
+  assign atomic_rs1_hazard_ex = (idex_rd == ifid_rs1) && (idex_rd != 5'h0);
+  assign atomic_rs2_hazard_ex = (idex_rd == ifid_rs2) && (idex_rd != 5'h0);
+
+  // Check MEM stage dependencies (for transition cycle when atomic just moved from EX to MEM)
+  assign atomic_rs1_hazard_mem = (exmem_rd == ifid_rs1) && (exmem_rd != 5'h0);
+  assign atomic_rs2_hazard_mem = (exmem_rd == ifid_rs2) && (exmem_rd != 5'h0);
+
+  // Stall if atomic in EX (not done) OR if atomic just moved to MEM but flag not set
   assign atomic_forward_hazard =
-    ((id_forward_a == 3'b100) || (id_forward_b == 3'b100)) &&  // Forwarding from EX stage
-    idex_is_atomic &&                                            // EX has atomic instruction
-    !atomic_done;                                                // Not yet complete
+    (idex_is_atomic && !atomic_done && (atomic_rs1_hazard_ex || atomic_rs2_hazard_ex)) ||
+    (atomic_done && !exmem_is_atomic && (atomic_rs1_hazard_mem || atomic_rs2_hazard_mem));
 
   // FP extension hazard: stall IF/ID stages when FPU is busy with multi-cycle operations
   // FP multi-cycle operations (FDIV, FSQRT, FMA, etc.) hold the pipeline.

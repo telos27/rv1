@@ -37,6 +37,7 @@ module forwarding_unit (
   // ID/EX register outputs (instruction currently in EX stage)
   input  wire [4:0] idex_rd,           // EX stage destination register
   input  wire       idex_reg_write,    // EX stage will write to register
+  input  wire       idex_is_atomic,    // EX stage has atomic instruction (disable EX→ID forwarding)
 
   // EX/MEM register outputs (instruction in MEM stage)
   input  wire [4:0] exmem_rd,          // MEM stage destination register
@@ -89,7 +90,8 @@ module forwarding_unit (
     id_forward_a = 3'b000;
 
     // Check EX stage (highest priority - most recent instruction)
-    if (idex_reg_write && (idex_rd != 5'h0) && (idex_rd == id_rs1)) begin
+    // Skip EX forwarding for atomic operations (they take multiple cycles, result not ready)
+    if (idex_reg_write && (idex_rd != 5'h0) && (idex_rd == id_rs1) && !idex_is_atomic) begin
       id_forward_a = 3'b100;  // Forward from EX stage
     end
     // Check MEM stage (second priority)
@@ -107,7 +109,8 @@ module forwarding_unit (
     id_forward_b = 3'b000;
 
     // Check EX stage (highest priority)
-    if (idex_reg_write && (idex_rd != 5'h0) && (idex_rd == id_rs2)) begin
+    // Skip EX forwarding for atomic operations (they take multiple cycles, result not ready)
+    if (idex_reg_write && (idex_rd != 5'h0) && (idex_rd == id_rs2) && !idex_is_atomic) begin
       id_forward_b = 3'b100;  // Forward from EX stage
     end
     // Check MEM stage (second priority)
