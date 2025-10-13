@@ -31,6 +31,9 @@ module hazard_detection_unit (
   input  wire        fpu_done,         // FPU operation complete (1 cycle pulse)
   input  wire        idex_fp_alu_en,   // FP instruction in EX stage
 
+  // MMU signals
+  input  wire        mmu_busy,         // MMU is busy (page table walk in progress)
+
   // Hazard control outputs
   output wire        stall_pc,         // Stall program counter
   output wire        stall_ifid,       // Stall IF/ID register
@@ -105,12 +108,18 @@ module hazard_detection_unit (
   wire fp_extension_stall;
   assign fp_extension_stall = (fpu_busy || idex_fp_alu_en) && !fpu_done;
 
+  // MMU hazard: stall IF/ID stages when MMU is busy with page table walk
+  // Page table walks are multi-cycle operations that must complete before proceeding.
+  // This prevents IF/ID from advancing while EX/MEM stages are held waiting for MMU.
+  wire mmu_stall;
+  assign mmu_stall = mmu_busy;
+
   // Generate control signals
-  // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency, or FP extension dependency
-  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
-  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall;
-  // Note: Only bubble for load-use hazard (integer or FP), NOT for M/A/FP stall
-  // (M/A/FP stall uses hold signals on IDEX and EXMEM to keep instruction in place)
+  // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency, FP extension dependency, or MMU dependency
+  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall || mmu_stall;
+  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || fp_extension_stall || mmu_stall;
+  // Note: Only bubble for load-use hazard (integer or FP), NOT for M/A/FP/MMU stall
+  // (M/A/FP/MMU stall uses hold signals on IDEX and EXMEM to keep instruction in place)
   assign bubble_idex = load_use_hazard || fp_load_use_hazard;
 
 endmodule

@@ -28,8 +28,16 @@ module rv_core_pipelined #(
   wire flush_ifid;         // Flush IF/ID register (branch misprediction)
   wire flush_idex;         // Flush ID/EX register (bubble insertion or branch)
   wire flush_idex_hazard;  // Flush from hazard detection (load-use)
-  wire [1:0] forward_a;    // Forwarding select for ALU operand A
-  wire [1:0] forward_b;    // Forwarding select for ALU operand B
+  // ID stage forwarding control signals
+  wire [2:0] id_forward_a;       // ID stage forward select for rs1 (3'b100=EX, 3'b010=MEM, 3'b001=WB, 3'b000=NONE)
+  wire [2:0] id_forward_b;       // ID stage forward select for rs2
+  wire [2:0] id_fp_forward_a;    // ID stage FP forward select for rs1
+  wire [2:0] id_fp_forward_b;    // ID stage FP forward select for rs2
+  wire [2:0] id_fp_forward_c;    // ID stage FP forward select for rs3
+
+  // EX stage forwarding control signals
+  wire [1:0] forward_a;          // EX stage forward select for ALU operand A (2'b10=MEM, 2'b01=WB, 2'b00=NONE)
+  wire [1:0] forward_b;          // EX stage forward select for ALU operand B
 
   // Trap/exception control
   wire trap_flush;         // Flush pipeline on trap
@@ -645,13 +653,19 @@ module rv_core_pipelined #(
     .rs2_data(id_rs2_data_raw)
   );
 
-  // WB-to-ID Forwarding (Register File Bypass)
-  // Forward from WB stage if reading the same register being written
-  assign id_rs1_data = ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs1))
-                       ? wb_data : id_rs1_data_raw;
+  // ID Stage Integer Register Forwarding Muxes
+  // Driven by centralized forwarding_unit outputs
+  // Priority: EX > MEM > WB > Register File
 
-  assign id_rs2_data = ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd_addr != 5'h0) && (memwb_rd_addr == id_rs2))
-                       ? wb_data : id_rs2_data_raw;
+  assign id_rs1_data = (id_forward_a == 3'b100) ? ex_alu_result :      // Forward from EX stage
+                       (id_forward_a == 3'b010) ? exmem_alu_result :   // Forward from MEM stage
+                       (id_forward_a == 3'b001) ? wb_data :            // Forward from WB stage
+                       id_rs1_data_raw;                                 // Use register file value
+
+  assign id_rs2_data = (id_forward_b == 3'b100) ? ex_alu_result :      // Forward from EX stage
+                       (id_forward_b == 3'b010) ? exmem_alu_result :   // Forward from MEM stage
+                       (id_forward_b == 3'b001) ? wb_data :            // Forward from WB stage
+                       id_rs2_data_raw;                                 // Use register file value
 
   // FP Register File
   fp_register_file #(
@@ -671,13 +685,24 @@ module rv_core_pipelined #(
     .write_single(~memwb_fp_fmt)  // 1 for single-precision (fmt=0), 0 for double-precision (fmt=1)
   );
 
-  // WB-to-ID FP Forwarding (FP Register File Bypass)
-  assign id_fp_rs1_data = (memwb_fp_reg_write && (memwb_fp_rd_addr == id_rs1))
-                          ? wb_fp_data : id_fp_rs1_data_raw;
-  assign id_fp_rs2_data = (memwb_fp_reg_write && (memwb_fp_rd_addr == id_rs2))
-                          ? wb_fp_data : id_fp_rs2_data_raw;
-  assign id_fp_rs3_data = (memwb_fp_reg_write && (memwb_fp_rd_addr == id_rs3))
-                          ? wb_fp_data : id_fp_rs3_data_raw;
+  // ID Stage FP Register Forwarding Muxes
+  // Driven by centralized forwarding_unit outputs
+  // Priority: EX > MEM > WB > FP Register File
+
+  assign id_fp_rs1_data = (id_fp_forward_a == 3'b100) ? ex_fp_result :      // Forward from EX stage
+                          (id_fp_forward_a == 3'b010) ? exmem_fp_result :   // Forward from MEM stage
+                          (id_fp_forward_a == 3'b001) ? wb_fp_data :        // Forward from WB stage
+                          id_fp_rs1_data_raw;                                // Use FP register file value
+
+  assign id_fp_rs2_data = (id_fp_forward_b == 3'b100) ? ex_fp_result :      // Forward from EX stage
+                          (id_fp_forward_b == 3'b010) ? exmem_fp_result :   // Forward from MEM stage
+                          (id_fp_forward_b == 3'b001) ? wb_fp_data :        // Forward from WB stage
+                          id_fp_rs2_data_raw;                                // Use FP register file value
+
+  assign id_fp_rs3_data = (id_fp_forward_c == 3'b100) ? ex_fp_result :      // Forward from EX stage
+                          (id_fp_forward_c == 3'b010) ? exmem_fp_result :   // Forward from MEM stage
+                          (id_fp_forward_c == 3'b001) ? wb_fp_data :        // Forward from WB stage
+                          id_fp_rs3_data_raw;                                // Use FP register file value
 
   // Immediate Selection
   assign id_immediate = (id_imm_sel == 3'b000) ? id_imm_i :
@@ -725,6 +750,8 @@ module rv_core_pipelined #(
     .fpu_busy(ex_fpu_busy),
     .fpu_done(ex_fpu_done),
     .idex_fp_alu_en(idex_fp_alu_en),
+    // MMU
+    .mmu_busy(mmu_busy),
     // Outputs
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
@@ -865,28 +892,52 @@ module rv_core_pipelined #(
 
   assign ex_pc_plus_4 = idex_pc + {{(XLEN-3){1'b0}}, 3'b100};  // PC + 4
 
-  // Forwarding Unit
+  // Forwarding Unit (centralized forwarding logic for all stages)
   forwarding_unit forward_unit (
-    // Integer forwarding
+    // ID stage integer forwarding (for branches)
+    .id_rs1(id_rs1),
+    .id_rs2(id_rs2),
+    .id_forward_a(id_forward_a),
+    .id_forward_b(id_forward_b),
+
+    // EX stage integer forwarding (for ALU ops)
     .idex_rs1(idex_rs1_addr),
     .idex_rs2(idex_rs2_addr),
+    .forward_a(forward_a),
+    .forward_b(forward_b),
+
+    // Pipeline stage write ports
+    .idex_rd(idex_rd_addr),
+    .idex_reg_write(idex_reg_write),
     .exmem_rd(exmem_rd_addr),
     .exmem_reg_write(exmem_reg_write),
     .memwb_rd(memwb_rd_addr),
     .memwb_reg_write(memwb_reg_write),
-    .forward_a(forward_a),
-    .forward_b(forward_b),
-    // FP forwarding
+    .memwb_int_reg_write_fp(memwb_int_reg_write_fp),
+
+    // ID stage FP forwarding
+    .id_fp_rs1(id_rs1),
+    .id_fp_rs2(id_rs2),
+    .id_fp_rs3(id_rs3),
+    .id_fp_forward_a(id_fp_forward_a),
+    .id_fp_forward_b(id_fp_forward_b),
+    .id_fp_forward_c(id_fp_forward_c),
+
+    // EX stage FP forwarding
     .idex_fp_rs1(idex_fp_rs1_addr),
     .idex_fp_rs2(idex_fp_rs2_addr),
     .idex_fp_rs3(idex_fp_rs3_addr),
+    .fp_forward_a(fp_forward_a),
+    .fp_forward_b(fp_forward_b),
+    .fp_forward_c(fp_forward_c),
+
+    // FP pipeline stage write ports
+    .idex_fp_rd(idex_fp_rd_addr),
+    .idex_fp_reg_write(idex_fp_reg_write),
     .exmem_fp_rd(exmem_fp_rd_addr),
     .exmem_fp_reg_write(exmem_fp_reg_write),
     .memwb_fp_rd(memwb_fp_rd_addr),
-    .memwb_fp_reg_write(memwb_fp_reg_write),
-    .fp_forward_a(fp_forward_a),
-    .fp_forward_b(fp_forward_b),
-    .fp_forward_c(fp_forward_c)
+    .memwb_fp_reg_write(memwb_fp_reg_write)
   );
 
   // ALU Operand A selection (with forwarding)
