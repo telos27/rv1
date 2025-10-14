@@ -47,9 +47,15 @@ module fp_register_file #(
       if (FLEN == 64 && write_single) begin
         // NaN boxing: upper 32 bits = all 1s, lower 32 bits = data
         registers[rd_addr] <= {32'hFFFFFFFF, rd_data[31:0]};
+        `ifdef DEBUG_FPU
+        $display("[FP_REG] Write f%0d = %h (NaN-boxed single)", rd_addr, {32'hFFFFFFFF, rd_data[31:0]});
+        `endif
       end else begin
         // Normal write (full FLEN bits)
         registers[rd_addr] <= rd_data;
+        `ifdef DEBUG_FPU
+        $display("[FP_REG] Write f%0d = %h", rd_addr, rd_data);
+        `endif
       end
     end
   end

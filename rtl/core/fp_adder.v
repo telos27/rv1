@@ -67,6 +67,19 @@ module fp_adder #(
   reg guard, round, sticky;
   reg round_up;
 
+  // Combinational rounding decision
+  wire round_up_comb;
+
+  // Combinational rounding logic
+  assign round_up_comb = (state == ROUND) ? (
+    (rounding_mode == 3'b000) ? (guard && (round || sticky || normalized_man[3])) :  // RNE
+    (rounding_mode == 3'b001) ? 1'b0 :                                                // RTZ
+    (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :        // RDN
+    (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :       // RUP
+    (rounding_mode == 3'b100) ? guard :                                               // RMM
+    1'b0                                                                               // default
+  ) : 1'b0;
+
   // State machine
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
@@ -149,38 +162,56 @@ module fp_adder #(
         // ALIGN: Align mantissas by shifting smaller operand
         // ============================================================
         ALIGN: begin
+          `ifdef DEBUG_FPU
+          $display("[FP_ADDER] ALIGN: sign_a=%b sign_b=%b exp_a=%h exp_b=%h man_a=%h man_b=%h",
+                   sign_a, sign_b, exp_a, exp_b, man_a, man_b);
+          `endif
           // Handle special cases first
           if (is_nan_a || is_nan_b) begin
             // NaN propagation: return canonical NaN
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;  // Invalid operation
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] NaN detected, returning canonical NaN");
+            `endif
           end else if (is_inf_a && is_inf_b && (sign_a != sign_b)) begin
             // ∞ - ∞: Invalid
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] Inf - Inf detected, invalid operation");
+            `endif
           end else if (is_inf_a) begin
             // a is ∞: return a
             result <= {sign_a, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] Operand A is Inf, returning Inf");
+            `endif
           end else if (is_inf_b) begin
             // b is ∞: return b (with potentially flipped sign)
             result <= {sign_b, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] Operand B is Inf, returning Inf");
+            `endif
           end else if (is_zero_a && is_zero_b) begin
             // 0 + 0: sign depends on rounding mode and operand signs
             sign_result <= (sign_a && sign_b) || ((sign_a || sign_b) && (rounding_mode == 3'b010));
             result <= {sign_result, {FLEN-1{1'b0}}};
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] Both operands zero, returning zero");
+            `endif
           end else if (is_zero_a) begin
             // a is 0: return b
             result <= {sign_b, exp_b, man_b[MAN_WIDTH-1:0]};
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] Operand A is zero, returning B");
+            `endif
           end else if (is_zero_b) begin
             // b is 0: return a
             result <= {sign_a, exp_a, man_a[MAN_WIDTH-1:0]};
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] Operand B is zero, returning A");
+            `endif
           end else begin
             // Normal case: align mantissas
             if (exp_a >= exp_b) begin
@@ -192,6 +223,10 @@ module fp_adder #(
                 aligned_man_b <= {{MAN_WIDTH+4{1'b0}}, 1'b1};  // All shifted out -> sticky
               else
                 aligned_man_b <= ({man_b, 3'b000} >> (exp_a - exp_b));
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] ALIGN: exp_diff=%d, aligned_man_a=%h, aligned_man_b=%h (shifted)",
+                       exp_a - exp_b, {man_a, 3'b000}, ({man_b, 3'b000} >> (exp_a - exp_b)));
+              `endif
             end else begin
               exp_result <= exp_b;
               exp_diff <= exp_b - exp_a;
@@ -200,6 +235,10 @@ module fp_adder #(
                 aligned_man_a <= {{MAN_WIDTH+4{1'b0}}, 1'b1};
               else
                 aligned_man_a <= ({man_a, 3'b000} >> (exp_b - exp_a));
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] ALIGN: exp_diff=%d, aligned_man_a=%h (shifted), aligned_man_b=%h",
+                       exp_b - exp_a, ({man_a, 3'b000} >> (exp_b - exp_a)), {man_b, 3'b000});
+              `endif
             end
           end
         end
@@ -212,14 +251,26 @@ module fp_adder #(
             // Same sign: add magnitudes
             sum <= aligned_man_a + aligned_man_b;
             sign_result <= sign_a;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] COMPUTE: ADD aligned_man_a=%h + aligned_man_b=%h = %h",
+                     aligned_man_a, aligned_man_b, aligned_man_a + aligned_man_b);
+            `endif
           end else begin
             // Different signs: subtract magnitudes
             if (aligned_man_a >= aligned_man_b) begin
               sum <= aligned_man_a - aligned_man_b;
               sign_result <= sign_a;
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] COMPUTE: SUB aligned_man_a=%h - aligned_man_b=%h = %h",
+                       aligned_man_a, aligned_man_b, aligned_man_a - aligned_man_b);
+              `endif
             end else begin
               sum <= aligned_man_b - aligned_man_a;
               sign_result <= sign_b;
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] COMPUTE: SUB aligned_man_b=%h - aligned_man_a=%h = %h",
+                       aligned_man_b, aligned_man_a, aligned_man_b - aligned_man_a);
+              `endif
             end
           end
         end
@@ -228,12 +279,18 @@ module fp_adder #(
         // NORMALIZE: Shift result to normalized form
         // ============================================================
         NORMALIZE: begin
+          `ifdef DEBUG_FPU
+          $display("[FP_ADDER] NORMALIZE: sum=%h exp_result=%h", sum, exp_result);
+          `endif
+
           adjusted_exp <= exp_result;
 
           // Check for zero result
           if (sum == 0) begin
             result <= {sign_result, {FLEN-1{1'b0}}};
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] NORMALIZE: sum is zero, returning zero");
+            `endif
           end
           // Check for overflow (carry out)
           else if (sum[MAN_WIDTH+4]) begin
@@ -242,16 +299,64 @@ module fp_adder #(
             guard <= sum[0];
             round <= 1'b0;
             sticky <= 1'b0;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] NORMALIZE: overflow detected, normalized_man=%h adj_exp=%h",
+                     sum >> 1, exp_result + 1);
+            `endif
           end
           // Check for leading zeros (need to shift left)
           else begin
-            // Simple normalization: find leading 1
-            // (In real hardware, use priority encoder)
-            normalized_man <= sum;
-            // For now, assume already normalized (bit MAN_WIDTH+3 is 1)
-            guard <= sum[2];
-            round <= sum[1];
-            sticky <= sum[0];
+            // Normalization: shift left until bit MAN_WIDTH+3 is 1
+            // Simple cascaded if-else for priority encoding
+            // For single-precision: MAN_WIDTH+3 = 26, check bits 26 down to 3
+
+            // Start from the MSB and check each bit position
+            if (sum[MAN_WIDTH+3]) begin
+              // Already normalized - bit 26 is set
+              normalized_man <= sum;
+              adjusted_exp <= exp_result;
+              guard <= sum[2];
+              round <= sum[1];
+              sticky <= sum[0];
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] NORMALIZE: already normalized, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                       sum, exp_result, sum[2], sum[1], sum[0]);
+              `endif
+            end else if (sum[MAN_WIDTH+2]) begin
+              // Shift left by 1
+              normalized_man <= sum << 1;
+              adjusted_exp <= exp_result - 1;
+              guard <= sum[1];
+              round <= sum[0];
+              sticky <= 1'b0;
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] NORMALIZE: shifted left 1, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                       sum << 1, exp_result - 1, sum[1], sum[0], 1'b0);
+              `endif
+            end else if (sum[MAN_WIDTH+1]) begin
+              // Shift left by 2
+              normalized_man <= sum << 2;
+              adjusted_exp <= exp_result - 2;
+              guard <= sum[0];
+              round <= 1'b0;
+              sticky <= 1'b0;
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] NORMALIZE: shifted left 2, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                       sum << 2, exp_result - 2, sum[0], 1'b0, 1'b0);
+              `endif
+            end else begin
+              // Need to shift by more than 2 (rare case - very small result)
+              // For now, shift by 3 and handle larger shifts in future
+              normalized_man <= sum << 3;
+              adjusted_exp <= exp_result - 3;
+              guard <= 1'b0;
+              round <= 1'b0;
+              sticky <= 1'b0;
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] NORMALIZE: shifted left 3+, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                       sum << 3, exp_result - 3, 1'b0, 1'b0, 1'b0);
+              `endif
+            end
           end
 
           // Check for overflow
@@ -259,7 +364,9 @@ module fp_adder #(
             flag_of <= 1'b1;
             // Return ±infinity based on rounding mode
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            state <= DONE;
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] NORMALIZE: exponent overflow, returning Inf");
+            `endif
           end
         end
 
@@ -267,35 +374,24 @@ module fp_adder #(
         // ROUND: Apply rounding mode
         // ============================================================
         ROUND: begin
-          // Determine if we should round up
-          case (rounding_mode)
-            3'b000: begin  // RNE: Round to nearest, ties to even
-              round_up <= guard && (round || sticky || normalized_man[3]);
-            end
-            3'b001: begin  // RTZ: Round toward zero
-              round_up <= 1'b0;
-            end
-            3'b010: begin  // RDN: Round down (toward -∞)
-              round_up <= sign_result && (guard || round || sticky);
-            end
-            3'b011: begin  // RUP: Round up (toward +∞)
-              round_up <= !sign_result && (guard || round || sticky);
-            end
-            3'b100: begin  // RMM: Round to nearest, ties to max magnitude
-              round_up <= guard;
-            end
-            default: begin  // Invalid rounding mode
-              round_up <= 1'b0;
-            end
-          endcase
+          `ifdef DEBUG_FPU
+          $display("[FP_ADDER] ROUND inputs: G=%b R=%b S=%b LSB=%b rmode=%d",
+                   guard, round, sticky, normalized_man[3], rounding_mode);
+          `endif
 
-          // Apply rounding
-          if (round_up) begin
+          // Apply rounding (using combinational round_up_comb)
+          // Extract mantissa without implicit 1: normalized_man[MAN_WIDTH+2:3]
+          // This gives us 23 bits for single-precision (bits 25:3)
+          `ifdef DEBUG_FPU
+          $display("[FP_ADDER] ROUND: sign=%b exp=%h man=%h round_up=%b",
+                   sign_result, adjusted_exp[EXP_WIDTH-1:0], normalized_man[MAN_WIDTH+2:3], round_up_comb);
+          `endif
+          if (round_up_comb) begin
             result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
-                       normalized_man[MAN_WIDTH+3:3] + 1'b1};
+                       normalized_man[MAN_WIDTH+2:3] + 1'b1};
           end else begin
             result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
-                       normalized_man[MAN_WIDTH+3:3]};
+                       normalized_man[MAN_WIDTH+2:3]};
           end
 
           // Set inexact flag
@@ -307,6 +403,9 @@ module fp_adder #(
         // ============================================================
         DONE: begin
           // Just hold result
+          `ifdef DEBUG_FPU
+          $display("[FP_ADDER] Result: %h", result);
+          `endif
         end
 
       endcase

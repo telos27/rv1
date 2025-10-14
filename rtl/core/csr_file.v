@@ -335,9 +335,19 @@ module csr_file #(
       CSR_SIP:       csr_rdata = sip_value;
       CSR_SATP:      csr_rdata = satp_r;
       // Floating-point CSRs
-      CSR_FFLAGS:    csr_rdata = {{(XLEN-5){1'b0}}, fflags_r};    // Zero-extend to XLEN
+      CSR_FFLAGS:    begin
+        // Forward new flags if being accumulated in same cycle (WB stage hazard)
+        csr_rdata = {{(XLEN-5){1'b0}}, (fflags_we ? (fflags_r | fflags_in) : fflags_r)};
+        `ifdef DEBUG_FPU
+        $display("[CSR] Read FFLAGS: fflags_r=%05b fflags_in=%05b fflags_we=%b, rdata=%h",
+                 fflags_r, fflags_in, fflags_we, {{(XLEN-5){1'b0}}, (fflags_we ? (fflags_r | fflags_in) : fflags_r)});
+        `endif
+      end
       CSR_FRM:       csr_rdata = {{(XLEN-3){1'b0}}, frm_r};       // Zero-extend to XLEN
-      CSR_FCSR:      csr_rdata = {{(XLEN-8){1'b0}}, frm_r, fflags_r};  // {frm[7:5], fflags[4:0]}
+      CSR_FCSR:      begin
+        // Forward new flags if being accumulated in same cycle (WB stage hazard)
+        csr_rdata = {{(XLEN-8){1'b0}}, frm_r, (fflags_we ? (fflags_r | fflags_in) : fflags_r)};
+      end
       default:       csr_rdata = {XLEN{1'b0}};  // Return 0 for unknown CSRs
     endcase
   end
@@ -553,6 +563,10 @@ module csr_file #(
       // Flags are sticky - once set, they remain until explicitly cleared via CSR write
       if (fflags_we) begin
         fflags_r <= fflags_r | fflags_in;  // Accumulate (bitwise OR)
+        `ifdef DEBUG_FPU
+        $display("[CSR] FFlags accumulate: old=%05b new=%05b result=%05b",
+                 fflags_r, fflags_in, fflags_r | fflags_in);
+        `endif
       end
     end
   end

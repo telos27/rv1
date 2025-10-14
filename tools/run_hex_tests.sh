@@ -22,16 +22,30 @@ TB_DIR="$RV1_DIR/tb"
 
 # Check arguments
 PATTERN="${1:-rv32}"
+DEBUG_FPU="${DEBUG_FPU:-0}"  # Set to 1 to enable FPU debug output
+
 echo "=========================================="
 echo "RV1 Compliance Tests (from hex files)"
 echo "=========================================="
-echo "Pattern: ${PATTERN}-*.hex"
+echo "Pattern: ${PATTERN}"
+if [ "$DEBUG_FPU" = "1" ]; then
+  echo "Debug: FPU debugging enabled"
+fi
 echo ""
 
-# Find tests
-TESTS=$(ls "$HEX_DIR/${PATTERN}"*-*.hex 2>/dev/null | sort)
+# Find tests - handle both patterns:
+# 1. If pattern already includes full test name (e.g. rv32uf-p-fadd), match exactly
+# 2. Otherwise match all tests with that prefix (e.g. rv32uf matches rv32uf-*.hex)
+if [ -f "$HEX_DIR/${PATTERN}.hex" ]; then
+  # Exact match - single test
+  TESTS="$HEX_DIR/${PATTERN}.hex"
+else
+  # Pattern match - multiple tests
+  TESTS=$(ls "$HEX_DIR/${PATTERN}"*-*.hex 2>/dev/null | sort)
+fi
+
 if [ -z "$TESTS" ]; then
-  echo -e "${RED}No tests found matching: ${PATTERN}*.hex${NC}"
+  echo -e "${RED}No tests found matching: ${PATTERN}${NC}"
   exit 1
 fi
 
@@ -49,10 +63,12 @@ for hex_file in $TESTS; do
   TOTAL=$((TOTAL + 1))
 
   # Compile testbench
-  iverilog -g2012 \
-    -I"$RTL_DIR" \
-    -DCOMPLIANCE_TEST \
-    -DMEM_FILE=\""$hex_file"\" \
+  IVERILOG_OPTS="-g2012 -I$RTL_DIR -DCOMPLIANCE_TEST -DMEM_FILE=\"$hex_file\""
+  if [ "$DEBUG_FPU" = "1" ]; then
+    IVERILOG_OPTS="$IVERILOG_OPTS -DDEBUG_FPU"
+  fi
+
+  iverilog $IVERILOG_OPTS \
     -o "$SIM_DIR/test_${test_name}.vvp" \
     "$RTL_DIR"/core/*.v \
     "$RTL_DIR"/memory/*.v \

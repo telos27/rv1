@@ -140,6 +140,20 @@ module tb_core_pipelined;
         end
       end
 
+      // FPU debug output - log FP instructions completing in WB stage
+      `ifdef DEBUG_FPU
+      if (DUT.memwb_fp_reg_write && DUT.memwb_valid) begin
+        $display("[%0d] FPU WB: fd=f%0d | result=%h | fflags=%05b (NV=%b DZ=%b OF=%b UF=%b NX=%b)",
+                 cycle_count, DUT.memwb_fp_rd_addr,
+                 DUT.memwb_fp_result,
+                 {DUT.memwb_fp_flag_nv, DUT.memwb_fp_flag_dz, DUT.memwb_fp_flag_of, DUT.memwb_fp_flag_uf, DUT.memwb_fp_flag_nx},
+                 DUT.memwb_fp_flag_nv, DUT.memwb_fp_flag_dz, DUT.memwb_fp_flag_of, DUT.memwb_fp_flag_uf, DUT.memwb_fp_flag_nx);
+        $display("       wb_sel=%03b mem_data=%h wb_fp_data=%h",
+                 DUT.memwb_wb_sel, DUT.memwb_mem_read_data, DUT.wb_fp_data);
+        $display("       FCSR fflags=%05b (accumulated)", DUT.csr_fflags);
+      end
+      `endif
+
       // Check for EBREAK (0x00100073) in IF stage
       // We'll wait for it to reach WB stage before checking results
       if (instruction == 32'h00100073) begin

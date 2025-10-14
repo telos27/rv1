@@ -92,6 +92,15 @@ module fpu #(
 
   assign adder_start = start && (fp_alu_op == FP_ADD || fp_alu_op == FP_SUB);
 
+  `ifdef DEBUG_FPU
+  always @(posedge clk) begin
+    if (adder_start) begin
+      $display("[FPU] %s: operand_a=%h operand_b=%h",
+               (fp_alu_op == FP_SUB) ? "FSUB" : "FADD", operand_a, operand_b);
+    end
+  end
+  `endif
+
   fp_adder #(.FLEN(FLEN)) u_fp_adder (
     .clk            (clk),
     .reset_n        (reset_n),
