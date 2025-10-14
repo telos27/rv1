@@ -2,49 +2,52 @@
 
 ## Overview
 
-This document details the microarchitecture of the RV1 RISC-V processor core across all development phases.
+This document details the microarchitecture of the RV1 RISC-V processor core.
 
-**Implementation Status**: Phase 10.2 Complete (Pipelined + Forwarding + Supervisor Mode + Extensions)
-**Last Updated**: 2025-10-12 (Phase 10.2 - Supervisor CSRs & SRET)
+**Implementation Status**: Phase 13 Complete - Full RV32IMAFDC with Supervisor Mode & Virtual Memory
+**Last Updated**: 2025-10-13 (Phase 7 - A Extension 100% Compliant)
 
-## Actual Implementation Status
+## Implementation Summary
 
-### Completed Modules
+### Current Status
+- **ISA**: RV32IMAFDC + RV64IMAFDC (parameterized)
+- **Architecture**: 5-stage pipelined with full hazard handling
+- **Privilege Modes**: M-mode, S-mode, U-mode (full privilege system)
+- **Virtual Memory**: Sv32 (RV32) and Sv39 (RV64) with 16-entry TLB
+- **Extensions**: M (multiply/divide), A (atomics), F/D (floating-point), C (compressed)
+- **Compliance**: RV32I 42/42 (100%), RV32M 8/8 (100%), RV32A 10/10 (100%), RV32C 1/1 (100%)
 
-| Module | File | Status | Description |
-|--------|------|--------|-------------|
-| Program Counter | `rtl/core/pc.v` | ✅ Complete | 32-bit PC with stall support |
-| Instruction Memory | `rtl/memory/instruction_memory.v` | ✅ Complete | 4KB ROM, hex file loading |
-| Data Memory | `rtl/memory/data_memory.v` | ✅ Complete | 4KB RAM, byte/halfword/word access |
-| Decoder | `rtl/core/decoder.v` | ✅ Complete | All instruction formats, immediate generation |
-| Control Unit | `rtl/core/control.v` | ✅ Complete | All 47 RV32I instructions supported |
-| Register File | `rtl/core/register_file.v` | ✅ Complete | 32 registers, x0 hardwired to zero |
-| ALU | `rtl/core/alu.v` | ✅ Complete | 10 operations with flags |
-| Branch Unit | `rtl/core/branch_unit.v` | ✅ Complete | All 6 branch types + jumps |
-| Top-Level Core | `rtl/core/rv32i_core.v` | ✅ Complete | Full integration, single-cycle |
+### Implementation Scale
+- **Total RTL**: ~7,500 lines across 36 modules
+- **Instructions**: 184 total (47 base + 13 M + 22 A + 52 F/D + 40 C + 10 system)
+- **Testbenches**: ~3,000 lines
+- **Documentation**: ~6,000 lines
 
-### Implementation Highlights
+### Core Modules (36 total)
 
-- **Total RTL Lines**: ~705 lines
-- **All RV32I Instructions**: 47/47 implemented
-- **Testbenches**: 4 (3 unit + 1 integration)
-- **Test Programs**: 3 assembly programs
-- **Synthesis Ready**: No latches, clean Verilog-2001
+**Datapath & Control** (9 modules):
+- `alu.v`, `register_file.v`, `pc.v`, `decoder.v`, `control.v`, `branch_unit.v`
+- `exception_unit.v`, `csr_file.v`, `mmu.v`
 
-### Design Decisions Made
+**Pipeline Infrastructure** (8 modules):
+- `rv32i_core_pipelined.v` (top-level), `ifid_register.v`, `idex_register.v`, `exmem_register.v`, `memwb_register.v`
+- `forwarding_unit.v`, `hazard_detection_unit.v`, `rvc_decoder.v`
 
-1. **Immediate Generation**: Integrated into decoder module rather than separate imm_gen module
-2. **LUI Implementation**: Operand A forced to 0 in top-level (simpler than special ALU mode)
-3. **AUIPC Implementation**: Operand A set to PC in top-level
-4. **Branch Unit**: Separate module for cleaner design
-5. **Memory**: Synchronous write, combinational read for single-cycle
-6. **FENCE/ECALL/EBREAK**: Implemented as NOPs (proper handling in Phase 4)
+**M Extension** (3 modules):
+- `mul_unit.v`, `div_unit.v`, `mul_div_unit.v`
 
-### Deviations from Original Plan
+**A Extension** (2 modules):
+- `atomic_unit.v`, `reservation_station.v`
 
-- ✅ Immediate generator integrated into decoder (simpler)
-- ✅ Branch unit separated out (cleaner)
-- ✅ No separate imm_sel mux needed (handled in control unit)
+**F/D Extension** (11 modules):
+- `fpu.v`, `fp_register_file.v`, `fp_adder.v`, `fp_multiplier.v`, `fp_divider.v`, `fp_sqrt.v`
+- `fp_fma.v`, `fp_converter.v`, `fp_compare.v`, `fp_classify.v`, `fp_minmax.v`, `fp_sign.v`
+
+**Memory** (2 modules):
+- `instruction_memory.v`, `data_memory.v`
+
+**Legacy** (1 module):
+- `rv32i_core.v` (original single-cycle core, kept for reference)
 
 ## Design Parameters
 
@@ -802,11 +805,56 @@ mideleg   (0x303): Machine interrupt delegation to S-mode
 4. **No latches** (always specify all cases)
 5. **Clock domain**: Single clock for Phase 1-3
 
-## Future Considerations
+## Known Limitations
 
-- Interrupt controller (PLIC)
-- Timer (CLINT)
-- Debug module
-- Performance counters
-- Virtual memory (MMU)
-- Floating-point unit (F/D extensions)
+**⚠️ Address these before major new features:**
+
+1. **Atomic Forwarding Overhead (6%)**
+   - Location: `hazard_detection_unit.v:126-155`
+   - Issue: Conservative stall adds 1,049 cycles per LR/SC test (6% overhead)
+   - Fix: Add single-cycle state tracking (would reduce to 0.3% overhead)
+   - Justification: Simplicity > performance, but should optimize eventually
+
+2. **FPU Compliance Testing Incomplete**
+   - Custom tests: 13/13 passing
+   - Official tests: 20 tests (rv32uf/rv32ud) not yet run
+   - Action: Run official compliance before claiming full IEEE 754 support
+
+3. **Mixed 16/32-bit Instruction Streams**
+   - Pure compressed: Working
+   - Pure 32-bit: Working
+   - Mixed: Addressing bugs in some cases
+   - Action: Debug before production use
+
+**See:** [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) for complete details.
+
+---
+
+## Future Work
+
+### Performance Enhancements (Optimization)
+- **Atomic forwarding optimization** (6% → 0.3%) ⚡ *High priority*
+- Branch prediction (2-bit saturating counters, BTB)
+- Cache hierarchy (I-cache, D-cache with write-back)
+- Larger TLB (16 → 64 entries)
+- Superscalar execution (dual-issue)
+
+### Testing & Validation (Quality)
+- **Official RISC-V F/D compliance tests** 🧪 *High priority*
+- **Mixed instruction debugging** 🔀 *High priority*
+- Formal verification for critical paths
+- Performance benchmarking (Dhrystone, CoreMark, SPEC)
+
+### System Features (Functionality)
+- Interrupt controller (PLIC - Platform-Level Interrupt Controller)
+- Timer (CLINT - Core-Local Interruptor)
+- Debug module (JTAG, hardware breakpoints)
+- Performance counters (cycle, instruction, cache miss counters)
+- Physical memory protection (PMP)
+
+### Hardware Deployment (Real-World)
+- FPGA synthesis and validation
+- Peripheral interfaces (UART, GPIO, SPI, I2C)
+- Boot ROM and bootloader
+- Run Linux or xv6-riscv
+- Multicore/SMP support

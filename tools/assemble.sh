@@ -27,7 +27,7 @@ ELF_FILE="tests/vectors/${BASE_NAME}.elf"
 DUMP_FILE="tests/vectors/${BASE_NAME}.dump"
 
 # RISC-V toolchain prefix
-RISCV_PREFIX=${RISCV_PREFIX:-riscv32-unknown-elf-}
+RISCV_PREFIX=${RISCV_PREFIX:-riscv64-unknown-elf-}
 
 # Check if RISC-V toolchain is available
 if ! command -v ${RISCV_PREFIX}as &> /dev/null; then
@@ -42,7 +42,7 @@ ${RISCV_PREFIX}as -march=rv32i -mabi=ilp32 -o "$OBJ_FILE" "$ASM_FILE"
 
 # Link
 echo "Linking..."
-${RISCV_PREFIX}ld -T tests/linker.ld -o "$ELF_FILE" "$OBJ_FILE"
+${RISCV_PREFIX}ld -m elf32lriscv -T tests/linker.ld -o "$ELF_FILE" "$OBJ_FILE"
 
 # Convert to hex
 echo "Generating hex file..."

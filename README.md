@@ -43,6 +43,31 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 - **Supervisor Mode Tests**: 10/12 tests PASSING (83%)
 - **Configuration Support**: RV32/RV64, multiple extensions, compressed instructions
 
+### **Known Limitations** ⚠️
+
+Before implementing new features, consider these existing limitations:
+
+1. **⚡ Atomic Forwarding Overhead (6%)** - Conservative stall approach adds performance overhead
+   - Current: Entire atomic operation stalls if RAW dependency exists
+   - Optimal: Single-cycle transition tracking would reduce to 0.3% overhead
+   - Trade-off: Simplicity chosen over performance
+   - **Action**: Consider optimizing before adding more complex features
+
+2. **🧪 FPU Compliance Testing Incomplete** - Custom tests pass, but official tests not run
+   - Custom tests: 13/13 passing (100%)
+   - Official RISC-V F/D tests: Infrastructure ready, not yet executed
+   - **Action**: Run official rv32uf/rv32ud compliance tests before claiming full FPU support
+
+3. **🔀 Mixed Compressed/Normal Instructions** - Addressing issue with mixed 16/32-bit streams
+   - Pure compressed: Works correctly
+   - Pure 32-bit: Works correctly
+   - Mixed: Incorrect results in some cases
+   - **Action**: Debug before relying on mixed instruction streams
+
+**See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for complete details.**
+
+---
+
 ## Recent Achievements
 
 ### **🎉 Phase 13 COMPLETE: 100% RV32I Compliance Restored!** (2025-10-12)
@@ -340,15 +365,39 @@ See [PHASES.md](PHASES.md) for detailed development history and [docs/PHASE8_VER
 - [ ] Debug and fix test timeouts (next phase)
 - [ ] Achieve 100% official compliance across all extensions
 
-### Future Extensions
-- [ ] Cache implementation (I-cache, D-cache)
-- [ ] Branch prediction
-- [ ] Interrupt controller (PLIC/CLINT)
-- [ ] PMP (Physical Memory Protection)
-- [ ] FPGA synthesis and hardware testing
-- [ ] Performance optimization
-- [ ] Multicore support
+### Future Work
+
+**⚠️ Before Starting New Features:**
+- Fix atomic forwarding overhead (6% → 0.3%) - See KNOWN_ISSUES.md §1
+- Run official FPU compliance tests (rv32uf/rv32ud) - See KNOWN_ISSUES.md §3
+- Debug mixed compressed/normal instruction issue - See KNOWN_ISSUES.md §2
+
+**Performance Enhancements:**
+- [ ] **Optimize atomic forwarding** (reduce 6% overhead to 0.3%) ⚡ *Priority*
+- [ ] Branch prediction (2-bit saturating counters)
+- [ ] Cache hierarchy (I-cache, D-cache)
+- [ ] Larger TLB (16 → 64 entries)
+
+**Testing & Validation:**
+- [ ] **Run official RISC-V F/D compliance tests** (11 rv32uf + 9 rv32ud) 🧪 *Priority*
+- [ ] **Debug mixed compressed/normal instructions** 🔀 *Priority*
+- [ ] Performance benchmarking (Dhrystone, CoreMark)
+- [ ] Formal verification for critical paths
+- [ ] Test infrastructure improvements (see [docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md](docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md))
+
+**System Features:**
+- [ ] Interrupt controller (PLIC)
+- [ ] Timer (CLINT)
+- [ ] Debug module (hardware breakpoints)
+- [ ] Performance counters
+- [ ] Physical memory protection (PMP)
+
+**Hardware Deployment:**
+- [ ] FPGA synthesis and hardware validation
+- [ ] Peripheral interfaces (UART, GPIO, SPI)
+- [ ] Boot ROM and bootloader
 - [ ] Run Linux or xv6-riscv
+- [ ] Multicore support
 
 ## Known Limitations and Testing Gaps
 

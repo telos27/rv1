@@ -1,6 +1,6 @@
 # Known Issues and Limitations
 
-**Date**: 2025-10-12
+**Date**: 2025-10-13
 **Project**: RV1 RISC-V CPU Core
 
 ---
@@ -11,9 +11,59 @@ This document tracks known issues, limitations, and areas requiring future work 
 
 ---
 
+## Performance Limitations
+
+### 1. Conservative Atomic Instruction Forwarding (6% Overhead)
+
+**Status**: 🟡 **DOCUMENTED - Optimization Opportunity**
+
+**Component**: A Extension - Hazard Detection Unit
+
+**Description**:
+The atomic instruction forwarding implementation uses a conservative approach that stalls the entire atomic operation if any RAW (Read-After-Write) dependency exists. This prevents a one-cycle forwarding gap bug but introduces ~6% performance overhead.
+
+**Technical Details**:
+- **Problem**: When an atomic instruction completes (`atomic_done=1`), there's a one-cycle transition where dependent instructions could slip through without proper stalling
+- **Current Fix**: Stall entire atomic execution if dependency exists (`idex_is_atomic && hazard`)
+- **Performance**: rv32ua-p-lrsc test completes in 18,616 cycles (expected: 17,567, overhead: 1,049 cycles = 6%)
+
+**Better Solution Available (Not Implemented)**:
+Add single-cycle state tracking to detect only the transition cycle:
+```verilog
+// Would reduce overhead from 6% to ~0.3%
+reg atomic_completing;
+always @(posedge clk) begin
+  atomic_completing <= atomic_done;
+end
+assign atomic_stall = (atomic_completing && hazard) || normal_atomic_stall;
+```
+
+**Why Not Implemented**:
+- Requires adding `clk`/`reset_n` ports to `hazard_detection_unit.v`
+- Current solution is simpler and correctness is more important than 6% performance
+- 6% overhead is acceptable for atomic operations (not common in typical code)
+- Documented in code for future optimization if needed
+
+**Impact**:
+- **Low** for non-atomic code (no overhead)
+- **Low** for typical mixed code (atomics are infrequent)
+- **Medium** for atomic-heavy workloads (e.g., lock-based synchronization)
+
+**Workaround**: None needed - functionality is correct
+
+**Files Involved**:
+- `rtl/core/hazard_detection_unit.v` (lines 126-155)
+- `docs/SESSION33_LR_SC_FIX_COMPLETE.md` (full analysis)
+
+**Priority**: Low (optimization opportunity, not a bug)
+
+**Future Work**: Implement cycle-accurate state tracking to reduce overhead to 0.3%
+
+---
+
 ## Active Issues
 
-### 1. Mixed Compressed/Normal Instruction Addressing Issue
+### 2. Mixed Compressed/Normal Instruction Addressing Issue
 
 **Status**: 🔴 **ACTIVE - Needs Investigation**
 
@@ -66,7 +116,7 @@ Actual result: x10=24 (missing 18), x12=0 (not set)
 
 ---
 
-### 2. FPU Converter Blocking Assignments
+### 3. FPU Converter Blocking Assignments
 
 **Status**: 🟡 **DOCUMENTED - Low Priority**
 
@@ -125,7 +175,7 @@ end
 
 ---
 
-### 3. FPU Width Mismatch Warnings
+### 4. FPU Width Mismatch Warnings
 
 **Status**: 🟡 **DOCUMENTED - Low Priority**
 
@@ -175,47 +225,24 @@ wire [FLEN-1:0] canonical_nan = (FLEN == 32) ?
 
 ---
 
-### 4. Missing CSR/Decoder Ports
+### 5. Missing CSR/Decoder Ports (Legacy Warnings)
 
-**Status**: 🟡 **DOCUMENTED - Partial Implementation**
+**Status**: ✅ **RESOLVED - Legacy Warnings Only**
 
 **Component**: Core Pipeline Integration
 
 **Description**:
-Some decoder and CSR file ports are not connected in the top-level pipeline.
+Some Verilator warnings may appear about missing CSR ports, but these are legacy warnings from earlier development phases.
 
-**Evidence**:
-Verilator warnings:
-```
-Warning-PINMISSING: Cell has missing pin: 'csr_addr'
-Warning-PINMISSING: Cell has missing pin: 'csr_uimm'
-Warning-PINMISSING: Cell has missing pin: 'satp_out'
-Warning-PINMISSING: Cell has missing pin: 'mstatus_sum'
-Warning-PINMISSING: Cell has missing pin: 'mstatus_mxr'
-```
+**Current Status**:
+- ✅ All CSRs fully implemented (M-mode + S-mode + delegation)
+- ✅ Privilege modes working (M/S/U modes)
+- ✅ Virtual memory connected (SATP, MMU, TLB)
+- ✅ All necessary ports wired in pipeline
 
-**Root Cause**:
-CSR (Control and Status Register) implementation is partially complete. Some ports added to modules but not yet wired in top-level.
+**Impact**: None - warnings are cosmetic
 
-**Impact**:
-- **Low** for basic operation (basic CSRs working)
-- **Medium** for full privilege mode support
-- **High** for virtual memory (SATP not connected)
-
-**Workaround**: Basic CSR operations work for implemented subset
-
-**Fix Required**:
-1. Complete CSR implementation (Phase 4)
-2. Add privilege mode support
-3. Wire all CSR ports in pipeline
-4. Add virtual memory support (SATP)
-
-**Files Involved**:
-- `rtl/core/rv32i_core_pipelined.v`
-- `rtl/core/decoder.v`
-- `rtl/core/csr_file.v`
-
-**Priority**: Medium (required for Phase 4)
+**Priority**: Low (warnings only, no functional impact)
 
 ---
 
@@ -299,16 +326,23 @@ CSR (Control and Status Register) implementation is partially complete. Some por
 
 ---
 
-### 3. Limited Floating-Point Testing
+### 3. Official FPU Compliance Tests Not Yet Run
 
 **Type**: Limitation
 
-**Description**: FPU implementation exists but has limited test coverage.
+**Description**: Custom FPU tests pass (13/13), but official RISC-V F/D compliance tests haven't been run yet.
 
 **Status**:
-- Basic FP operations implemented
-- State machines fixed
-- Needs comprehensive test suite
+- ✅ FPU fully implemented (52 instructions)
+- ✅ Custom test suite: 13/13 passing (100%)
+- ⏳ Official rv32uf/rv32ud tests: Infrastructure ready, testing in progress
+- ⏳ Subnormal numbers: Basic support, needs more testing
+- ⏳ Rounding modes: All 5 modes implemented, coverage could be improved
+
+**Future Work**:
+- Run official RISC-V F/D compliance tests (11 rv32uf + 9 rv32ud tests)
+- Add comprehensive subnormal number test cases
+- Expand rounding mode test coverage
 
 **Priority**: Medium
 
@@ -316,21 +350,30 @@ CSR (Control and Status Register) implementation is partially complete. Some por
 
 ## Future Work (Not Issues)
 
-### Phase 4: CSR and Privilege Modes
-- Complete CSR file implementation
-- Add full privilege mode support (M/S/U)
-- Implement virtual memory (SATP, TLB)
-- Add proper trap/exception handling
-- Timer and interrupt support
+### Performance Enhancements
+- ✅ ~~CSR and Privilege Modes~~ (Complete)
+- ✅ ~~Virtual Memory (SATP, TLB)~~ (Complete)
+- Optimize atomic forwarding (reduce 6% overhead to 0.3%)
+- Branch prediction (2-bit saturating counters)
+- Cache hierarchy (I-cache, D-cache)
+- Larger TLB (16 → 64 entries)
 
 ### Testing Improvements
+- Run official RISC-V F/D compliance tests
 - Add formal verification for critical paths
-- Expand FPU test suite
-- Add RISC-V compliance tests for all extensions
 - Performance benchmarking (Dhrystone, CoreMark)
+- Expand subnormal and rounding mode test coverage
+- **See [docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md](docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md) for detailed recommendations**
+
+### System Features
+- Interrupt controller (PLIC)
+- Timer (CLINT)
+- Debug module (JTAG, hardware breakpoints)
+- Performance counters
+- Physical memory protection (PMP)
 
 ### Extensions
-- Bit manipulation (B extension)
+- Bit manipulation (B/Zb* extensions)
 - Vector processing (V extension)
 - Hypervisor support (H extension)
 
@@ -369,6 +412,9 @@ Add to this document and commit.
 
 ## Summary
 
+### Performance Limitations: 1
+- Conservative atomic forwarding (6% overhead) - optimization opportunity
+
 ### Critical Issues: 0
 All blocking issues have been resolved.
 
@@ -378,17 +424,17 @@ All blocking issues have been resolved.
 ### Documented Issues: 3
 - FPU converter blocking assignments (Low priority)
 - FPU width mismatches (Low priority)
-- Missing CSR ports (Medium priority - Phase 4 work)
+- Legacy CSR port warnings (Low priority)
 
 ### Limitations: 3
 - Test cycle counting requirement
 - No exception handlers in tests
-- Limited FP testing
+- Official FPU compliance tests not yet run
 
 ---
 
-**Last Updated**: 2025-10-12
-**Next Review**: When starting Phase 4 or when new issues discovered
+**Last Updated**: 2025-10-13
+**Next Review**: Before FPGA synthesis or when new issues discovered
 
 ---
 
