@@ -4,13 +4,44 @@ This document tracks the development progress through each phase of the RV1 RISC
 
 ## Current Status
 
-**Active Phase**: Phase 13 - MMU Bare Mode Fix ✅ **COMPLETE**
-**Completion**: 100% ✅ | **RV32I Compliance: 42/42 (100%)** 🎉
-**Phase 7 (A Extension)**: ✅ **COMPLETE** (100%) - Fully integrated
+**Active Phase**: Phase 7 (A Extension) - ✅ **COMPLETE** (100%)
+**Completion**: **RV32I+M+A Compliance: 10/10 A tests (100%)** ✅
+**Phase 7 (A Extension)**: ✅ **100% COMPLIANT** (LR/SC forwarding bug fixed)
 **Phase 10 (Supervisor Mode & MMU)**: ✅ **COMPLETE** (100%)
-**Next Milestone**: Phase 8.5 - FPU Testing & Verification OR Further Extensions
+**Next Milestone**: Phase 8.5 - FPU Testing & Optimization
 
-**Recent Progress (2025-10-12 - Session 31 - Phase 13 Complete - 100% RV32I Compliance!):**
+**Recent Progress (2025-10-13 - Session 33 - LR/SC Bug Fix COMPLETE!):**
+- ✅ **PHASE 7 (A EXTENSION) 100% COMPLETE** - LR/SC forwarding bug fixed!
+  - **Bug #2 FIXED** ✅: Atomic instruction forwarding hazard (transition cycle bug)
+    - **Root Cause**: When atomic completes (`atomic_done=1`), dependent instructions slip through during transition cycle
+    - **Original Logic**: `(atomic_done && !exmem_is_atomic && hazard)` - fails because `exmem_is_atomic=1` during transition
+    - **Fix**: Simplified to `(idex_is_atomic && hazard)` - stall entire atomic execution if dependency exists
+    - **Result**: rv32ua-p-lrsc test **PASSES** in 18,616 cycles ✅
+    - **Performance Trade-off**: 6% overhead (1,049 extra cycles vs 17,567 expected)
+    - **File**: rtl/core/hazard_detection_unit.v:126-155
+    - **Documentation**: Prominently documented with FIXME for future optimization
+  - **Better Solution Available** (not implemented): Add state tracking for transition cycle only (~0.3% overhead vs 6%)
+    - Requires `clk`/`reset_n` ports on hazard_detection_unit
+    - Documented in code for future optimization if needed
+  - **Documentation**: Created docs/SESSION33_LR_SC_FIX_COMPLETE.md with full analysis
+
+**Earlier Progress (2025-10-13 - Session 32 - LR/SC Debug - Partial Fix):**
+- ⚠️ **PHASE 15.4 PARTIAL** - Debugging LR/SC test failure (2 bugs found, 1 fixed)
+  - **Bug #1 FIXED** ✅: Spurious reservation invalidation
+    - **Root Cause**: Stale `exmem_mem_write` signals from completed stores invalidated new reservations
+    - **Symptom**: LR sets reservation, immediately invalidated by old SW instruction
+    - **Fix**: Added `hold_exmem_prev` state tracking to detect NEW instructions entering MEM
+    - **Result**: LR/SC now succeed! Reservation persists correctly
+    - **File**: rtl/core/rv32i_core_pipelined.v:1178-1192
+  - **Bug #2 IDENTIFIED** ⚠️: Atomic instruction forwarding hazard
+    - **Root Cause**: One-cycle gap when atomic completes - dependent instruction advances without stall
+    - **Symptom**: BNEZ reads stale t3 value (0 from regfile) instead of SC result (0 from forwarding)
+    - **Timeline**: SC completes cycle N → BNEZ advances cycle N (no stall) → reads wrong data
+    - **Analysis**: Hazard detection has gap when `atomic_done=1` but `exmem_is_atomic` not yet set
+  - **Debug Methodology**: Systematic trace of reservation station, forwarding signals, hazard detection
+  - **Documentation**: Created docs/SESSION32_LR_SC_DEBUG.md (251 lines)
+
+**Earlier Progress (2025-10-12 - Session 31 - Phase 13 Complete - 100% RV32I Compliance!):**
 - ✅ **PHASE 13 COMPLETE** - Fixed MMU bare mode stale address bug → **100% RV32I COMPLIANCE!** 🎉
   - **Root Cause**: MMU integration caused stale address bug in bare mode (satp.MODE = 0)
   - **Issue**: Pipeline used MMU's registered `req_paddr` output from previous cycle

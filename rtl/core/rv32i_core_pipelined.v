@@ -1110,8 +1110,26 @@ module rv_core_pipelined #(
   wire            ex_atomic_mem_ready;
 
   // A unit start signal: pulse once when A instruction first enters EX
+  // Track if current atomic instruction in IDEX has already been executed
+  reg atomic_already_started;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      atomic_already_started <= 1'b0;
+    end else if (flush_idex) begin
+      // Flush clears IDEX, reset flag
+      atomic_already_started <= 1'b0;
+    end else if (!hold_exmem && idex_valid) begin
+      // Instruction moving from IDEX to EXMEM (new instruction will enter IDEX next cycle)
+      atomic_already_started <= 1'b0;
+    end else if (ex_atomic_done) begin
+      // Atomic operation completed, set flag to prevent restart
+      atomic_already_started <= 1'b1;
+    end
+  end
+
   wire            a_unit_start;
-  assign a_unit_start = idex_is_atomic && idex_valid && !ex_atomic_busy && !ex_atomic_done;
+  assign a_unit_start = idex_is_atomic && idex_valid && !ex_atomic_busy && !ex_atomic_done && !atomic_already_started;
 
   // Reservation station signals
   wire            ex_lr_valid;
@@ -1157,8 +1175,45 @@ module rv_core_pipelined #(
   wire reservation_invalidate;
   wire [XLEN-1:0] reservation_inv_addr;
 
-  assign reservation_invalidate = exmem_mem_write && !exmem_is_atomic;
+  // Only invalidate reservation when a NEW instruction enters MEM stage with a store
+  // Track when EXMEM was held last cycle - if it was held, then releasing it means
+  // the instruction that was in EX is NOW entering MEM for the first time
+  reg hold_exmem_prev;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      hold_exmem_prev <= 1'b0;
+    else
+      hold_exmem_prev <= hold_exmem;
+  end
+
+  // Invalidate when: (1) EXMEM was held last cycle and is now released (instruction entering MEM)
+  //               OR (2) EXMEM wasn't held last cycle (normal pipeline flow - instruction just entered MEM)
+  // Basically: invalidate on the FIRST cycle an instruction is in MEM stage
+  assign reservation_invalidate = exmem_mem_write && !exmem_is_atomic && !hold_exmem_prev && exmem_valid;
   assign reservation_inv_addr = exmem_alu_result;
+
+  `ifdef DEBUG_ATOMIC
+  always @(posedge clk) begin
+    if (reservation_invalidate) begin
+      $display("[CORE] Reservation invalidate: PC=0x%08h, mem_wr=%b, is_atomic=%b, hold=%b, valid=%b, addr=0x%08h",
+               exmem_pc, exmem_mem_write, exmem_is_atomic, hold_exmem, exmem_valid, exmem_alu_result);
+    end
+    if (idex_is_atomic && idex_valid) begin
+      $display("[CORE] Atomic in IDEX: PC=0x%08h, is_atomic=%b, hold_exmem=%b, done=%b, result=0x%08h",
+               idex_pc, idex_is_atomic, hold_exmem, ex_atomic_done, ex_atomic_result);
+    end
+    if (exmem_is_atomic && exmem_valid) begin
+      $display("[CORE] Atomic in EXMEM: PC=0x%08h, is_atomic=%b, mem_wr=%b, result=0x%08h",
+               exmem_pc, exmem_is_atomic, exmem_mem_write, exmem_atomic_result);
+    end
+    if (idex_pc == 32'h20 && idex_valid) begin
+      $display("[CORE] BNEZ in IDEX: PC=0x%08h, rs1(t3)=x%0d, rs1_data=0x%08h, id_forward_a=%b",
+               idex_pc, idex_rs1_addr, idex_rs1_data, id_forward_a);
+      $display("      exmem: rd=x%0d, reg_wr=%b, valid=%b, is_atomic=%b",
+               exmem_rd_addr, exmem_reg_write, exmem_valid, exmem_is_atomic);
+    end
+  end
+  `endif
 
   reservation_station #(
     .XLEN(XLEN)
@@ -1601,7 +1656,7 @@ module rv_core_pipelined #(
     .pc_plus_4_in(exmem_pc_plus_4),
     .reg_write_in(reg_write_gated),     // Gated to prevent write on exception
     .wb_sel_in(exmem_wb_sel),
-    .valid_in(exmem_valid && !exception),  // Mark invalid on exception
+    .valid_in(exmem_valid && !exception && !hold_exmem),  // Mark invalid on exception or when EXMEM held
     .mul_div_result_in(exmem_mul_div_result),
     .atomic_result_in(exmem_atomic_result),
     // F/D extension inputs
