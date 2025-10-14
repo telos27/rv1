@@ -779,6 +779,9 @@ module rv_core_pipelined #(
     .fpu_busy(ex_fpu_busy),
     .fpu_done(ex_fpu_done),
     .idex_fp_alu_en(idex_fp_alu_en),
+    // CSR signals (for FFLAGS/FCSR dependency checking)
+    .id_csr_addr(id_csr_addr),
+    .id_csr_we(id_csr_we),
     // MMU
     .mmu_busy(mmu_busy),
     // Outputs

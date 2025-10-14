@@ -36,6 +36,10 @@ module hazard_detection_unit (
   input  wire        fpu_done,         // FPU operation complete (1 cycle pulse)
   input  wire        idex_fp_alu_en,   // FP instruction in EX stage
 
+  // CSR signals (for FFLAGS/FCSR dependency checking)
+  input  wire [11:0] id_csr_addr,      // CSR address in ID stage
+  input  wire        id_csr_we,        // CSR write enable in ID stage
+
   // MMU signals
   input  wire        mmu_busy,         // MMU is busy (page table walk in progress)
 
@@ -170,14 +174,50 @@ module hazard_detection_unit (
   wire mmu_stall;
   assign mmu_stall = mmu_busy;
 
+  // CSR-FPU dependency hazard: stall when CSR instruction accesses FFLAGS/FCSR while FPU is busy
+  // Bug Fix #6: FSFLAGS/FCSR instructions must wait for all pending FP operations to complete.
+  // Problem: If fsflags executes while FP operation is in pipeline, it reads stale flags,
+  //          then the FP operation completes and accumulates its flags, overwriting the CSR write.
+  // Solution: Stall CSR reads/writes to FFLAGS/FRM/FCSR when FPU has pending operations.
+  //
+  // CSR addresses:
+  //   0x001 = FFLAGS (exception flags)
+  //   0x002 = FRM (rounding mode)
+  //   0x003 = FCSR (full FP CSR = FRM[7:5] | FFLAGS[4:0])
+  //
+  // Note: We stall for ANY access (read or write) to these CSRs, and we check both
+  //       fpu_busy (operation in progress) and idex_fp_alu_en (FP op just started).
+  //       We don't stall when fpu_done=1 because that means the operation has completed
+  //       and flags are ready.
+  localparam CSR_FFLAGS = 12'h001;
+  localparam CSR_FRM    = 12'h002;
+  localparam CSR_FCSR   = 12'h003;
+
+  wire csr_accesses_fp_flags;
+  wire csr_fpu_dependency_stall;
+
+  // Check if ID stage CSR instruction accesses FP-related CSRs
+  // Note: FRM technically doesn't have a dependency on FPU operations, but for simplicity
+  //       and to avoid complexity, we conservatively stall for all three CSRs
+  assign csr_accesses_fp_flags = (id_csr_addr == CSR_FFLAGS) ||
+                                   (id_csr_addr == CSR_FRM) ||
+                                   (id_csr_addr == CSR_FCSR);
+
+  // Stall if CSR instruction in ID accesses FP flags AND FPU is busy or just started
+  // NOTE: We DO stall even when fpu_done=1 because flags are being written in that cycle
+  //       and won't be visible until the next cycle. Only after fpu_done goes low (next cycle)
+  //       are the flags safe to read.
+  assign csr_fpu_dependency_stall = csr_accesses_fp_flags &&
+                                     (fpu_busy || idex_fp_alu_en);
+
   // Generate control signals
   // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency,
-  // A extension forwarding hazard, FP extension dependency, or MMU dependency
-  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || mmu_stall;
-  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || mmu_stall;
-  // Note: Only bubble for load-use hazard (integer or FP), NOT for M/A/FP/MMU stall
-  // (M/A/FP/MMU stall uses hold signals on IDEX and EXMEM to keep instruction in place)
-  // For atomic_forward_hazard, we bubble to prevent the dependent instruction from using stale data
-  assign bubble_idex = load_use_hazard || fp_load_use_hazard || atomic_forward_hazard;
+  // A extension forwarding hazard, FP extension dependency, CSR-FPU dependency, or MMU dependency
+  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || mmu_stall;
+  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || mmu_stall;
+  // Note: Bubble for load-use hazards, atomic forwarding hazards, AND CSR-FPU dependency stalls
+  // (M/A/FP/MMU stalls use hold signals on IDEX and EXMEM to keep instruction in place)
+  // CSR-FPU stall needs bubble because it's a RAW hazard between FP op in EX and CSR in ID
+  assign bubble_idex = load_use_hazard || fp_load_use_hazard || atomic_forward_hazard || csr_fpu_dependency_stall;
 
 endmodule

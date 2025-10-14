@@ -140,6 +140,20 @@ module tb_core_pipelined;
         end
       end
 
+      // PC trace for debugging CSR-FPU hazard
+      `ifdef DEBUG_HAZARD
+      $display("[%0d] PC=%08h stall_pc=%b stall_ifid=%b flush=%b | fpu_busy=%b idex_fp_alu=%b csr_fpu_stall=%b",
+               cycle_count, pc, DUT.stall_pc, DUT.stall_ifid, DUT.flush_idex,
+               DUT.ex_fpu_busy, DUT.idex_fp_alu_en, DUT.hazard_unit.csr_fpu_dependency_stall);
+      $display("       IF: PC=%08h | ID: PC=%08h valid=%b | EX: PC=%08h valid=%b | MEM: PC=%08h valid=%b | WB: valid=%b",
+               pc, DUT.ifid_pc, DUT.ifid_valid, DUT.idex_pc, DUT.idex_valid,
+               DUT.exmem_pc, DUT.exmem_valid, DUT.memwb_valid);
+      if (DUT.hazard_unit.csr_accesses_fp_flags) begin
+        $display("       >>> CSR accesses FP flags: csr_addr=%03h csr_we=%b",
+                 DUT.hazard_unit.id_csr_addr, DUT.hazard_unit.id_csr_we);
+      end
+      `endif
+
       // FPU debug output - log FP instructions completing in WB stage
       `ifdef DEBUG_FPU
       if (DUT.memwb_fp_reg_write && DUT.memwb_valid) begin

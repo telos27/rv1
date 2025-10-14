@@ -278,7 +278,7 @@ DEBUG_FPU=1 ./tools/run_hex_tests.sh rv32uf-p-fadd
 
 ---
 
-## Session Summary (2025-10-13)
+## Session Summary (2025-10-13 - Morning)
 
 **Time**: ~45 minutes of focused debugging
 **Approach**: Systematic logging → Root cause analysis → Targeted fixes
@@ -300,3 +300,243 @@ DEBUG_FPU=1 ./tools/run_hex_tests.sh rv32uf-p-fadd
 
 **Status**: ✅ Major progress - FPU core logic verified working
 **Next Session**: Debug remaining edge cases to reach 100% compliance
+
+---
+
+## Session Summary (2025-10-13 - Afternoon)
+
+**Time**: ~2 hours of deep debugging
+**Focus**: FADD test failure analysis and CSR-FPU dependency hazards
+**Status**: ⚠️ Partially successful - identified root causes but implementation needs refinement
+
+### Bugs Investigated
+
+#### Bug #5: FFLAGS CSR Write Priority ✅ FIXED
+**Location**: `rtl/core/csr_file.v:566`
+**Problem**: FPU flag accumulation was overwriting CSR writes to FFLAGS/FCSR in same cycle
+- When `fsflags x11, x0` writes 0 to clear flags AND FPU accumulates new flags in same cycle
+- FPU accumulation (line 565) happened after CSR write (line 549) in same always block
+- Last assignment wins → flags not cleared properly
+
+**Fix**: Added condition to prevent FPU accumulation when CSR write targets FFLAGS/FCSR
+```verilog
+if (fflags_we && !(csr_we && (csr_addr == CSR_FFLAGS || csr_addr == CSR_FCSR))) begin
+  fflags_r <= fflags_r | fflags_in;
+end
+```
+
+**Impact**: Verified working - flags clear correctly now
+
+---
+
+#### Bug #6: CSR-FPU Dependency Hazard ⚠️ PARTIALLY FIXED
+**Location**: `rtl/core/hazard_detection_unit.v:177-212`
+**Problem**: FSFLAGS/FCSR instructions don't wait for pending FP operations to complete
+- Test 4 FADD executes (multi-cycle, sets inexact flag)
+- While FADD still in pipeline, test 4's `fsflags x11, x0` executes immediately
+- FSFLAGS reads current flags (0), writes 0, completes
+- FADD reaches WB stage, accumulates its flags (0x00001)
+- Test 5 starts with fflags=0x00001 instead of 0x00000
+- Test 5's `fsflags` reads 0x00001, expects 0x00000 → TEST FAILS
+
+**Root Cause**: Pipeline hazard - CSR instructions accessing FFLAGS/FCSR execute before pending FP operations complete and write their flags
+
+**Fix Attempt**: Added CSR-FPU dependency detection in hazard unit
+```verilog
+// Detect CSR access to FP-related CSRs
+assign csr_accesses_fp_flags = (id_csr_addr == CSR_FFLAGS) ||
+                                 (id_csr_addr == CSR_FRM) ||
+                                 (id_csr_addr == CSR_FCSR);
+
+// Stall if CSR instruction accesses FP flags AND FPU is busy
+assign csr_fpu_dependency_stall = csr_accesses_fp_flags &&
+                                   (fpu_busy || idex_fp_alu_en);
+```
+
+**Results**:
+- ✅ Tests progress further: Test #11 → Test #7 (4 more tests passing conceptually)
+- ✅ Faster execution: 188 cycles → 144 cycles (23% improvement)
+- ✅ FDIV no longer times out
+- ❌ **Pipeline corruption**: Only 2 FP operations complete, then execution becomes erratic
+  - Tests 2-3 execute normally
+  - Tests 4-6 somehow skipped or don't execute FP operations
+  - Test 7 sets gp=7 but never runs FP operation
+  - Suggests stall logic causes control flow corruption
+
+**Issue Analysis**:
+The stall logic is conceptually correct but causes pipeline state corruption. Possible causes:
+1. Stall doesn't properly handle all pipeline stages (only checks EX via idex_fp_alu_en)
+2. Interaction with other hazard detection logic creates deadlock
+3. FP operations in MEM/WB stages not properly tracked
+4. Pipeline flush/bubble logic conflicts with CSR stall
+
+**Recommendation**: Needs deeper investigation with:
+- Waveform analysis to trace pipeline state transitions
+- PC trace to understand control flow corruption
+- Cycle-by-cycle state machine analysis
+- Consider alternative approach: delay flag accumulation until CSR write completes
+
+---
+
+### Test Execution Analysis
+
+**Without CSR-FPU Stall**:
+- Fails at test #11 (Inf - Inf → NaN check)
+- 188 cycles total
+- All 10 FP operations execute (tests 2-11)
+- Issue: Accumulated flags from previous tests cause failures
+
+**With CSR-FPU Stall**:
+- Fails at test #7 (reported)
+- 144 cycles total
+- Only 2 FP operations complete (tests 2-3)
+- gp=7 but x10 still has test 3's result (0xc49a4000)
+- Tests 4-6 data addresses never accessed
+- Indicates serious control flow issue
+
+### Files Modified
+
+**rtl/core/csr_file.v**:
+- Line 566: Added CSR write priority check for Bug #5
+
+**rtl/core/hazard_detection_unit.v**:
+- Lines 39-41: Added CSR signal inputs (id_csr_addr, id_csr_we)
+- Lines 177-212: Added CSR-FPU dependency stall logic (currently disabled for debugging)
+- Lines 192-194: Added CSR address parameters (FFLAGS, FRM, FCSR)
+
+**rtl/core/rv32i_core_pipelined.v**:
+- Lines 783-784: Wired CSR signals to hazard detection unit
+
+### Current Status
+
+**Pass Rate**: Still 3/11 (27%) RV32UF
+- ✅ fclass, ldst, move passing
+- ❌ fadd, fcmp, fcvt, fcvt_w, fdiv, fmadd, fmin, recoding failing
+
+**Known Issues**:
+1. CSR-FPU stall causes pipeline corruption (Bug #6 implementation issue)
+2. Need alternative approach or refined implementation
+3. Original flag accumulation issue remains unsolved
+
+### Next Steps for Future Session
+
+1. **Investigate pipeline corruption**:
+   - Add detailed PC trace logging
+   - Generate waveforms for failing test
+   - Trace pipeline register states cycle-by-cycle
+   - Check for conflicts with other hazard logic
+
+2. **Alternative approaches to consider**:
+   - Option A: Track "FP operation in flight" bit through entire pipeline
+   - Option B: Add explicit FP completion counter
+   - Option C: Delay flag accumulation to CSR stage instead of WB stage
+   - Option D: Use pipeline valid bits to track FP operations
+
+3. **Simpler fixes to try first**:
+   - Check if issue is with single-cycle vs multi-cycle FP ops
+   - Verify fpu_busy correctly covers all FP operation states
+   - Test with only multi-cycle operations (FDIV, FSQRT)
+   - Add debug output to stall logic to see when it activates
+
+**Recommendation**: Start next session with waveform analysis to understand exactly where pipeline corruption occurs.
+
+---
+
+## Session Summary (2025-10-14 - Bug #6 Fixed)
+
+**Time**: ~90 minutes of systematic debugging
+**Approach**: Waveform generation → PC trace analysis → Root cause identification → Targeted fix
+**Tools Used**: DEBUG_HAZARD logging, cycle-by-cycle trace comparison, VCD waveforms
+
+### Debug Process
+
+1. **Set up comprehensive logging**
+   - Added `DEBUG_HAZARD` flag to testbench for PC/pipeline state tracking
+   - Generated VCD waveforms for detailed signal analysis
+   - Created test cases with and without CSR-FPU stall
+
+2. **Comparative analysis**
+   - Compared execution with stall enabled (144 cycles, fails at test #7)
+   - Compared with stall disabled (188 cycles, fails at test #11)
+   - Identified divergence point at cycle 103
+
+3. **Root cause identified**
+   - CSR instruction at 0x800001bc executed TWICE
+   - Cycle 103: CSR in ID stage, stall activates
+   - Cycle 104: CSR advances to EX, but also remains in ID
+   - Problem: `stall_pc` + `stall_ifid` doesn't prevent ID→EX advancement
+
+4. **Solution implemented**
+   - Changed CSR-FPU stall to use pipeline bubble mechanism
+   - Modified `bubble_idex` to include `csr_fpu_dependency_stall`
+   - This inserts NOP into EX while holding CSR in ID (same as load-use hazards)
+
+### Results
+
+**Before Fix**:
+- Test failed at test #7 (gp=7)
+- Only 2/10 FP operations completed
+- Pipeline corruption: CSR instruction executed twice
+- Early branch to failure handler
+- 144 cycles total
+
+**After Fix**:
+- Test fails at test #11 (gp=11) ✅ CORRECT
+- All 10/10 FP operations complete ✅
+- No pipeline corruption ✅
+- Tests fail for the right reason (flag accumulation, not hazard)
+- 192 cycles total (2% overhead - acceptable)
+
+### Key Learnings
+
+1. **Stall vs Bubble**: Not all hazards should use simple stalls
+   - Stalls (`stall_pc` + `stall_ifid`): Freeze pipeline, prevent new instructions
+   - Bubbles (`bubble_idex`): Insert NOP, hold instruction in place
+   - CSR-FPU hazard is RAW dependency → needs bubble like load-use
+
+2. **Pipeline behavior**: When stall releases, instructions advance unless explicitly held
+   - IDEX register needs bubble/NOP to prevent unwanted advancement
+   - Multi-cycle operations (M/A/FP extensions) use different mechanism (hold signals)
+
+3. **Debug methodology**: Trace comparison is highly effective
+   - Side-by-side comparison reveals exact divergence point
+   - PC progression shows control flow issues immediately
+   - Cycle-accurate logging essential for pipeline bugs
+
+### Files Modified
+
+**Implementation**:
+- `rtl/core/hazard_detection_unit.v:222` - Added `csr_fpu_dependency_stall` to `bubble_idex`
+- `rtl/core/hazard_detection_unit.v:210-211` - Re-enabled CSR-FPU stall detection
+
+**Debug Infrastructure**:
+- `tb/integration/tb_core_pipelined.v:143-155` - Added DEBUG_HAZARD PC trace logging
+
+**Documentation**:
+- `docs/BUG6_CSR_FPU_HAZARD.md` - Complete bug analysis and fix documentation
+- `PHASES.md` - Updated Bug #6 status to FIXED
+
+### Current Status
+
+✅ **Bug #6 FIXED** - CSR-FPU dependency hazard resolved
+- RV32UF: 3/11 passing (27%)
+- Tests now fail at correct locations
+- Pipeline integrity verified
+- Ready for next phase: Address flag accumulation issue (test #11 failures)
+
+### Next Steps
+
+1. **Investigate test #11 failure**
+   - Why do tests fail at test #11 specifically?
+   - Check flag accumulation logic
+   - Verify flag values match expected
+
+2. **Remaining FPU edge cases**
+   - Normalization for leading zeros
+   - Subnormal number handling
+   - Special value combinations (NaN/Inf)
+   - Other rounding modes beyond RNE
+
+3. **Double-precision (RV32UD)**
+   - All 0/9 tests still failing
+   - Likely separate issues from single-precision

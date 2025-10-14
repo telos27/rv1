@@ -558,10 +558,12 @@ module csr_file #(
         endcase
       end
 
-      // Floating-point flag accumulation (OR operation, independent of CSR writes)
+      // Floating-point flag accumulation (OR operation)
       // This allows FPU to accumulate exception flags without a CSR instruction
       // Flags are sticky - once set, they remain until explicitly cleared via CSR write
-      if (fflags_we) begin
+      // IMPORTANT: CSR writes to FFLAGS/FCSR take priority over accumulation
+      // Only accumulate if there's NO CSR write targeting fflags in this cycle
+      if (fflags_we && !(csr_we && (csr_addr == CSR_FFLAGS || csr_addr == CSR_FCSR))) begin
         fflags_r <= fflags_r | fflags_in;  // Accumulate (bitwise OR)
         `ifdef DEBUG_FPU
         $display("[CSR] FFlags accumulate: old=%05b new=%05b result=%05b",
