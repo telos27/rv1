@@ -376,10 +376,11 @@ Before adding new features, consider fixing these existing issues:
    - Impact: Low for typical code, medium for lock-heavy workloads
    - See: KNOWN_ISSUES.md §1, hazard_detection_unit.v:126-155
 
-2. **FPU Compliance Testing** - Custom tests pass, official tests not run
-   - Custom: 13/13 passing
-   - Official: 11 rv32uf + 9 rv32ud tests ready but not executed
-   - See: KNOWN_ISSUES.md §3
+2. **FPU Compliance Issues (15% pass rate)** - Official tests reveal bugs
+   - Custom: 13/13 passing (basic operations work)
+   - Official: 3/20 passing (edge cases reveal bugs)
+   - Root causes: Likely fflags, rounding modes, NaN-boxing, or signed zero
+   - See: docs/FPU_COMPLIANCE_RESULTS.md for detailed analysis
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
@@ -394,7 +395,8 @@ Before adding new features, consider fixing these existing issues:
 - [ ] Larger TLB (16 → 64 entries)
 
 ### Testing & Validation
-- [ ] **Run official RISC-V F/D compliance tests** 🧪 *Recommended first*
+- [x] **Run official RISC-V F/D compliance tests** 🧪 *Results: 3/20 passing (15%)*
+- [ ] **Fix FPU bugs revealed by official tests** ⚠️ *High priority - see FPU_COMPLIANCE_RESULTS.md*
 - [ ] **Debug mixed compressed/normal instructions** 🔀 *Recommended first*
 - [ ] Performance benchmarking (Dhrystone, CoreMark)
 - [ ] Formal verification for critical paths
@@ -424,8 +426,8 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | -    | -    | ⏳ Testing |
-| RV32D     | 9     | -    | -    | ⏳ Testing |
+| RV32F     | 11    | 3    | 27%  | ⚠️ Bugs Found |
+| RV32D     | 9     | 0    | 0%   | ⚠️ Bugs Found |
 
 ### Custom Test Coverage
 - **Unit tests**: All modules have dedicated unit tests

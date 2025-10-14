@@ -815,10 +815,12 @@ mideleg   (0x303): Machine interrupt delegation to S-mode
    - Fix: Add single-cycle state tracking (would reduce to 0.3% overhead)
    - Justification: Simplicity > performance, but should optimize eventually
 
-2. **FPU Compliance Testing Incomplete**
-   - Custom tests: 13/13 passing
-   - Official tests: 20 tests (rv32uf/rv32ud) not yet run
-   - Action: Run official compliance before claiming full IEEE 754 support
+2. **FPU Compliance Issues (15% pass rate)**
+   - Custom tests: 13/13 passing (basic operations work)
+   - Official tests: 3/20 passing (edge cases reveal bugs)
+   - Root causes: Likely fflags, rounding modes, NaN-boxing, signed zero
+   - Action: Fix bugs revealed by official compliance tests
+   - Details: See docs/FPU_COMPLIANCE_RESULTS.md
 
 3. **Mixed 16/32-bit Instruction Streams**
    - Pure compressed: Working

@@ -14,19 +14,25 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 
 ## Current Status
 
-**Phase**: Phase 13 - MMU Bare Mode Fix ✅ **COMPLETE**
+**Phase**: FPU Compliance Testing Complete ✅
 
 **Supported ISAs**: RV32IMAFDC, RV64IMAFDC
 **Architecture**: Parameterized 5-stage pipeline with full privilege & virtual memory support
 **Privilege Modes**: M-mode (complete) ✅, S-mode (complete) ✅, U-mode (ready)
-**Compliance**: **100% RV32I Compliant (42/42)** ✅ | **C Extension: 100% Validated** ✅
+**Compliance**:
+- **RV32I**: 42/42 (100%) ✅
+- **RV32M**: 8/8 (100%) ✅
+- **RV32A**: 10/10 (100%) ✅
+- **RV32C**: 1/1 (100%) ✅
+- **RV32F**: 3/11 (27%) ⚠️ Bugs found
+- **RV32D**: 0/9 (0%) ⚠️ Bugs found
 
 ### **Key Features Implemented:**
 - ✅ **RV32I/RV64I** - Base integer instruction set (47 instructions) - **100% compliant**
 - ✅ **M Extension** - Multiply/Divide (13 instructions) - **Verified**
 - ✅ **A Extension** - Atomic operations (22 instructions) - **Verified**
-- ✅ **F Extension** - Single-precision floating-point (26 instructions) - **Verified**
-- ✅ **D Extension** - Double-precision floating-point (26 instructions) - **Verified**
+- ⚠️ **F Extension** - Single-precision floating-point (26 instructions) - **Partial (27% compliance)**
+- ⚠️ **D Extension** - Double-precision floating-point (26 instructions) - **Needs fixes (0% compliance)**
 - ✅ **C Extension** - Compressed instructions (40 instructions) - **100% validated**
 - ✅ **Zicsr** - CSR instructions and privilege system
 - ✅ **Privilege Modes** - M-mode and S-mode fully functional, U-mode ready
@@ -37,9 +43,14 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 ### **Statistics:**
 - **Total Instructions**: 168+ RISC-V instructions implemented
 - **RTL Modules**: 27+ parameterized modules (~7500 lines)
-- **Compliance Tests**: 42/42 RV32I official tests PASSING (100%) ✅
-- **C Extension Tests**: 34/34 unit tests + integration PASSING (100%) ✅
-- **FPU Test Suite**: 13/13 tests PASSING (100%)
+- **Compliance Tests**:
+  - RV32I: 42/42 (100%) ✅
+  - RV32M: 8/8 (100%) ✅
+  - RV32A: 10/10 (100%) ✅
+  - RV32C: 1/1 (100%) ✅
+  - RV32F: 3/11 (27%) ⚠️
+  - RV32D: 0/9 (0%) ⚠️
+- **Custom Tests**: 13/13 FPU tests PASSING (100%)
 - **Supervisor Mode Tests**: 10/12 tests PASSING (83%)
 - **Configuration Support**: RV32/RV64, multiple extensions, compressed instructions
 
@@ -53,10 +64,11 @@ Before implementing new features, consider these existing limitations:
    - Trade-off: Simplicity chosen over performance
    - **Action**: Consider optimizing before adding more complex features
 
-2. **🧪 FPU Compliance Testing Incomplete** - Custom tests pass, but official tests not run
-   - Custom tests: 13/13 passing (100%)
-   - Official RISC-V F/D tests: Infrastructure ready, not yet executed
-   - **Action**: Run official rv32uf/rv32ud compliance tests before claiming full FPU support
+2. **🧪 FPU Compliance Issues (15% pass rate)** - Official tests reveal edge case bugs
+   - Custom tests: 13/13 passing (basic operations work)
+   - Official tests: 3/20 passing (edge cases fail)
+   - Likely issues: fflags generation, rounding modes, NaN-boxing, signed zero
+   - **Action**: Fix FPU bugs revealed by official compliance tests (see docs/FPU_COMPLIANCE_RESULTS.md)
 
 3. **🔀 Mixed Compressed/Normal Instructions** - Addressing issue with mixed 16/32-bit streams
    - Pure compressed: Works correctly
@@ -69,6 +81,19 @@ Before implementing new features, consider these existing limitations:
 ---
 
 ## Recent Achievements
+
+### **✅ FPU Official Compliance Testing Complete** (2025-10-13)
+**Test Infrastructure Fixed & Results Documented**
+- **New Tool**: `tools/run_hex_tests.sh` - Run compliance tests directly from hex files
+- **Tests Run**: All 20 official F/D extension tests (11 rv32uf + 9 rv32ud)
+- **Results**: 3/20 passing (15% compliance rate)
+  - ✅ Passing: fclass, ldst (single-precision), move
+  - ❌ Failing: Most arithmetic operations fail at test #5
+- **Analysis**: Detailed failure analysis in `docs/FPU_COMPLIANCE_RESULTS.md`
+- **Root Causes**: Likely fflags, rounding modes, NaN-boxing, or signed zero issues
+- **Impact**: Basic FPU operations work, but edge case handling needs fixes
+
+See: `docs/FPU_COMPLIANCE_RESULTS.md`
 
 ### **🎉 Phase 13 COMPLETE: 100% RV32I Compliance Restored!** (2025-10-12)
 ✅ **Phase 13: MMU Bare Mode Fix**
