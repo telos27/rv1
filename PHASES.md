@@ -376,30 +376,33 @@ Before adding new features, consider fixing these existing issues:
    - Impact: Low for typical code, medium for lock-heavy workloads
    - See: KNOWN_ISSUES.md §1, hazard_detection_unit.v:126-155
 
-2. **FPU Compliance Issues** - Pipeline hazard fixed, ready for edge case debugging
-   - **Before**: 3/20 passing (15%) - FP arithmetic completely broken
-   - **Current**: 3/11 RV32UF passing (27%) - Basic FP arithmetic working, tests fail at correct locations
-   - **Fixed bugs** (2025-10-13 AM):
+2. ~~**FPU Pipeline Hazards (Bugs #5, #6, #7, #7b)**~~ - ✅ **ALL FIXED (2025-10-14)**
+   - **Before**: 3/11 RV32UF passing (27%) - Tests failing at #11 due to flag contamination
+   - **After**: 3/11 RV32UF passing (27%) - Tests now failing at #17, different failure mode
+   - **Progress**: 6 more tests passing internally (tests #11-#16), infrastructure test #17 failing
+
+   **Fixed bugs** (2025-10-13 AM):
      1. Mantissa extraction bug: `normalized_man[26:3]` → `normalized_man[25:3]`
      2. Rounding timing bug: Sequential `round_up` → Combinational `round_up_comb`
      3. FFLAGS normalization: Added left-shift logic for leading zeros
-   - **Fixed bugs** (2025-10-13 PM):
+
+   **Fixed bugs** (2025-10-13 PM):
      4. **Bug #5**: FFLAGS CSR write priority - FPU accumulation vs CSR write conflict ✅
-     5. **Bug #6**: CSR-FPU dependency hazard - Pipeline corruption ✅ **FIXED (2025-10-14)**
-   - **Bug #6 Resolution**: Used pipeline bubble (`bubble_idex`) instead of stall-only approach
-   - **Remaining**: Flag accumulation issue (tests fail at test #11), then edge cases
-   - See: docs/FPU_COMPLIANCE_RESULTS.md, docs/BUG6_CSR_FPU_HAZARD.md
+     5. **Bug #6**: CSR-FPU dependency hazard - Pipeline bubble solution ✅
 
-3. ~~**CSR-FPU Dependency Hazard (Bug #6)**~~ - ✅ **FIXED (2025-10-14)**
-   - **Issue**: FSFLAGS/FCSR instructions execute before pending FP operations complete
-   - **Root Cause**: CSR instruction in ID stage advanced to EX when stall released, executing twice
-   - **Solution**: Changed to use `bubble_idex` (pipeline bubble) instead of just PC/IFID stall
-   - **Impact**: Tests now complete all FP operations correctly (10/10 vs 2/10 before)
-   - **Verification**: Test fails at correct location (test #11) instead of early branch (test #7)
-   - **Performance**: 2% overhead (192 vs 188 cycles) - acceptable
-   - See: docs/BUG6_CSR_FPU_HAZARD.md for detailed analysis
+   **Fixed bugs** (2025-10-14):
+     6. **Bug #7**: CSR-FPU hazard - Extended to MEM/WB stages ✅
+        - Extended hazard detection to check all pipeline stages (EX/MEM/WB)
+        - Prevents FSFLAGS from reading before FPU writeback completes
+     7. **Bug #7b**: FP Load flag contamination ✅ **CRITICAL FIX**
+        - FP loads (FLW/FLD) were accumulating stale flags from pipeline
+        - Solution: Exclude FP loads from flag accumulation (`wb_sel != 3'b001`)
+        - Impact: Tests progressed from #11 → #17 (6 more tests passing!)
 
-4. **Mixed Compressed/Normal Instructions** - Addressing issue
+   - **Remaining**: Edge cases in arithmetic ops (NaN handling, special values)
+   - See: docs/FPU_BUG7_ANALYSIS.md, docs/BUG6_CSR_FPU_HAZARD.md
+
+3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
    - See: KNOWN_ISSUES.md §2
 
@@ -416,7 +419,8 @@ Before adding new features, consider fixing these existing issues:
 - [x] **Debug FPU failures** ✓ *Root cause identified: 2 critical bugs in fp_adder.v*
 - [x] **Fix FP adder mantissa computation** ✓ *Fixed 2025-10-13: +12% improvement*
 - [x] **Re-run FPU compliance tests after fix** 🧪 *Result: 3/11 RV32UF (27%)*
-- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - normalization, subnormals*
+- [x] **Fix FPU pipeline hazards (Bugs #6, #7, #7b)** ✓ *Fixed 2025-10-14: Flag contamination resolved*
+- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - NaN handling, special values, test #17*
 - [ ] **Debug mixed compressed/normal instructions** 🔀
 - [ ] Performance benchmarking (Dhrystone, CoreMark)
 - [ ] Formal verification for critical paths
@@ -485,6 +489,7 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-14**: FPU pipeline hazard marathon - Fixed Bugs #7 and #7b, tests now progress from #11 → #17
 **2025-10-13 (pm afternoon)**: Deep FPU debugging - Fixed Bug #5 (FFLAGS priority), attempted Bug #6 (CSR-FPU hazard) but needs refinement
 **2025-10-13 (pm)**: FPU debugging session - Fixed 2 critical bugs (mantissa/rounding), 15% → 27% pass rate
 **2025-10-13 (am)**: Phase 7 complete - A Extension 100% compliant

@@ -64,11 +64,13 @@ Before implementing new features, consider these existing limitations:
    - Trade-off: Simplicity chosen over performance
    - **Action**: Consider optimizing before adding more complex features
 
-2. **🧪 FPU Compliance Issues (15% pass rate)** - Official tests reveal edge case bugs
-   - Custom tests: 13/13 passing (basic operations work)
-   - Official tests: 3/20 passing (edge cases fail)
-   - Likely issues: fflags generation, rounding modes, NaN-boxing, signed zero
-   - **Action**: Fix FPU bugs revealed by official compliance tests (see docs/FPU_COMPLIANCE_RESULTS.md)
+2. **🧪 FPU Compliance Issues (27% pass rate)** - Pipeline hazards fixed, edge cases remain
+   - Custom tests: 13/13 passing (basic operations work) ✅
+   - Official tests: 3/11 RV32UF passing (27%)
+   - **Fixed (2025-10-14)**: CSR-FPU pipeline hazards (Bugs #5, #6, #7, #7b)
+   - **Progress**: Tests now reach #17 (was #11), 6 more tests passing internally
+   - Remaining issues: NaN handling, special values, FDIV timeout
+   - **Action**: Continue edge case debugging (see docs/FPU_BUG7_ANALYSIS.md)
 
 3. **🔀 Mixed Compressed/Normal Instructions** - Addressing issue with mixed 16/32-bit streams
    - Pure compressed: Works correctly
