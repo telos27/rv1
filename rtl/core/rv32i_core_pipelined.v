@@ -1307,7 +1307,9 @@ module rv_core_pipelined #(
     // Floating-point CSR connections
     .frm_out(csr_frm),
     .fflags_out(csr_fflags),
-    .fflags_we(memwb_fp_reg_write && memwb_valid),  // Accumulate flags when FP instruction completes in WB
+    // Bug #7b fix: Only accumulate flags for FP ALU operations, not FP loads
+    // FP loads have wb_sel=001 (memory data), FP ALU has other wb_sel values
+    .fflags_we(memwb_fp_reg_write && memwb_valid && (memwb_wb_sel != 3'b001)),
     .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx})
   );
 
