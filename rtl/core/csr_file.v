@@ -546,11 +546,19 @@ module csr_file #(
             mip_r[1] <= csr_write_value[1];  // SSIP (software interrupt)
           end
           // Floating-point CSRs
-          CSR_FFLAGS:   fflags_r   <= csr_write_value[4:0];  // Write exception flags
+          CSR_FFLAGS: begin
+            fflags_r   <= csr_write_value[4:0];  // Write exception flags
+            `ifdef DEBUG_FPU
+            $display("[CSR] Write FFLAGS: value=%05b (clearing flags)", csr_write_value[4:0]);
+            `endif
+          end
           CSR_FRM:      frm_r      <= csr_write_value[2:0];  // Write rounding mode
           CSR_FCSR: begin
             frm_r    <= csr_write_value[7:5];  // Upper 3 bits = rounding mode
             fflags_r <= csr_write_value[4:0];  // Lower 5 bits = exception flags
+            `ifdef DEBUG_FPU
+            $display("[CSR] Write FCSR: frm=%03b fflags=%05b", csr_write_value[7:5], csr_write_value[4:0]);
+            `endif
           end
           default: begin
             // No write for unknown or read-only CSRs

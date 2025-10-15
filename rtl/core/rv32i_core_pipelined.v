@@ -755,6 +755,7 @@ module rv_core_pipelined #(
 
   // Hazard Detection Unit
   hazard_detection_unit hazard_unit (
+    .clk(clk),
     // Integer load-use hazard inputs
     .idex_mem_read(idex_mem_read),
     .idex_rd(idex_rd_addr),
@@ -779,6 +780,8 @@ module rv_core_pipelined #(
     .fpu_busy(ex_fpu_busy),
     .fpu_done(ex_fpu_done),
     .idex_fp_alu_en(idex_fp_alu_en),
+    .exmem_fp_reg_write(exmem_fp_reg_write),
+    .memwb_fp_reg_write(memwb_fp_reg_write),
     // CSR signals (for FFLAGS/FCSR dependency checking)
     .id_csr_addr(id_csr_addr),
     .id_csr_we(id_csr_we),

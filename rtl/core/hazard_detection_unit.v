@@ -7,6 +7,7 @@
 // See line ~126 for detailed explanation and proper fix (requires adding clk/reset_n)
 
 module hazard_detection_unit (
+  input  wire        clk,              // Clock for debug logging
   // Inputs from ID/EX register (instruction in EX stage)
   input  wire        idex_mem_read,    // Load instruction in EX stage
   input  wire [4:0]  idex_rd,          // Destination register of load (integer)
@@ -35,6 +36,8 @@ module hazard_detection_unit (
   input  wire        fpu_busy,         // FPU is busy (multi-cycle operation in progress)
   input  wire        fpu_done,         // FPU operation complete (1 cycle pulse)
   input  wire        idex_fp_alu_en,   // FP instruction in EX stage
+  input  wire        exmem_fp_reg_write, // FP instruction in MEM stage
+  input  wire        memwb_fp_reg_write, // FP instruction in WB stage
 
   // CSR signals (for FFLAGS/FCSR dependency checking)
   input  wire [11:0] id_csr_addr,      // CSR address in ID stage
@@ -203,12 +206,25 @@ module hazard_detection_unit (
                                    (id_csr_addr == CSR_FRM) ||
                                    (id_csr_addr == CSR_FCSR);
 
-  // Stall if CSR instruction in ID accesses FP flags AND FPU is busy or just started
-  // NOTE: We DO stall even when fpu_done=1 because flags are being written in that cycle
-  //       and won't be visible until the next cycle. Only after fpu_done goes low (next cycle)
-  //       are the flags safe to read.
+  // Stall if CSR instruction in ID accesses FP flags AND there are FP ops in the pipeline
+  // We must stall for FP operations in EX, MEM, or WB stages because:
+  // 1. EX stage: FPU may be busy or starting operation
+  // 2. MEM stage: FP load results or FPU results propagating to WB
+  // 3. WB stage: Flags are being accumulated - CRITICAL for FFLAGS writes!
+  //
+  // Bug #7 Fix: Without checking MEM/WB stages, clearing FFLAGS can be contaminated
+  // by in-flight FP operations that complete after the clear.
   assign csr_fpu_dependency_stall = csr_accesses_fp_flags &&
-                                     (fpu_busy || idex_fp_alu_en);
+                                     (fpu_busy || idex_fp_alu_en || exmem_fp_reg_write || memwb_fp_reg_write);
+
+  `ifdef DEBUG_FPU
+  always @(posedge clk) begin
+    if (csr_fpu_dependency_stall) begin
+      $display("[HAZARD] CSR-FPU stall: fpu_busy=%b idex_fp=%b exmem_fp=%b memwb_fp=%b",
+               fpu_busy, idex_fp_alu_en, exmem_fp_reg_write, memwb_fp_reg_write);
+    end
+  end
+  `endif
 
   // Generate control signals
   // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency,
