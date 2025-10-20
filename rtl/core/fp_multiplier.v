@@ -178,31 +178,34 @@ module fp_multiplier #(
         // ============================================================
         NORMALIZE: begin
           // Product is (1.xxx * 1.yyy) = 1.zzz to 3.zzz (needs 0 or 1 shift)
-          // Bit position: product[2*MAN_WIDTH+2:MAN_WIDTH+2] is the integer part (1 or 2)
+          // Bit 47: determines if product >= 2.0 (need to shift right)
+          // Bit 46: implicit 1 for products < 2.0
 
           `ifdef DEBUG_FPU
-          $display("[FP_MUL] NORMALIZE: product=%h bit48=%b", product, product[(2*MAN_WIDTH+2)]);
+          $display("[FP_MUL] NORMALIZE: product=%h bit47=%b", product, product[(2*MAN_WIDTH+1)]);
           `endif
 
-          if (product[(2*MAN_WIDTH+2)]) begin
+          if (product[(2*MAN_WIDTH+1)]) begin
             // Product >= 2.0, shift right by 1
-            normalized_man <= product[(2*MAN_WIDTH+2):(MAN_WIDTH+2)];
+            // Implicit 1 is at bit 47, mantissa is bits [46:24]
+            normalized_man <= {1'b0, product[(2*MAN_WIDTH):(MAN_WIDTH+1)]};
             exp_result <= exp_sum + 1;
-            guard <= product[MAN_WIDTH+1];
-            round <= product[MAN_WIDTH];
-            sticky <= |product[MAN_WIDTH-1:0];
+            guard <= product[MAN_WIDTH];
+            round <= product[MAN_WIDTH-1];
+            sticky <= |product[MAN_WIDTH-2:0];
             `ifdef DEBUG_FPU
-            $display("[FP_MUL] NORMALIZE: >= 2.0, extract product[48:25]=%h", product[(2*MAN_WIDTH+2):(MAN_WIDTH+2)]);
+            $display("[FP_MUL] NORMALIZE: >= 2.0, extract product[46:24]=%h", product[(2*MAN_WIDTH):(MAN_WIDTH+1)]);
             `endif
           end else begin
             // Product in [1.0, 2.0), already normalized
-            normalized_man <= product[(2*MAN_WIDTH):(MAN_WIDTH)];
+            // Implicit 1 is at bit 46, mantissa is bits [45:23]
+            normalized_man <= {1'b0, product[(2*MAN_WIDTH-1):(MAN_WIDTH)]};
             exp_result <= exp_sum;
             guard <= product[MAN_WIDTH-1];
             round <= product[MAN_WIDTH-2];
             sticky <= |product[MAN_WIDTH-3:0];
             `ifdef DEBUG_FPU
-            $display("[FP_MUL] NORMALIZE: < 2.0, extract product[46:23]=%h", product[(2*MAN_WIDTH):(MAN_WIDTH)]);
+            $display("[FP_MUL] NORMALIZE: < 2.0, extract product[45:23]=%h", product[(2*MAN_WIDTH-1):(MAN_WIDTH)]);
             `endif
           end
 

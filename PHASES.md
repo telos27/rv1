@@ -399,7 +399,7 @@ Before adding new features, consider fixing these existing issues:
         - Solution: Exclude FP loads from flag accumulation (`wb_sel != 3'b001`)
         - Impact: Tests progressed from #11 → #17 (6 more tests passing!)
 
-   **Fixed bugs** (2025-10-19):
+   **Fixed bugs** (2025-10-19 AM):
      8. **Bug #8**: FP Multiplier bit extraction error ✅ **CRITICAL FIX**
         - Root cause: Off-by-one error in mantissa bit extraction for product < 2.0
         - Was extracting `product[47:24]` then using `[22:0]` → effectively bits `[46:24]`
@@ -409,8 +409,22 @@ Before adding new features, consider fixing these existing issues:
         - Impact: fadd test progressed from #17 → #21 (4 more tests passing!)
         - Location: rtl/core/fp_multiplier.v:199
 
-   - **Remaining**: Edge cases in arithmetic ops (NaN handling, special values, rounding)
-   - See: docs/FPU_BUG7_ANALYSIS.md, docs/BUG6_CSR_FPU_HAZARD.md
+   **Fixed bugs** (2025-10-19 PM):
+     9. **Bug #9**: FP Multiplier normalization - Wrong bit check and extraction ✅ **CRITICAL FIX**
+        - Root cause: Two separate errors in NORMALIZE stage
+          1. Checked bit 48 instead of bit 47 to determine if product >= 2.0
+          2. Extracted wrong bit ranges for mantissa in both cases
+        - Product format is Q2.46 fixed-point after multiplying two Q1.23 mantissas
+          - Bit 47 = 1: product >= 2.0, implicit 1 at bit 47, extract [46:24]
+          - Bit 47 = 0: product < 2.0, implicit 1 at bit 46, extract [45:23]
+        - Fix: Changed bit check from `product[48]` → `product[47]`
+        - Fix: Correct extraction ranges for both >= 2.0 and < 2.0 cases
+        - Impact: fadd test progressed from #21 → #23 (2 more tests passing!)
+        - Location: rtl/core/fp_multiplier.v:188-208
+        - See: docs/FPU_BUG9_NORMALIZATION_FIX.md
+
+   - **Remaining**: Flag contamination (test #23: Inf-Inf sets NX+NV instead of just NV)
+   - See: docs/FPU_BUG7_ANALYSIS.md, docs/BUG6_CSR_FPU_HAZARD.md, docs/FPU_BUG9_NORMALIZATION_FIX.md
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
