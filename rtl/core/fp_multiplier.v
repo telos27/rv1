@@ -163,6 +163,9 @@ module fp_multiplier #(
             // Normal multiplication
             // Multiply mantissas
             product <= man_a * man_b;
+            `ifdef DEBUG_FPU
+            $display("[FP_MUL] MULTIPLY: man_a=%h man_b=%h product=%h", man_a, man_b, man_a * man_b);
+            `endif
 
             // Add exponents (subtract bias)
             // exp_sum = exp_a + exp_b - BIAS
@@ -177,6 +180,10 @@ module fp_multiplier #(
           // Product is (1.xxx * 1.yyy) = 1.zzz to 3.zzz (needs 0 or 1 shift)
           // Bit position: product[2*MAN_WIDTH+2:MAN_WIDTH+2] is the integer part (1 or 2)
 
+          `ifdef DEBUG_FPU
+          $display("[FP_MUL] NORMALIZE: product=%h bit48=%b", product, product[(2*MAN_WIDTH+2)]);
+          `endif
+
           if (product[(2*MAN_WIDTH+2)]) begin
             // Product >= 2.0, shift right by 1
             normalized_man <= product[(2*MAN_WIDTH+2):(MAN_WIDTH+2)];
@@ -184,13 +191,19 @@ module fp_multiplier #(
             guard <= product[MAN_WIDTH+1];
             round <= product[MAN_WIDTH];
             sticky <= |product[MAN_WIDTH-1:0];
+            `ifdef DEBUG_FPU
+            $display("[FP_MUL] NORMALIZE: >= 2.0, extract product[48:25]=%h", product[(2*MAN_WIDTH+2):(MAN_WIDTH+2)]);
+            `endif
           end else begin
             // Product in [1.0, 2.0), already normalized
-            normalized_man <= product[(2*MAN_WIDTH+1):(MAN_WIDTH+1)];
+            normalized_man <= product[(2*MAN_WIDTH):(MAN_WIDTH)];
             exp_result <= exp_sum;
-            guard <= product[MAN_WIDTH];
-            round <= product[MAN_WIDTH-1];
-            sticky <= |product[MAN_WIDTH-2:0];
+            guard <= product[MAN_WIDTH-1];
+            round <= product[MAN_WIDTH-2];
+            sticky <= |product[MAN_WIDTH-3:0];
+            `ifdef DEBUG_FPU
+            $display("[FP_MUL] NORMALIZE: < 2.0, extract product[46:23]=%h", product[(2*MAN_WIDTH):(MAN_WIDTH)]);
+            `endif
           end
 
           // Check for overflow
@@ -243,6 +256,12 @@ module fp_multiplier #(
           end else begin
             result <= {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0]};
           end
+
+          `ifdef DEBUG_FPU
+          $display("[FP_MUL] ROUND: sign=%b exp=%h normalized_man=%h man[22:0]=%h GRS=%b%b%b round_up=%b",
+                   sign_result, exp_result, normalized_man, normalized_man[MAN_WIDTH-1:0], guard, round, sticky, round_up);
+          $display("[FP_MUL] Result: %h", {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0] + (round_up ? 1'b1 : 1'b0)});
+          `endif
 
           // Set inexact flag
           flag_nx <= guard || round || sticky;

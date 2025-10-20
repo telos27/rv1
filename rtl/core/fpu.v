@@ -390,6 +390,9 @@ module fpu #(
         flag_of = adder_flag_of;
         flag_uf = adder_flag_uf;
         flag_nx = adder_flag_nx;
+        `ifdef DEBUG_FPU
+        if (done) $display("[FPU] FP_ADD/SUB result mux: adder_result=%h", adder_result);
+        `endif
       end
 
       FP_MUL: begin
@@ -398,6 +401,9 @@ module fpu #(
         flag_of = mul_flag_of;
         flag_uf = mul_flag_uf;
         flag_nx = mul_flag_nx;
+        `ifdef DEBUG_FPU
+        if (done) $display("[FPU] FP_MUL result mux: mul_result=%h", mul_result);
+        `endif
       end
 
       FP_DIV: begin
@@ -479,5 +485,14 @@ module fpu #(
       end
     endcase
   end
+
+  // Debug output
+  `ifdef DEBUG_FPU
+  always @(posedge clk) begin
+    if (start) $display("[FPU] START: op=%0d a=%h b=%h c=%h", fp_alu_op, operand_a, operand_b, operand_c);
+    if (done) $display("[FPU] DONE: op=%0d result=%h flags=%b%b%b%b%b",
+                       fp_alu_op, fp_result, flag_nv, flag_dz, flag_of, flag_uf, flag_nx);
+  end
+  `endif
 
 endmodule

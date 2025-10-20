@@ -378,11 +378,11 @@ Before adding new features, consider fixing these existing issues:
 
 2. ~~**FPU Pipeline Hazards (Bugs #5, #6, #7, #7b)**~~ - ✅ **ALL FIXED (2025-10-14)**
    - **Before**: 3/11 RV32UF passing (27%) - Tests failing at #11 due to flag contamination
-   - **After**: 3/11 RV32UF passing (27%) - Tests now failing at #17, different failure mode
-   - **Progress**: 6 more tests passing internally (tests #11-#16), infrastructure test #17 failing
+   - **After**: 3/11 RV32UF passing (27%) - Tests now failing at #21, different failure mode
+   - **Progress**: 10 more tests passing internally (tests #11-#20), infrastructure test #21 failing
 
    **Fixed bugs** (2025-10-13 AM):
-     1. Mantissa extraction bug: `normalized_man[26:3]` → `normalized_man[25:3]`
+     1. Mantissa extraction bug in FP_ADDER: `normalized_man[26:3]` → `normalized_man[25:3]`
      2. Rounding timing bug: Sequential `round_up` → Combinational `round_up_comb`
      3. FFLAGS normalization: Added left-shift logic for leading zeros
 
@@ -399,7 +399,17 @@ Before adding new features, consider fixing these existing issues:
         - Solution: Exclude FP loads from flag accumulation (`wb_sel != 3'b001`)
         - Impact: Tests progressed from #11 → #17 (6 more tests passing!)
 
-   - **Remaining**: Edge cases in arithmetic ops (NaN handling, special values)
+   **Fixed bugs** (2025-10-19):
+     8. **Bug #8**: FP Multiplier bit extraction error ✅ **CRITICAL FIX**
+        - Root cause: Off-by-one error in mantissa bit extraction for product < 2.0
+        - Was extracting `product[47:24]` then using `[22:0]` → effectively bits `[46:24]`
+        - Should extract `product[46:23]` to get correct mantissa alignment
+        - Fix: Changed `product[(2*MAN_WIDTH+1):(MAN_WIDTH+1)]` → `product[(2*MAN_WIDTH):(MAN_WIDTH)]`
+        - Also corrected guard/round/sticky bit positions
+        - Impact: fadd test progressed from #17 → #21 (4 more tests passing!)
+        - Location: rtl/core/fp_multiplier.v:199
+
+   - **Remaining**: Edge cases in arithmetic ops (NaN handling, special values, rounding)
    - See: docs/FPU_BUG7_ANALYSIS.md, docs/BUG6_CSR_FPU_HAZARD.md
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue

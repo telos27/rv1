@@ -265,6 +265,16 @@ module rv_core_pipelined #(
   wire            fpu_start;
   assign fpu_start = idex_fp_alu_en && idex_valid && !ex_fpu_busy;
 
+  `ifdef DEBUG_FPU
+  always @(posedge clk) begin
+    if (fpu_start) begin
+      $display("[CORE] FPU START: fp_alu_op=%0d rs1=%0d rs2=%0d rs3=%0d rd=%0d",
+               idex_fp_alu_op, idex_rs1_addr, idex_rs2_addr, idex_fp_rs3_addr, idex_rd_addr);
+      $display("       operands: a=%h b=%h c=%h", ex_fp_operand_a, ex_fp_operand_b, ex_fp_operand_c);
+    end
+  end
+  `endif
+
   //==========================================================================
   // EX/MEM Pipeline Register Outputs
   //==========================================================================
