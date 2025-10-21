@@ -190,14 +190,18 @@ module fp_converter #(
                   `endif
                 end else begin
                   // Normal conversion: shift mantissa
-                  shifted_man = {1'b1, man_fp, 40'b0} >> (63 - int_exp);
+                  // Build 64-bit mantissa: {implicit 1, 23-bit mantissa, 40 zero bits}
+                  reg [63:0] man_64_full;
+                  man_64_full = {1'b1, man_fp, 40'b0};
+
+                  shifted_man = man_64_full >> (63 - int_exp);
 
                   `ifdef DEBUG_FPU_CONVERTER
                   $display("[CONVERTER]   int_exp=%d >= 0, normal conversion", int_exp);
-                  $display("[CONVERTER]   shifted_man=%h, shift_amount=%d",
-                           shifted_man, (63 - int_exp));
-                  $display("[CONVERTER]   shifted_man[63:32]=%h, shifted_man[31:0]=%h",
-                           shifted_man[63:32], shifted_man[31:0]);
+                  $display("[CONVERTER]   man_64_full=%h, shift_amount=%d",
+                           man_64_full, (63 - int_exp));
+                  $display("[CONVERTER]   shifted_man=%h",
+                           shifted_man);
                   `endif
 
                   // Apply sign for signed conversions
@@ -210,19 +214,25 @@ module fp_converter #(
                   end
 
                   // Set inexact flag if fractional bits were lost during conversion
-                  // After shifting, the binary point is at position (63 - int_exp)
-                  // Fractional bits are below that: bits [(62-int_exp):0]
-                  // Bug #13 fix: Check fractional bits, not upper bits
+                  // We need to check if any bits were lost during the shift (i.e., bits that got shifted out)
+                  // The bits that get shifted out are the lower (63 - int_exp) bits of the ORIGINAL mantissa
+                  // Bug #15 fix: Check bits that were LOST in shift, not remaining bits
                   if (int_exp < 63) begin
-                    // Check if fractional bits (below the binary point) are non-zero
-                    flag_nx <= (shifted_man & ((64'h1 << (63 - int_exp)) - 1)) != 0;
+                    // Create mask for bits that will be shifted out: bits [(63-int_exp-1):0]
+                    reg [63:0] lost_bits_mask;
+                    lost_bits_mask = (64'h1 << (63 - int_exp)) - 1;
+                    // Check if any of those bits in the ORIGINAL mantissa are non-zero
+                    flag_nx <= (man_64_full & lost_bits_mask) != 0;
                   end else begin
                     // No fractional bits if exponent >= 63
                     flag_nx <= 1'b0;
                   end
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Setting int_result=%h, flag_nx=%b (frac_bits check)",
-                           shifted_man[XLEN-1:0], (int_exp < 63) ? ((shifted_man & ((64'h1 << (63 - int_exp)) - 1)) != 0) : 1'b0);
+                  $display("[CONVERTER]   Lost bits mask=%h, lost_bits=%h",
+                           (int_exp < 63) ? ((64'h1 << (63 - int_exp)) - 1) : 64'h0,
+                           (int_exp < 63) ? (man_64_full & ((64'h1 << (63 - int_exp)) - 1)) : 64'h0);
+                  $display("[CONVERTER]   Setting int_result=%h, flag_nx=%b (lost bits check)",
+                           shifted_man[XLEN-1:0], (int_exp < 63) ? ((man_64_full & ((64'h1 << (63 - int_exp)) - 1)) != 0) : 1'b0);
                   `endif
                 end
               end
