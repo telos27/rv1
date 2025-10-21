@@ -74,6 +74,23 @@ module fp_converter #(
   reg signed [15:0] int_exp;
   reg [63:0] shifted_man;
 
+  // Latched input operands (Bug #28 fix: latch operands on start to prevent re-sampling)
+  reg [XLEN-1:0] int_operand_latched;
+  reg [FLEN-1:0] fp_operand_latched;
+  reg [3:0] operation_latched;
+  reg [2:0] rounding_mode_latched;
+
+  // Effective operands: use latched values during conversion, direct values when idle
+  wire [XLEN-1:0] int_operand_eff;
+  wire [FLEN-1:0] fp_operand_eff;
+  wire [3:0] operation_eff;
+  wire [2:0] rounding_mode_eff;
+
+  assign int_operand_eff = (state == IDLE) ? int_operand_latched : int_operand_latched;
+  assign fp_operand_eff = (state == IDLE) ? fp_operand : fp_operand_latched;
+  assign operation_eff = (state == IDLE) ? operation : operation_latched;
+  assign rounding_mode_eff = (state == IDLE) ? rounding_mode : rounding_mode_latched;
+
   // Double precision extraction
   reg sign_d, sign_s;
   reg [10:0] exp_d, adjusted_exp_11;
@@ -85,15 +102,29 @@ module fp_converter #(
   reg [10:0] adjusted_exp;
   reg [7:0] adjusted_exp_8;
 
-  // State machine
+  // State machine and input latching
   always @(posedge clk or negedge reset_n) begin
-    if (!reset_n)
+    if (!reset_n) begin
       state <= IDLE;
-    else
+      int_operand_latched <= {XLEN{1'b0}};
+      fp_operand_latched <= {FLEN{1'b0}};
+      operation_latched <= 4'b0;
+      rounding_mode_latched <= 3'b0;
+    end else begin
       state <= next_state;
+      // Latch inputs on start (transition from IDLE to CONVERT)
+      if (state == IDLE && start) begin
+        int_operand_latched <= int_operand;
+        fp_operand_latched <= fp_operand;
+        operation_latched <= operation;
+        rounding_mode_latched <= rounding_mode;
+      end
+    end
   end
 
   // Next state logic
+  // Bug #28 fix: Only accept start signal when in IDLE state
+  // This prevents re-sampling operands if start is asserted multiple times
   always @(*) begin
     case (state)
       IDLE:    next_state = start ? CONVERT : IDLE;
@@ -105,8 +136,9 @@ module fp_converter #(
   end
 
   // Busy and done signals
+  // Bug #28 fix: Keep busy=1 during DONE state to prevent immediate restart
   always @(*) begin
-    busy = (state != IDLE) && (state != DONE);
+    busy = (state != IDLE);
     done = (state == DONE);
   end
 
@@ -126,7 +158,7 @@ module fp_converter #(
         // CONVERT: Perform conversion
         // ============================================================
         CONVERT: begin
-          case (operation)
+          case (operation_latched)  // Bug #28 fix: use latched operation
 
             // --------------------------------------------------------
             // FP → INT conversions
@@ -138,15 +170,15 @@ module fp_converter #(
               flag_uf <= 1'b0;
               flag_nx <= 1'b0;
 
-              // Extract FP components
-              sign_fp = fp_operand[FLEN-1];
-              exp_fp = fp_operand[FLEN-2:MAN_WIDTH];
-              man_fp = fp_operand[MAN_WIDTH-1:0];
+              // Extract FP components - Bug #28 fix: use latched fp_operand
+              sign_fp = fp_operand_latched[FLEN-1];
+              exp_fp = fp_operand_latched[FLEN-2:MAN_WIDTH];
+              man_fp = fp_operand_latched[MAN_WIDTH-1:0];
 
               // Check for special values
               is_nan = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp != 0);
               is_inf = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp == 0);
-              is_zero = (fp_operand[FLEN-2:0] == 0);
+              is_zero = (fp_operand_latched[FLEN-2:0] == 0);  // Bug #28 fix
 
               `ifdef DEBUG_FPU_CONVERTER
               $display("[CONVERTER] FP→INT: fp_operand=%h, sign=%b, exp=%d, man=%h",
@@ -172,7 +204,7 @@ module fp_converter #(
                 int_exp = exp_fp - BIAS;
 
                 // Check if exponent is too large (overflow)
-                if (int_exp > 31 || (operation[1:0] == 2'b10 && int_exp > 63)) begin
+                if (int_exp > 31 || (operation_latched[1:0] == 2'b10 && int_exp > 63)) begin
                   // Overflow: return max/min
                   case (operation)
                     FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
@@ -184,20 +216,98 @@ module fp_converter #(
                 end
                 // Check if exponent is negative (fractional result)
                 else if (int_exp < 0) begin
-                  // Round to zero (result < 1.0 becomes 0)
-                  int_result <= {XLEN{1'b0}};
-                  // Inexact if we're truncating a non-zero value
-                  // Bug #13 fix: Use !is_zero instead of (man_fp != 0) for clarity
+                  // Bug #27 fix: Fractional values (0 < value < 1) need rounding
+                  // Result is either 0 or 1 depending on rounding mode
+                  reg should_round_up_frac;
+
+                  // For values < 1.0:
+                  // - Truncated value is always 0
+                  // - Need to check if we should round up to 1
+                  // - Guard bit is the implicit 1 bit (MSB of mantissa)
+                  // - Round/sticky are the mantissa bits
+
                   flag_nx <= !is_zero;
+
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   int_exp=%d < 0, fractional result", int_exp);
-                  $display("[CONVERTER]   Setting int_result=0, flag_nx=%b (!is_zero=%b)",
-                           !is_zero, !is_zero);
+                  $display("[CONVERTER]   int_exp=%d < 0, fractional result (0 < value < 1)", int_exp);
+                  $display("[CONVERTER]   sign=%b, mantissa=0x%h", sign_fp, man_fp);
+                  `endif
+
+                  // Determine rounding for fractional values
+                  case (rounding_mode)
+                    3'b000: begin // RNE
+                      // For int_exp = -1: value = 1.mantissa * 2^-1 = 0.1mantissa (binary)
+                      // Guard bit is the implicit 1, which is always 1 for normalized numbers
+                      // Round bit is MSB of mantissa
+                      // Sticky is OR of remaining mantissa bits
+                      // Round up if guard=1 AND (round=1 OR sticky=1 OR LSB=1)
+                      // Since truncated result is 0 (LSB=0), round up if: 1 AND (MSB_man=1 OR other_bits≠0)
+                      // This simplifies to: round up if value >= 0.5
+                      // For value=0.5 exactly (man=0), round to even (0)
+                      // For value>0.5 (man!=0 with MSB=0, or MSB=1), round up to 1
+
+                      // int_exp=-1: 0.1mantissa, rounds up if >= 0.75 (MSB=1) OR = 0.5 + epsilon (MSB=0, rest!=0)
+                      // But actually for 0.5 exact, we round to even (0)
+                      if (int_exp == -1) begin
+                        // Value is 0.5 to 1.0
+                        // 0.5 exactly: man_fp = 0, round to 0 (even)
+                        // > 0.5: round to 1
+                        should_round_up_frac = (man_fp != 0);
+                      end else begin
+                        // int_exp < -1: value < 0.5, always rounds to 0
+                        should_round_up_frac = 1'b0;
+                      end
+                    end
+                    3'b001: begin // RTZ - always truncate to 0
+                      should_round_up_frac = 1'b0;
+                    end
+                    3'b010: begin // RDN - round down (toward -inf)
+                      // Round up magnitude if negative
+                      should_round_up_frac = sign_fp && !is_zero;
+                    end
+                    3'b011: begin // RUP - round up (toward +inf)
+                      // Round up if positive and non-zero
+                      should_round_up_frac = !sign_fp && !is_zero;
+                    end
+                    3'b100: begin // RMM - ties away from zero
+                      // Round up if >= 0.5
+                      should_round_up_frac = (int_exp == -1);
+                    end
+                    default: begin
+                      should_round_up_frac = 1'b0;
+                    end
+                  endcase
+
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   Rounding mode=%b, should_round_up=%b",
+                           rounding_mode, should_round_up_frac);
+                  `endif
+
+                  // Apply rounding
+                  if (operation_latched[0] == 1'b1 && sign_fp) begin
+                    // Unsigned conversion with negative value: saturate to 0
+                    int_result <= {XLEN{1'b0}};
+                  end else if (operation_latched[0] == 1'b0 && sign_fp) begin
+                    // Signed negative: -0 or -1
+                    int_result <= should_round_up_frac ? {XLEN{1'b1}} : {XLEN{1'b0}}; // -1 or 0
+                  end else begin
+                    // Positive (signed or unsigned): 0 or 1
+                    int_result <= should_round_up_frac ? {{(XLEN-1){1'b0}}, 1'b1} : {XLEN{1'b0}};
+                  end
+
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   Final result=%h",
+                           should_round_up_frac ? (sign_fp ? {XLEN{1'b1}} : 1) : 0);
                   `endif
                 end else begin
                   // Normal conversion: shift mantissa
                   // Build 64-bit mantissa: {implicit 1, 23-bit mantissa, 40 zero bits}
                   reg [63:0] man_64_full;
+                  reg [63:0] lost_bits;
+                  reg       frac_guard, frac_round, frac_sticky;
+                  reg       should_round_up;
+                  reg [63:0] rounded_result;
+
                   man_64_full = {1'b1, man_fp, 40'b0};
 
                   shifted_man = man_64_full >> (63 - int_exp);
@@ -210,35 +320,103 @@ module fp_converter #(
                            shifted_man);
                   `endif
 
-                  // Apply sign for signed conversions
-                  if (operation[0] == 1'b0 && sign_fp) begin
-                    // Signed negative
-                    int_result <= -shifted_man[XLEN-1:0];
-                  end else begin
-                    // Positive or unsigned
-                    int_result <= shifted_man[XLEN-1:0];
-                  end
-
-                  // Set inexact flag if fractional bits were lost during conversion
-                  // We need to check if any bits were lost during the shift (i.e., bits that got shifted out)
-                  // The bits that get shifted out are the lower (63 - int_exp) bits of the ORIGINAL mantissa
-                  // Bug #15 fix: Check bits that were LOST in shift, not remaining bits
+                  // Bug #26 fix: Extract fractional bits and apply rounding for FP→INT
+                  // Extract the bits that were shifted out (fractional part)
                   if (int_exp < 63) begin
-                    // Create mask for bits that will be shifted out: bits [(63-int_exp-1):0]
                     reg [63:0] lost_bits_mask;
                     lost_bits_mask = (64'h1 << (63 - int_exp)) - 1;
-                    // Check if any of those bits in the ORIGINAL mantissa are non-zero
-                    flag_nx <= (man_64_full & lost_bits_mask) != 0;
+                    lost_bits = man_64_full & lost_bits_mask;
+
+                    // Extract guard, round, sticky bits from fractional part
+                    // Guard bit: MSB of fractional part (bit position 63-int_exp-1)
+                    // Round bit: next bit (bit position 63-int_exp-2)
+                    // Sticky bit: OR of all remaining bits
+                    if (int_exp <= 61) begin
+                      frac_guard  = lost_bits[63 - int_exp - 1];
+                      frac_round  = (int_exp <= 60) ? lost_bits[63 - int_exp - 2] : 1'b0;
+                      frac_sticky = (int_exp <= 60) ? (|(lost_bits & ((64'h1 << (63 - int_exp - 2)) - 1))) :
+                                    (int_exp == 61) ? (|(lost_bits & ((64'h1 << (63 - int_exp - 1)) - 1))) : 1'b0;
+                    end else if (int_exp == 62) begin
+                      frac_guard  = lost_bits[0];
+                      frac_round  = 1'b0;
+                      frac_sticky = 1'b0;
+                    end else begin
+                      frac_guard  = 1'b0;
+                      frac_round  = 1'b0;
+                      frac_sticky = 1'b0;
+                    end
+
+                    flag_nx <= (lost_bits != 0);
                   end else begin
                     // No fractional bits if exponent >= 63
+                    lost_bits = 64'h0;
+                    frac_guard = 1'b0;
+                    frac_round = 1'b0;
+                    frac_sticky = 1'b0;
                     flag_nx <= 1'b0;
                   end
+
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Lost bits mask=%h, lost_bits=%h",
-                           (int_exp < 63) ? ((64'h1 << (63 - int_exp)) - 1) : 64'h0,
-                           (int_exp < 63) ? (man_64_full & ((64'h1 << (63 - int_exp)) - 1)) : 64'h0);
-                  $display("[CONVERTER]   Setting int_result=%h, flag_nx=%b (lost bits check)",
-                           shifted_man[XLEN-1:0], (int_exp < 63) ? ((man_64_full & ((64'h1 << (63 - int_exp)) - 1)) != 0) : 1'b0);
+                  $display("[CONVERTER]   Lost bits=%h, GRS=%b%b%b",
+                           lost_bits, frac_guard, frac_round, frac_sticky);
+                  `endif
+
+                  // Determine if we should round up based on rounding mode
+                  // IEEE 754 rounding modes:
+                  // 000 = RNE (Round to Nearest, ties to Even)
+                  // 001 = RTZ (Round Toward Zero) - always truncate
+                  // 010 = RDN (Round Down / toward -infinity)
+                  // 011 = RUP (Round Up / toward +infinity)
+                  // 100 = RMM (Round to Nearest, ties to Max Magnitude)
+                  case (rounding_mode)
+                    3'b000: begin // RNE
+                      // Round up if: guard=1 AND (round=1 OR sticky=1 OR LSB=1)
+                      should_round_up = frac_guard && (frac_round || frac_sticky || shifted_man[0]);
+                    end
+                    3'b001: begin // RTZ
+                      should_round_up = 1'b0;
+                    end
+                    3'b010: begin // RDN
+                      // Round down (toward -infinity): round up magnitude if negative and fractional bits exist
+                      should_round_up = sign_fp && (frac_guard || frac_round || frac_sticky);
+                    end
+                    3'b011: begin // RUP
+                      // Round up (toward +infinity): round up magnitude if positive and fractional bits exist
+                      should_round_up = !sign_fp && (frac_guard || frac_round || frac_sticky);
+                    end
+                    3'b100: begin // RMM
+                      // Round to nearest, ties away from zero
+                      should_round_up = frac_guard;
+                    end
+                    default: begin
+                      should_round_up = 1'b0;
+                    end
+                  endcase
+
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   Rounding mode=%b, should_round_up=%b",
+                           rounding_mode, should_round_up);
+                  `endif
+
+                  // Apply rounding increment
+                  rounded_result = shifted_man + (should_round_up ? 64'h1 : 64'h0);
+
+                  // Apply sign for signed conversions, or saturate for unsigned
+                  if (operation_latched[0] == 1'b1 && sign_fp) begin
+                    // Unsigned conversion with negative value: saturate to 0
+                    int_result <= {XLEN{1'b0}};
+                  end else if (operation_latched[0] == 1'b0 && sign_fp) begin
+                    // Signed negative
+                    int_result <= -rounded_result[XLEN-1:0];
+                  end else begin
+                    // Positive (signed or unsigned)
+                    int_result <= rounded_result[XLEN-1:0];
+                  end
+
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   Rounded result=%h, final int_result=%h",
+                           rounded_result[XLEN-1:0],
+                           (operation_latched[0] == 1'b0 && sign_fp) ? -rounded_result[XLEN-1:0] : rounded_result[XLEN-1:0]);
                   `endif
                 end
               end
@@ -255,11 +433,11 @@ module fp_converter #(
               flag_nx <= 1'b0;
 
               `ifdef DEBUG_FPU_CONVERTER
-              $display("[CONVERTER] INT→FP CONVERT stage: op=%b, int_operand=0x%h", operation, int_operand);
+              $display("[CONVERTER] INT→FP CONVERT stage: op=%b, int_operand_latched=0x%h", operation, int_operand_latched);
               `endif
 
               // Check for zero
-              if (int_operand == 0) begin
+              if (int_operand_latched == 0) begin
                 // For zero input, set intermediate values so ROUND state doesn't corrupt result
                 sign_result <= 1'b0;
                 exp_result <= {EXP_WIDTH{1'b0}};
@@ -283,16 +461,16 @@ module fp_converter #(
                 reg g_temp, r_temp, s_temp;
 
                 // Extract sign and absolute value
-                if (operation[0] == 1'b0 && int_operand[XLEN-1]) begin
+                if (operation_latched[0] == 1'b0 && int_operand_latched[XLEN-1]) begin
                   // Signed negative
                   sign_temp = 1'b1;
                   // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
-                  // For RV32: -int_operand gives 32-bit result, must zero-extend to 64 bits
+                  // For RV32: -int_operand_latched gives 32-bit result, must zero-extend to 64 bits
                   // For RV64: already 64-bit, no extension needed
                   if (XLEN == 32) begin
-                    int_abs_temp = {32'b0, (-int_operand[31:0])};
+                    int_abs_temp = {32'b0, (-int_operand_latched[31:0])};
                   end else begin
-                    int_abs_temp = -int_operand;
+                    int_abs_temp = -int_operand_latched;
                   end
                   `ifdef DEBUG_FPU_CONVERTER
                   $display("[CONVERTER]   Signed negative: int_abs = 0x%h", int_abs_temp);
@@ -302,9 +480,9 @@ module fp_converter #(
                   sign_temp = 1'b0;
                   // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
                   if (XLEN == 32) begin
-                    int_abs_temp = {32'b0, int_operand[31:0]};
+                    int_abs_temp = {32'b0, int_operand_latched[31:0]};
                   end else begin
-                    int_abs_temp = int_operand;
+                    int_abs_temp = int_operand_latched;
                   end
                   `ifdef DEBUG_FPU_CONVERTER
                   $display("[CONVERTER]   Positive/unsigned: int_abs = 0x%h", int_abs_temp);
@@ -426,14 +604,14 @@ module fp_converter #(
             FCVT_S_D: begin
               // Double to single (may lose precision)
               // Extract double components
-              sign_d = fp_operand[63];
-              exp_d = fp_operand[62:52];
-              man_d = fp_operand[51:0];
+              sign_d = fp_operand_latched[63];
+              exp_d = fp_operand_latched[62:52];
+              man_d = fp_operand_latched[51:0];
 
               // Check for special values
               is_nan_d = (exp_d == 11'h7FF) && (man_d != 0);
               is_inf_d = (exp_d == 11'h7FF) && (man_d == 0);
-              is_zero_d = (fp_operand[62:0] == 0);
+              is_zero_d = (fp_operand_latched[62:0] == 0);
 
               if (is_nan_d) begin
                 fp_result <= 32'h7FC00000;  // Canonical NaN
@@ -467,14 +645,14 @@ module fp_converter #(
             FCVT_D_S: begin
               // Single to double (no precision loss)
               // Extract single components
-              sign_s = fp_operand[31];
-              exp_s = fp_operand[30:23];
-              man_s = fp_operand[22:0];
+              sign_s = fp_operand_latched[31];
+              exp_s = fp_operand_latched[30:23];
+              man_s = fp_operand_latched[22:0];
 
               // Check for special values
               is_nan_s = (exp_s == 8'hFF) && (man_s != 0);
               is_inf_s = (exp_s == 8'hFF) && (man_s == 0);
-              is_zero_s = (fp_operand[30:0] == 0);
+              is_zero_s = (fp_operand_latched[30:0] == 0);
 
               if (is_nan_s) begin
                 fp_result <= 64'h7FF8000000000000;  // Canonical NaN
@@ -505,14 +683,14 @@ module fp_converter #(
         // ============================================================
         ROUND: begin
           // Only apply rounding for INT→FP conversions
-          if (operation[3:2] == 2'b01) begin
+          if (operation_latched[3:2] == 2'b01) begin
             `ifdef DEBUG_FPU_CONVERTER
             $display("[CONVERTER] ROUND stage:");
             $display("[CONVERTER]   sign=%b, exp=%d (0x%h), man=0x%h",
                      sign_result, exp_result, exp_result, man_result);
             $display("[CONVERTER]   GRS: guard=%b, round=%b, sticky=%b",
                      guard, round, sticky);
-            $display("[CONVERTER]   rounding_mode=%b", rounding_mode);
+            $display("[CONVERTER]   rounding_mode_latched=%b", rounding_mode_latched);
             `endif
 
             // Determine if we should round up
