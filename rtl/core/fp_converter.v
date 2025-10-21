@@ -286,16 +286,28 @@ module fp_converter #(
                 if (operation[0] == 1'b0 && int_operand[XLEN-1]) begin
                   // Signed negative
                   sign_temp = 1'b1;
-                  int_abs_temp = -int_operand;
+                  // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
+                  // For RV32: -int_operand gives 32-bit result, must zero-extend to 64 bits
+                  // For RV64: already 64-bit, no extension needed
+                  if (XLEN == 32) begin
+                    int_abs_temp = {32'b0, (-int_operand[31:0])};
+                  end else begin
+                    int_abs_temp = -int_operand;
+                  end
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Signed negative: int_abs = 0x%h", -int_operand);
+                  $display("[CONVERTER]   Signed negative: int_abs = 0x%h", int_abs_temp);
                   `endif
                 end else begin
                   // Positive or unsigned
                   sign_temp = 1'b0;
-                  int_abs_temp = int_operand;
+                  // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
+                  if (XLEN == 32) begin
+                    int_abs_temp = {32'b0, int_operand[31:0]};
+                  end else begin
+                    int_abs_temp = int_operand;
+                  end
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Positive/unsigned: int_abs = 0x%h", int_operand);
+                  $display("[CONVERTER]   Positive/unsigned: int_abs = 0x%h", int_abs_temp);
                   `endif
                 end
 
