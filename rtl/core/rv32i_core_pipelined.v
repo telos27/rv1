@@ -268,9 +268,39 @@ module rv_core_pipelined #(
   `ifdef DEBUG_FPU
   always @(posedge clk) begin
     if (fpu_start) begin
-      $display("[CORE] FPU START: fp_alu_op=%0d rs1=%0d rs2=%0d rs3=%0d rd=%0d",
-               idex_fp_alu_op, idex_rs1_addr, idex_rs2_addr, idex_fp_rs3_addr, idex_rd_addr);
-      $display("       operands: a=%h b=%h c=%h", ex_fp_operand_a, ex_fp_operand_b, ex_fp_operand_c);
+      $display("[CORE] FPU START: PC=%h fp_alu_op=%0d rs1=%0d rs2=%0d rs3=%0d rd=%0d",
+               idex_pc, idex_fp_alu_op, idex_rs1_addr, idex_rs2_addr, idex_fp_rs3_addr, idex_rd_addr);
+      $display("       FP operands: a=%h b=%h c=%h", ex_fp_operand_a, ex_fp_operand_b, ex_fp_operand_c);
+      $display("       INT operand: int_operand=%h (ex_alu_operand_a_forwarded)", ex_alu_operand_a_forwarded);
+      $display("       INT rs1 data: idex_rs1_data=%h, forward_a=%b", idex_rs1_data, forward_a);
+    end
+    if (idex_valid && (idex_opcode == 7'b1010011)) begin  // FP opcode
+      $display("[FP_DECODE] PC=%h instr=%h opcode=%b funct7=%b rs2=%d fp_alu_en=%b fpu_busy=%b",
+               idex_pc, idex_instruction, idex_opcode, idex_funct7, idex_rs2_addr, idex_fp_alu_en, ex_fpu_busy);
+    end
+    // Trace all branches to understand control flow
+    if (idex_valid && (idex_branch || idex_jump)) begin
+      $display("[BRANCH] PC=%h instr=%h branch=%b jump=%b take=%b target=%h",
+               idex_pc, idex_instruction, idex_branch, idex_jump, ex_take_branch,
+               idex_branch ? ex_branch_target : ex_jump_target);
+      if (idex_branch) begin
+        $display("         rs1_data=%h (x%0d fwd=%b) rs2_data=%h (x%0d fwd=%b)",
+                 ex_alu_operand_a_forwarded, idex_rs1_addr, forward_a,
+                 ex_rs2_data_forwarded, idex_rs2_addr, forward_b);
+        $display("         exmem: rd=x%0d reg_wr=%b int_wr_fp=%b alu_res=%h int_res_fp=%h fwd_data=%h",
+                 exmem_rd_addr, exmem_reg_write, exmem_int_reg_write_fp, exmem_alu_result, exmem_int_result_fp, exmem_forward_data);
+        $display("         memwb: rd=x%0d reg_wr=%b int_wr_fp=%b wb_data=%h",
+                 memwb_rd_addr, memwb_reg_write, memwb_int_reg_write_fp, wb_data);
+      end
+    end
+    // Trace gp writes to track test progress
+    if (memwb_reg_write && (memwb_rd_addr == 3)) begin
+      $display("[GP_WRITE] GP <= %h (test number)", wb_data);
+    end
+    // Trace FP-to-INT writebacks
+    if (memwb_int_reg_write_fp && memwb_reg_write) begin
+      $display("[WB_FP2INT] x%0d <= %h (wb_sel=%b int_result_fp=%h wb_data=%h)",
+               memwb_rd_addr, wb_data, memwb_wb_sel, memwb_int_result_fp, wb_data);
     end
   end
   `endif
@@ -968,6 +998,7 @@ module rv_core_pipelined #(
     .idex_is_atomic(idex_is_atomic),
     .exmem_rd(exmem_rd_addr),
     .exmem_reg_write(exmem_reg_write),
+    .exmem_int_reg_write_fp(exmem_int_reg_write_fp),
     .memwb_rd(memwb_rd_addr),
     .memwb_reg_write(memwb_reg_write),
     .memwb_int_reg_write_fp(memwb_int_reg_write_fp),
@@ -1007,7 +1038,7 @@ module rv_core_pipelined #(
   wire disable_forward_a = (idex_opcode == 7'b0110111) || (idex_opcode == 7'b0010111);  // LUI or AUIPC
 
   assign ex_alu_operand_a_forwarded = disable_forward_a ? ex_alu_operand_a :            // No forward for LUI/AUIPC
-                                      (forward_a == 2'b10) ? exmem_alu_result :         // EX hazard
+                                      (forward_a == 2'b10) ? exmem_forward_data :       // EX hazard (includes FP-to-INT)
                                       (forward_a == 2'b01) ? wb_data :                  // MEM hazard
                                       ex_alu_operand_a;                                  // No hazard
 
@@ -1020,9 +1051,11 @@ module rv_core_pipelined #(
   end
   `endif
 
-  // Forward data selection: use atomic_result for atomic instructions, alu_result otherwise
+  // Forward data selection: use atomic_result for atomic instructions, int_result_fp for FP-to-INT, alu_result otherwise
   wire [XLEN-1:0] exmem_forward_data;
-  assign exmem_forward_data = exmem_is_atomic ? exmem_atomic_result : exmem_alu_result;
+  assign exmem_forward_data = exmem_is_atomic ? exmem_atomic_result :
+                              exmem_int_reg_write_fp ? exmem_int_result_fp :
+                              exmem_alu_result;
 
   // rs1 data forwarding (for SFENCE.VMA and other instructions that use rs1 data directly)
   wire [XLEN-1:0] ex_rs1_data_forwarded;

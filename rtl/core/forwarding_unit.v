@@ -42,6 +42,7 @@ module forwarding_unit (
   // EX/MEM register outputs (instruction in MEM stage)
   input  wire [4:0] exmem_rd,          // MEM stage destination register
   input  wire       exmem_reg_write,   // MEM stage will write to register
+  input  wire       exmem_int_reg_write_fp, // MEM stage FP-to-INT write
 
   // MEM/WB register outputs (instruction in WB stage)
   input  wire [4:0] memwb_rd,          // WB stage destination register
@@ -95,7 +96,8 @@ module forwarding_unit (
       id_forward_a = 3'b100;  // Forward from EX stage
     end
     // Check MEM stage (second priority)
-    else if (exmem_reg_write && (exmem_rd != 5'h0) && (exmem_rd == id_rs1)) begin
+    // Include FP-to-INT writes (FMV.X.W, FCVT.W.S, FP compare, etc.)
+    else if ((exmem_reg_write | exmem_int_reg_write_fp) && (exmem_rd != 5'h0) && (exmem_rd == id_rs1)) begin
       id_forward_a = 3'b010;  // Forward from MEM stage
     end
     // Check WB stage (lowest priority - oldest instruction)
@@ -114,7 +116,8 @@ module forwarding_unit (
       id_forward_b = 3'b100;  // Forward from EX stage
     end
     // Check MEM stage (second priority)
-    else if (exmem_reg_write && (exmem_rd != 5'h0) && (exmem_rd == id_rs2)) begin
+    // Include FP-to-INT writes (FMV.X.W, FCVT.W.S, FP compare, etc.)
+    else if ((exmem_reg_write | exmem_int_reg_write_fp) && (exmem_rd != 5'h0) && (exmem_rd == id_rs2)) begin
       id_forward_b = 3'b010;  // Forward from MEM stage
     end
     // Check WB stage (lowest priority)
@@ -136,7 +139,8 @@ module forwarding_unit (
 
     // MEM hazard (highest priority): Forward from EX/MEM
     // Condition: EX/MEM.reg_write AND EX/MEM.rd != 0 AND EX/MEM.rd == ID/EX.rs1
-    if (exmem_reg_write && (exmem_rd != 5'h0) && (exmem_rd == idex_rs1)) begin
+    // Include FP-to-INT writes (FMV.X.W, FCVT.W.S, FP compare, etc.)
+    if ((exmem_reg_write | exmem_int_reg_write_fp) && (exmem_rd != 5'h0) && (exmem_rd == idex_rs1)) begin
       forward_a = 2'b10;
       `ifdef DEBUG_FORWARD
       $display("[FORWARD_A] @%0t MEM hazard: rs1=x%0d matches exmem_rd=x%0d (fwd=2'b10)", $time, idex_rs1, exmem_rd);
@@ -144,7 +148,8 @@ module forwarding_unit (
     end
     // WB hazard: Forward from MEM/WB (only if no MEM hazard)
     // Condition: MEM/WB.reg_write AND MEM/WB.rd != 0 AND MEM/WB.rd == ID/EX.rs1
-    else if (memwb_reg_write && (memwb_rd != 5'h0) && (memwb_rd == idex_rs1)) begin
+    // Include FP-to-INT writes
+    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == idex_rs1)) begin
       forward_a = 2'b01;
       `ifdef DEBUG_FORWARD
       $display("[FORWARD_A] @%0t WB hazard: rs1=x%0d matches memwb_rd=x%0d (fwd=2'b01)", $time, idex_rs1, memwb_rd);
@@ -162,14 +167,16 @@ module forwarding_unit (
     forward_b = 2'b00;
 
     // MEM hazard (highest priority): Forward from EX/MEM
-    if (exmem_reg_write && (exmem_rd != 5'h0) && (exmem_rd == idex_rs2)) begin
+    // Include FP-to-INT writes (FMV.X.W, FCVT.W.S, FP compare, etc.)
+    if ((exmem_reg_write | exmem_int_reg_write_fp) && (exmem_rd != 5'h0) && (exmem_rd == idex_rs2)) begin
       forward_b = 2'b10;
       `ifdef DEBUG_FORWARD
       $display("[FORWARD_B] @%0t MEM hazard: rs2=x%0d matches exmem_rd=x%0d (fwd=2'b10)", $time, idex_rs2, exmem_rd);
       `endif
     end
     // WB hazard: Forward from MEM/WB
-    else if (memwb_reg_write && (memwb_rd != 5'h0) && (memwb_rd == idex_rs2)) begin
+    // Include FP-to-INT writes
+    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == idex_rs2)) begin
       forward_b = 2'b01;
       `ifdef DEBUG_FORWARD
       $display("[FORWARD_B] @%0t WB hazard: rs2=x%0d matches memwb_rd=x%0d (fwd=2'b01)", $time, idex_rs2, memwb_rd);
