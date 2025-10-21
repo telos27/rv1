@@ -12,6 +12,18 @@ HEX_FILE="${TEST_DIR}/${TEST_NAME}.hex"
 SIM_DIR="sim"
 WAVES_DIR="${SIM_DIR}/waves"
 
+# Debug flags (passed as -D to iverilog)
+DEBUG_FLAGS=""
+if [ ! -z "$DEBUG_FPU" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_FPU"
+fi
+if [ ! -z "$DEBUG_M" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_M"
+fi
+if [ ! -z "$DEBUG_HAZARD" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_HAZARD"
+fi
+
 # Determine architecture
 if [ "$XLEN" = "64" ]; then
     CONFIG_FLAG="-DCONFIG_RV64I"
@@ -47,9 +59,13 @@ fi
 
 # Step 1: Compile with Icarus Verilog
 echo "Step 1: Compiling with Icarus Verilog ($ARCH_NAME configuration)..."
+if [ ! -z "$DEBUG_FLAGS" ]; then
+    echo "Debug flags: $DEBUG_FLAGS"
+fi
 iverilog -g2012 \
     -I rtl \
     $CONFIG_FLAG \
+    $DEBUG_FLAGS \
     -DMEM_FILE=\"$HEX_FILE\" \
     -o "$OUTPUT_VVP" \
     rtl/core/*.v \

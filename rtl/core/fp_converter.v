@@ -260,9 +260,15 @@ module fp_converter #(
 
               // Check for zero
               if (int_operand == 0) begin
-                fp_result <= {FLEN{1'b0}};  // +0.0
+                // For zero input, set intermediate values so ROUND state doesn't corrupt result
+                sign_result <= 1'b0;
+                exp_result <= {EXP_WIDTH{1'b0}};
+                man_result <= {(MAN_WIDTH+1){1'b0}};
+                guard <= 1'b0;
+                round <= 1'b0;
+                sticky <= 1'b0;
                 `ifdef DEBUG_FPU_CONVERTER
-                $display("[CONVERTER]   Zero input, result = +0.0");
+                $display("[CONVERTER]   Zero input, setting intermediate values to zero");
                 `endif
               end else begin
                 // Bug #18 fix: Compute everything with blocking assignments first
