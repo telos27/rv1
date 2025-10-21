@@ -446,8 +446,40 @@ Before adding new features, consider fixing these existing issues:
          - Fix: Applied special_case_handled pattern to multiplier
          - Location: rtl/core/fp_multiplier.v
 
-   - **Remaining**: 7 tests still failing (fcmp, fcvt, fcvt_w, fdiv, fmadd, fmin, recoding)
-   - See: docs/FPU_BUG10_SPECIAL_CASE_FLAGS.md, docs/FPU_BUG11_FDIV_TIMEOUT.md
+   **Fixed bugs** (2025-10-20 PM): FPU Converter Infrastructure - Bugs #13-#18 ✅
+     13. **Bug #13**: INT→FP leading zero counter broken ✅
+         - Root cause: For loop incorrectly counted all zeros, not just leading
+         - Fix: Replaced with 64-bit casez priority encoder
+         - Location: rtl/core/fp_converter.v:296-365
+     14. **Bug #13b**: Mantissa shift off-by-one ✅
+         - Root cause: Shifted by leading_zeros+1 instead of leading_zeros
+         - Fix: Corrected shift amount and bit extraction range
+         - Location: rtl/core/fp_converter.v:374
+     15. **Bug #14**: Flag contamination in conversions ✅
+         - Root cause: Exception flags never cleared between operations
+         - Fix: Clear all flags at start of CONVERT state
+         - Location: rtl/core/fp_converter.v:135-139, 245-249
+     16. **Bug #16**: Mantissa rounding overflow not handled ✅
+         - Root cause: When rounding 0x7FFFFF+1, exponent not incremented
+         - Fix: Detect all-1s mantissa before rounding, increment exp if overflow
+         - Location: rtl/core/fp_converter.v:499-526
+     17. **Bug #17**: **CRITICAL** - funct7 direction bit wrong ✅ **MAJOR FIX**
+         - Root cause: Checked funct7[6] instead of funct7[3] for INT↔FP direction
+         - Impact: ALL INT→FP conversions (fcvt.s.w, fcvt.s.wu) decoded as FP→INT!
+         - Fix: Changed to funct7[3] per RISC-V spec
+         - Location: rtl/core/fpu.v:344-349
+         - **This bug prevented fcvt.s.w/fcvt.s.wu from EVER working**
+     18. **Bug #18**: **CRITICAL** - Non-blocking assignment timing bug ✅ **MAJOR FIX**
+         - Root cause: Intermediate values assigned with <= then used same cycle
+         - Impact: Converter produced undefined (X) values
+         - Fix: Refactored CONVERT state to use blocking = for all intermediate values
+         - Location: rtl/core/fp_converter.v:268-401
+         - **This bug caused all converter outputs to be undefined**
+
+   - **Current Status**: Converter infrastructure fixed, produces correct values (test #2: 2→0x40000000 ✓)
+   - **Remaining Issue**: Writeback path integration - values not reaching FP register file
+   - **Next Steps**: Debug pipeline writeback for FPU multi-cycle operations
+   - See: docs/SESSION_2025-10-20_FPU_CONVERTER_DEBUG.md
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs

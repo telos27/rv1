@@ -23,6 +23,7 @@ TB_DIR="$RV1_DIR/tb"
 # Check arguments
 PATTERN="${1:-rv32}"
 DEBUG_FPU="${DEBUG_FPU:-0}"  # Set to 1 to enable FPU debug output
+DEBUG_FPU_CONVERTER="${DEBUG_FPU_CONVERTER:-0}"  # Set to 1 to enable converter debug
 
 echo "=========================================="
 echo "RV1 Compliance Tests (from hex files)"
@@ -30,6 +31,9 @@ echo "=========================================="
 echo "Pattern: ${PATTERN}"
 if [ "$DEBUG_FPU" = "1" ]; then
   echo "Debug: FPU debugging enabled"
+fi
+if [ "$DEBUG_FPU_CONVERTER" = "1" ]; then
+  echo "Debug: FPU Converter debugging enabled"
 fi
 echo ""
 
@@ -66,6 +70,9 @@ for hex_file in $TESTS; do
   IVERILOG_OPTS="-g2012 -I$RTL_DIR -DCOMPLIANCE_TEST -DMEM_FILE=\"$hex_file\""
   if [ "$DEBUG_FPU" = "1" ]; then
     IVERILOG_OPTS="$IVERILOG_OPTS -DDEBUG_FPU"
+  fi
+  if [ "$DEBUG_FPU_CONVERTER" = "1" ]; then
+    IVERILOG_OPTS="$IVERILOG_OPTS -DDEBUG_FPU_CONVERTER"
   fi
 
   iverilog $IVERILOG_OPTS \
