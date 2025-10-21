@@ -44,9 +44,9 @@ ${RISCV_PREFIX}as -march=rv32i -mabi=ilp32 -o "$OBJ_FILE" "$ASM_FILE"
 echo "Linking..."
 ${RISCV_PREFIX}ld -m elf32lriscv -T tests/linker.ld -o "$ELF_FILE" "$OBJ_FILE"
 
-# Convert to hex
+# Convert to hex using our helper script
 echo "Generating hex file..."
-${RISCV_PREFIX}objcopy -O verilog "$ELF_FILE" "$HEX_FILE"
+./tools/elf_to_hex.sh "$ELF_FILE" "$HEX_FILE"
 
 # Generate disassembly for reference
 echo "Generating disassembly..."
