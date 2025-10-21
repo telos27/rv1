@@ -1,100 +1,89 @@
 # FPU Conversion Testing Status
 
-**Date**: 2025-10-21
-**Status**: 🔴 **EARLY TESTING - NOT COMPLETE**
+**Date**: 2025-10-21 (Updated after Bug #24 fix)
+**Status**: 🟡 **BASIC INT→FP WORKING - EXTENSIVE TESTING NEEDED**
 
 ---
 
-## Current Status: BEGINNING OF FPU CONVERSION TESTING
+## Current Status: BASIC INT→FP CONVERSIONS WORKING
 
-**IMPORTANT**: We are at the **very beginning** of FPU conversion testing. While Bug #23 (RVC detection) has been fixed, we are **NOT close to being done** with FPU testing, especially conversions.
+**PROGRESS UPDATE**: Bug #24 has been fixed! Basic signed integer-to-float conversions are now working correctly for RV32. However, we are still at the **early stages** of comprehensive FPU conversion testing.
 
 ---
 
 ## What We've Accomplished
 
 ### Bug Fixes (Recent)
-1. ✅ Bug #22: FP-to-INT forwarding missing
-2. ✅ Bug #21: FP converter uninitialized variables for zero INT→FP
-3. ✅ Bug #20: FP compare signed integer comparison error
-4. ✅ Bug #19: Control unit FCVT direction bit - writeback path
-5. ✅ Bugs #13-#18: FPU converter infrastructure overhaul
-6. ✅ Bug #23: RVC compressed instruction detection (just fixed)
+1. ✅ Bug #24: **FCVT.S.W negative integer conversion** (exponent off by +64) - **JUST FIXED!**
+2. ✅ Bug #23: RVC compressed instruction detection logic error
+3. ✅ Bug #22: FP-to-INT forwarding missing
+4. ✅ Bug #21: FP converter uninitialized variables for zero INT→FP
+5. ✅ Bug #20: FP compare signed integer comparison error
+6. ✅ Bug #19: Control unit FCVT direction bit - writeback path
+7. ✅ Bugs #13-#18: FPU converter infrastructure overhaul
 
-### Test Results (test_fcvt_simple with -march=rv32ifd)
+### Test Results (AFTER Bug #24 Fix)
 
+#### test_fcvt_simple (Basic conversions)
 ```
 Test: Convert 0, 1, 2, -1 from integer to float
 
 Results:
-x1  (ra)   = 0x00000001  ✓ Integer load working
-x2  (sp)   = 0x00000002  ✓ Integer load working
-x3  (gp)   = 0xffffffff  ✓ Integer load working (-1)
-
-x10 (a0)   = 0x00000000  ✗ WRONG (fcvt.s.w fa0, zero → fmv.x.w a0, fa0)
-                            Expected: 0x00000000 (0.0)
-                            Actual: 0x00000000
-                            Status: MIGHT be correct, needs verification
-
+x10 (a0)   = 0x00000000  ✓ CORRECT (0 → 0.0 in IEEE 754)
 x11 (a1)   = 0x3f800000  ✓ CORRECT (1 → 1.0 in IEEE 754)
 x12 (a2)   = 0x40000000  ✓ CORRECT (2 → 2.0 in IEEE 754)
-
-x13 (a3)   = 0xdf800000  ✗ WRONG (fcvt.s.w fa3, gp(-1) → fmv.x.w a3, fa3)
-                            Expected: 0xbf800000 (-1.0 in IEEE 754)
-                            Actual: 0xdf800000
-                            Status: INCORRECT - Wrong bit pattern
+x13 (a3)   = 0xbf800000  ✓ CORRECT (-1 → -1.0 in IEEE 754) [FIXED!]
 ```
+
+#### test_fcvt_negatives (Comprehensive negative test)
+```
+Test: Convert -1, -2, -127, -128, -256, -1000 from integer to float
+
+Results:
+a0: -1    → 0xBF800000  ✓ CORRECT (-1.0)
+a1: -2    → 0xC0000000  ✓ CORRECT (-2.0)
+a2: -127  → 0xC2FE0000  ✓ CORRECT (-127.0)
+a3: -128  → 0xC3000000  ✓ CORRECT (-128.0)
+a4: -256  → 0xC3800000  ✓ CORRECT (-256.0)
+a5: -1000 → 0xC47A0000  ✓ CORRECT (-1000.0)
+```
+
+**Status**: ✅ **All basic INT→FP conversions working!**
 
 ---
 
-## Known Issues with FPU Conversions
+## Recently Fixed Issues
 
-### Issue #1: FCVT.S.W of -1 Produces Incorrect Result
+### ✅ Issue #1: FCVT.S.W of -1 (Bug #24) - FIXED!
 
-**Test**: `fcvt.s.w fa3, gp` where gp=-1 (0xFFFFFFFF)
-**Expected**: 0xBF800000 (-1.0 in IEEE 754 single precision)
-**Actual**: 0xDF800000
+**Problem**: Exponent was 0xBF (191) instead of 0x7F (127), off by +64
 
-**Analysis**:
-```
-Expected: 0xBF800000 = 1 01111111 00000000000000000000000
-          Sign=1 (negative)
-          Exp=01111111 (127, biased exponent for 2^0)
-          Mantissa=0 (1.0 exactly)
+**Root Cause**:
+- Implicit sign-extension when assigning 32-bit `int_operand` to 64-bit `int_abs_temp`
+- For RV32, values were being sign-extended instead of zero-extended
+- This corrupted the leading zero count, producing wrong exponents
 
-Actual:   0xDF800000 = 1 10111111 00000000000000000000000
-          Sign=1 (negative) ✓
-          Exp=10111111 (191, wrong!)
-          Mantissa=0 ✓
-```
+**Solution**:
+- Explicitly zero-extend for RV32: `{32'b0, int_operand[31:0]}`
+- Handle RV32/RV64 cases separately with compile-time check
+- See `docs/BUG_24_FCVT_NEGATIVE_FIX.md` for full details
 
-**Problem**: The exponent is 0xBF (191) instead of 0x7F (127).
-This is an exponent calculation error of +64.
+**Status**: ✅ **FIXED** (verified with multiple negative values)
 
-**Status**: 🔴 **NEEDS INVESTIGATION**
+### ✅ Issue #2: FCVT.S.W of 0 - VERIFIED WORKING
 
-### Issue #2: FCVT.S.W of 0 - Needs Verification
-
-**Test**: `fcvt.s.w fa0, zero` where zero=0
-**Expected**: 0x00000000 (+0.0 in IEEE 754)
-**Actual**: 0x00000000
-
-**Status**: ⚠️ **APPEARS CORRECT** but needs explicit verification
-- Previous bugs involved zero conversion (Bug #21)
-- Should verify with debug output that conversion actually happened
-- Check FPU flags are set correctly
+**Status**: ✅ **VERIFIED** - Zero conversion working correctly after Bug #24 fix
 
 ---
 
 ## What We Haven't Tested Yet
 
-### FCVT.S.W (INT32 → FLOAT32) - Partial Coverage
+### FCVT.S.W (INT32 → FLOAT32) - Basic Coverage Complete
 
-**Tested**:
-- ✓ Converting 1
-- ✓ Converting 2
-- ⚠️ Converting 0 (appears correct, needs verification)
-- ✗ Converting -1 (BROKEN)
+**Tested and Working**:
+- ✅ Converting 0
+- ✅ Converting 1, 2
+- ✅ Converting -1, -2, -127, -128, -256, -1000
 
 **Not Tested**:
 - Large positive integers (0x7FFFFFFF)
@@ -241,11 +230,12 @@ These will expose many edge cases we haven't considered.
 
 ## Testing Strategy
 
-### Phase 1: Fix Known Issues (Current)
-1. ✓ Fix RVC detection bug (Bug #23) - DONE
-2. 🔲 Fix FCVT.S.W negative number conversion
-3. 🔲 Verify zero conversion works correctly
-4. 🔲 Test small integers: -2, -1, 0, 1, 2
+### Phase 1: Fix Known Issues ✅ COMPLETE
+1. ✅ Fix RVC detection bug (Bug #23) - DONE
+2. ✅ Fix FCVT.S.W negative number conversion (Bug #24) - DONE
+3. ✅ Verify zero conversion works correctly - DONE
+4. ✅ Test small integers: -2, -1, 0, 1, 2 - DONE
+5. ✅ Test additional negatives: -127, -128, -256, -1000 - DONE
 
 ### Phase 2: Basic Coverage
 1. 🔲 Test powers of 2: 4, 8, 16, 32, 64, 128, 256
@@ -275,29 +265,29 @@ These will expose many edge cases we haven't considered.
 
 ## Estimated Remaining Work
 
-### Testing Completion: ~10-20%
+### Testing Completion: ~20-25% (Updated after Bug #24)
 - ✅ Infrastructure setup
-- ✅ Basic integer→float for 1, 2
-- ⚠️ Basic integer→float for 0, -1 (issues)
-- ❌ Comprehensive integer→float tests
-- ❌ All float→integer tests
-- ❌ All unsigned variants
-- ❌ Rounding modes
-- ❌ Special value handling
+- ✅ Basic integer→float for 0, 1, 2
+- ✅ Basic negative integer→float for -1, -2, -127, -128, -256, -1000
+- ❌ Edge case integer→float (INT_MIN, INT_MAX, powers of 2, rounding cases)
+- ❌ All float→integer tests (FCVT.W.S, FCVT.WU.S)
+- ❌ All unsigned variants (FCVT.S.WU)
+- ❌ Rounding modes (all 5 modes)
+- ❌ Special value handling (NaN, Inf, denormals)
 - ❌ Official compliance tests
 
 ### Known Bug Density
-Recent fixes: Bugs #13-#23 (11 bugs found in FPU)
-Current status: Still finding bugs (e.g., -1 conversion)
-Expected: Many more bugs remain undiscovered
+Recent fixes: Bugs #13-#24 (12 bugs found in FPU)
+Current status: Basic INT→FP working, but limited test coverage
+Expected: More bugs likely in edge cases and FP→INT conversions
 
 ### Time Estimate
-Based on bug density and coverage:
-- **Optimistic**: 5-10 more bugs, 2-3 sessions
-- **Realistic**: 10-20 more bugs, 5-8 sessions
-- **Pessimistic**: 20+ bugs, 10+ sessions
+Based on progress and remaining coverage:
+- **Optimistic**: 5-8 more bugs, 2-4 sessions
+- **Realistic**: 8-15 more bugs, 4-7 sessions
+- **Pessimistic**: 15+ bugs, 8+ sessions
 
-**We are approximately 10-20% through FPU conversion testing.**
+**We are approximately 20-25% through FPU conversion testing.**
 
 ---
 
@@ -327,30 +317,33 @@ Based on bug density and coverage:
 
 ## Summary
 
-🔴 **STATUS: EARLY TESTING PHASE**
+🟡 **STATUS: BASIC INT→FP WORKING - PHASE 2 TESTING NEEDED**
 
 We have:
-- ✅ Fixed critical infrastructure bugs (RVC detection)
-- ✅ Fixed ~11 FPU bugs already (Bugs #13-#23)
-- ✅ Basic conversions working for 1, 2
-- ✗ Conversions broken for -1
-- ⚠️ Conversions untested for most values
+- ✅ Fixed critical infrastructure bugs (RVC detection, Bug #23)
+- ✅ Fixed 12 FPU bugs (Bugs #13-#24)
+- ✅ Basic INT→FP conversions working for positive and negative integers
+- ✅ Verified: 0, 1, 2, -1, -2, -127, -128, -256, -1000
+- ⚠️ Edge cases and FP→INT conversions untested
 
 We need to:
-- 🔲 Fix the -1 conversion bug
-- 🔲 Test hundreds more conversion cases
-- 🔲 Run official compliance tests
-- 🔲 Expect to find 10-20+ more bugs
+- 🔲 Test edge cases (INT_MIN, INT_MAX, powers of 2)
+- 🔲 Test unsigned conversions (FCVT.S.WU)
+- 🔲 Test float→integer conversions (FCVT.W.S, FCVT.WU.S)
+- 🔲 Test all rounding modes
+- 🔲 Run official compliance tests (rv32uf-p-fcvt)
+- 🔲 Expect to find 8-15 more bugs in untested areas
 
-**Estimated completion: 10-20% through FPU conversion testing**
+**Estimated completion: 20-25% through FPU conversion testing**
 
 ---
 
 **Next Session TODO**:
-1. Debug FCVT.S.W for -1 (exponent calculation error)
-2. Create comprehensive test suite
-3. Fix bugs as they're discovered
-4. Progress toward official compliance tests
+1. Test INT32_MIN (0x80000000) and INT32_MAX (0x7FFFFFFF) conversions
+2. Test powers of 2: 4, 8, 16, 32, 64, 128, 256, 512, 1024
+3. Test unsigned conversions (FCVT.S.WU)
+4. Begin testing FP→INT conversions (FCVT.W.S)
+5. Run official rv32uf-p-fcvt compliance test
 
 ---
 
