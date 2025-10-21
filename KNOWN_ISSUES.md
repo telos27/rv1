@@ -321,25 +321,43 @@ Some Verilator warnings may appear about missing CSR ports, but these are legacy
 
 ---
 
-### 3. Official FPU Compliance Tests Not Yet Run
+### 3. FPU Conversion Testing Incomplete
 
 **Type**: Limitation
 
-**Description**: Custom FPU tests pass (13/13), but official RISC-V F/D compliance tests haven't been run yet.
+**Description**: FPU conversion instructions have critical bugs and very limited test coverage. We are at the **beginning** of FPU conversion testing, not near completion.
 
 **Status**:
-- ✅ FPU fully implemented (52 instructions)
-- ✅ Custom test suite: 13/13 passing (100%)
-- ⏳ Official rv32uf/rv32ud tests: Infrastructure ready, testing in progress
-- ⏳ Subnormal numbers: Basic support, needs more testing
-- ⏳ Rounding modes: All 5 modes implemented, coverage could be improved
+- ✅ FPU infrastructure implemented (52 instructions)
+- ✅ Basic conversions for 1, 2 working
+- ✗ Conversion of -1 produces wrong result (exp=0xBF instead of 0x7F)
+- ⚠️ Conversion of 0 appears correct but needs verification
+- ❌ ~90% of conversion test cases not yet run
+- ❌ Official RISC-V F/D compliance tests not yet run
 
-**Future Work**:
-- Run official RISC-V F/D compliance tests (11 rv32uf + 9 rv32ud tests)
-- Add comprehensive subnormal number test cases
-- Expand rounding mode test coverage
+**Current Test Coverage**: ~10-20%
+- 4 test values: 0, 1, 2, -1
+- 1 direction: INT32 → FLOAT32
+- 0 rounding modes tested
+- 0 unsigned conversions tested
+- 0 float→int conversions tested
 
-**Priority**: Medium
+**Known Bugs**:
+- FCVT.S.W of -1 produces 0xDF800000 instead of 0xBF800000
+- Exponent calculation error (+64 bias error)
+
+**Remaining Work**:
+- Fix -1 conversion bug
+- Test FCVT.S.W comprehensively (100+ cases)
+- Test FCVT.S.WU (unsigned variants)
+- Test FCVT.W.S and FCVT.WU.S (float→int)
+- Test all 5 rounding modes
+- Test special values (NaN, Inf, denormals)
+- Run official compliance tests (rv32uf-p-fcvt, rv32uf-p-fcvt_w)
+
+**Detailed Status**: See [docs/FPU_CONVERSION_STATUS.md](docs/FPU_CONVERSION_STATUS.md)
+
+**Priority**: High - Core functionality broken
 
 ---
 
@@ -424,7 +442,7 @@ No active issues at this time.
 ### Limitations: 3
 - Test cycle counting requirement
 - No exception handlers in tests
-- Official FPU compliance tests not yet run
+- FPU conversion testing incomplete (see docs/FPU_CONVERSION_STATUS.md)
 
 ### Recently Resolved: 1
 - Bug #23: RVC compressed instruction detection (2025-10-21)
