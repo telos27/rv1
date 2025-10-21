@@ -47,9 +47,27 @@ module fp_compare #(
   // Check for both zeros (+0 == -0 in IEEE 754)
   wire both_zero = is_zero_a && is_zero_b;
 
-  // Magnitude comparison (treat as signed for easy comparison)
-  wire a_less_than_b = $signed(operand_a) < $signed(operand_b);
+  // Floating-point comparison logic
+  // Cannot use $signed() directly - FP format needs special handling!
+  //
+  // For FP comparison:
+  // 1. If signs differ: negative < positive (unless both zero)
+  // 2. If both positive: compare as unsigned (larger exp/mantissa = larger value)
+  // 3. If both negative: compare as unsigned REVERSED (larger bit pattern = more negative = smaller value)
+
+  wire both_positive = !sign_a && !sign_b;
+  wire both_negative = sign_a && sign_b;
+  wire signs_differ = sign_a != sign_b;
+
+  // For positive numbers or when comparing magnitudes
+  wire mag_a_less_than_b = operand_a[FLEN-2:0] < operand_b[FLEN-2:0];
   wire a_equal_b = (operand_a == operand_b);
+
+  // True FP less-than comparison
+  wire a_less_than_b = both_zero ? 1'b0 :  // +0 and -0 are equal, not less than
+                       signs_differ ? sign_a :  // If signs differ, negative (sign_a=1) < positive (sign_a=0)
+                       both_positive ? mag_a_less_than_b :  // Both positive: normal magnitude compare
+                       both_negative ? !mag_a_less_than_b && !a_equal_b : 1'b0;  // Both negative: reverse compare
 
   always @(*) begin
     // Default: no exception
