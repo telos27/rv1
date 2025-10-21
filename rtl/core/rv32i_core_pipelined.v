@@ -522,9 +522,18 @@ module rv_core_pipelined #(
   wire [15:0] if_compressed_instr_candidate;
   wire [31:0] if_instruction_decompressed;
 
-  // If PC[1] is set, we're at a 2-byte aligned but not 4-byte aligned address
-  // In this case, take the upper 16 bits; otherwise take the lower 16 bits
-  assign if_compressed_instr_candidate = pc_current[1] ? if_instruction_raw[31:16] : if_instruction_raw[15:0];
+  // RISC-V C extension: Compressed instructions are identified by bits [1:0] != 11
+  // The instruction memory fetches 32 bits starting at halfword-aligned address.
+  // Since halfword_addr = {PC[XLEN-1:1], 1'b0}, the fetch always starts at an even address.
+  // The instruction at PC always starts in the LOWER 16 bits of the fetched word!
+  // - When PC is 2-byte aligned (PC = 0, 2, 4, 6, 8, a, c, e, ...): bits [15:0]
+  // - The upper 16 bits [31:16] contain the NEXT potential 16-bit instruction
+  //
+  // BUG FIX: Always use lower 16 bits and check bits [1:0] for compression detection
+  assign if_compressed_instr_candidate = if_instruction_raw[15:0];
+
+  // Detect if instruction is compressed by checking bits [1:0] of lower 16 bits
+  wire if_instr_is_compressed = (if_instruction_raw[1:0] != 2'b11);
 
   rvc_decoder #(
     .XLEN(XLEN)
@@ -533,13 +542,13 @@ module rv_core_pipelined #(
     .is_rv64(XLEN == 64),
     .decompressed_instr(if_instruction_decompressed),
     .illegal_instr(if_illegal_c_instr),
-    .is_compressed_out(if_is_compressed)
+    .is_compressed_out() // Not used, we compute it ourselves
   );
 
+  // Use our corrected compression detection
+  assign if_is_compressed = if_instr_is_compressed;
+
   // Select final instruction: decompressed if compressed, otherwise full 32-bit from memory
-  // For 32-bit instructions, PC must be 4-byte aligned (PC[1:0] = 00)
-  // If PC[1]=1, this indicates an error for 32-bit instructions, but should not happen
-  // in correct code. For safety, we still handle it.
   assign if_instruction = if_is_compressed ? if_instruction_decompressed : if_instruction_raw;
 
   // IF/ID Pipeline Register
