@@ -211,18 +211,20 @@ module fp_converter #(
 
                 // Check for 32-bit overflow
                 if ((int_exp > 31) ||
-                    (int_exp == 31 && operation_latched[1:0] != 2'b00) ||  // Unsigned at 2^31 always overflows
-                    (int_exp == 31 && operation_latched[1:0] == 2'b00 && (man_fp != 0 || !sign_fp)) || // Signed: overflow except for exactly -2^31
-                    // Check for 64-bit overflow
-                    (operation_latched[1:0] == 2'b10 && (int_exp > 63 ||
-                     (int_exp == 63 && man_fp != 0) ||
-                     (int_exp == 63 && !sign_fp)))) begin
+                    (int_exp == 31 && operation_latched[1:0] != 2'b00) ||  // Unsigned word at 2^31 always overflows
+                    (int_exp == 31 && operation_latched[1:0] == 2'b00 && (man_fp != 0 || !sign_fp)) || // Signed word: overflow except for exactly -2^31
+                    // Check for 64-bit overflow (both signed and unsigned long)
+                    // Bug #23b fix: Handle both FCVT.L.S and FCVT.LU.S
+                    (operation_latched[1] == 1'b1 && int_exp > 63) ||
+                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b1) ||  // Unsigned long at 2^63 always overflows
+                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp))) begin  // Signed long: overflow except exactly -2^63
                   // Overflow: return max/min
+                  // Bug #23 fix: Unsigned conversions with negative values should saturate to 0
                   case (operation)
                     FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
-                    FCVT_WU_S: int_result <= 32'hFFFFFFFF;
+                    FCVT_WU_S: int_result <= sign_fp ? 32'h00000000 : 32'hFFFFFFFF;
                     FCVT_L_S:  int_result <= sign_fp ? 64'h8000000000000000 : 64'h7FFFFFFFFFFFFFFF;
-                    FCVT_LU_S: int_result <= 64'hFFFFFFFFFFFFFFFF;
+                    FCVT_LU_S: int_result <= sign_fp ? 64'h0000000000000000 : 64'hFFFFFFFFFFFFFFFF;
                   endcase
                   flag_nv <= 1'b1;
 

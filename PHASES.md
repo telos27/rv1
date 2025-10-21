@@ -517,10 +517,23 @@ Before adding new features, consider fixing these existing issues:
          - Impact: Tests #14-17 now pass
          - **This bug fixed IEEE 754 flag semantics for fractional conversions**
 
-   - **Final Status** (2025-10-21): RV32UF 6/11 (54%), fcvt_w at 94% (15/16 tests)
+   - **Status** (2025-10-21 AM): RV32UF 6/11 (54%), fcvt_w at 94% (test #37)
    - **New Passing**: rv32uf-p-fcvt ✅, rv32uf-p-fcmp ✅
    - **Improved**: fcvt_w from test #17 → test #37 (11 ops → 15 ops)
    - See: docs/SESSION_2025-10-21_BUGS20-22_FP_TO_INT_OVERFLOW.md
+
+   **Fixed bugs** (2025-10-21 PM):
+     23. **Bug #23**: Unsigned long negative saturation ✅ **CRITICAL FIX**
+         - Root cause: FCVT.WU.S/FCVT.LU.S saturated negative values to 0xFFFF... instead of 0
+         - Impact: All negative→unsigned conversions returned max value instead of 0
+         - Fix: Added sign check in overflow saturation (sign_fp ? 0 : MAX)
+         - Location: rtl/core/fp_converter.v:220-227
+     23b. **Bug #23b**: 64-bit overflow detection excluded FCVT.LU.S ✅
+         - Root cause: Checked operation[1:0]==2'b10 (only FCVT.L.S), missed FCVT.LU.S (2'b11)
+         - Fix: Changed to operation[1]==1 to include both L.S and LU.S
+         - Location: rtl/core/fp_converter.v:213-220
+   - **Progress**: fcvt_w test #37 → test #39 (2 tests further)
+   - See: docs/SESSION_2025-10-21_BUG23_UNSIGNED_LONG_SATURATION.md
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
@@ -540,8 +553,9 @@ Before adding new features, consider fixing these existing issues:
 - [x] **Fix FP adder mantissa computation** ✓ *Fixed 2025-10-13: +12% improvement*
 - [x] **Re-run FPU compliance tests after fix** 🧪 *Result: 3/11 RV32UF (27%)*
 - [x] **Fix FPU pipeline hazards (Bugs #6, #7, #7b)** ✓ *Fixed 2025-10-14: Flag contamination resolved*
-- [x] **Fix FPU converter overflow & flags (Bugs #20, #21, #22)** ✓ *Fixed 2025-10-21: fcvt passing, fcvt_w 94%*
-- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fcvt_w test #37, fdiv/fmadd/fmin/recoding*
+- [x] **Fix FPU converter overflow & flags (Bugs #20, #21, #22)** ✓ *Fixed 2025-10-21 AM: fcvt passing, fcvt_w 94%*
+- [x] **Fix unsigned long saturation (Bug #23)** ✓ *Fixed 2025-10-21 PM: fcvt_w test #37 → #39*
+- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fcvt_w test #39, fdiv/fmadd/fmin/recoding*
 - [ ] **Debug mixed compressed/normal instructions** 🔀
 - [ ] Performance benchmarking (Dhrystone, CoreMark)
 - [ ] Formal verification for critical paths
@@ -610,7 +624,8 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
-**2025-10-21 (PM)**: FPU FP→INT overflow & flags - Fixed Bugs #20-#22 (overflow detection, invalid flags) - fcvt passing, fcvt_w 94%!
+**2025-10-21 (PM session 2)**: FPU unsigned long saturation - Fixed Bug #23 (negative→unsigned overflow) - fcvt_w test #37 → #39!
+**2025-10-21 (PM session 1)**: FPU FP→INT overflow & flags - Fixed Bugs #20-#22 (overflow detection, invalid flags) - fcvt passing, fcvt_w 94%!
 **2025-10-21 (AM)**: FPU writeback path - Fixed Bug #19 (control unit FCVT direction bit) - Converter results now reach FP register file!
 **2025-10-20 (PM)**: FPU converter infrastructure - Fixed Bugs #13-#18 (leading zeros, flags, rounding, funct7, timing)
 **2025-10-20 (AM)**: FPU special case handling - Fixed Bugs #10, #11, #12 - fadd passing, fdiv timeout fixed (342x faster!)
