@@ -142,6 +142,12 @@ module fp_converter #(
               is_inf = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp == 0);
               is_zero = (fp_operand[FLEN-2:0] == 0);
 
+              `ifdef DEBUG_FPU_CONVERTER
+              $display("[CONVERTER] FP→INT: fp_operand=%h, sign=%b, exp=%d, man=%h",
+                       fp_operand, sign_fp, exp_fp, man_fp);
+              $display("[CONVERTER]   is_nan=%b, is_inf=%b, is_zero=%b", is_nan, is_inf, is_zero);
+              `endif
+
               if (is_nan || is_inf) begin
                 // NaN or Inf: return max/min integer, set invalid flag
                 case (operation)
@@ -172,12 +178,27 @@ module fp_converter #(
                 end
                 // Check if exponent is negative (fractional result)
                 else if (int_exp < 0) begin
-                  // Round to zero
+                  // Round to zero (result < 1.0 becomes 0)
                   int_result <= {XLEN{1'b0}};
-                  flag_nx <= (man_fp != 0);  // Inexact if non-zero mantissa
+                  // Inexact if we're truncating a non-zero value
+                  // Bug #13 fix: Use !is_zero instead of (man_fp != 0) for clarity
+                  flag_nx <= !is_zero;
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   int_exp=%d < 0, fractional result", int_exp);
+                  $display("[CONVERTER]   Setting int_result=0, flag_nx=%b (!is_zero=%b)",
+                           !is_zero, !is_zero);
+                  `endif
                 end else begin
                   // Normal conversion: shift mantissa
                   shifted_man = {1'b1, man_fp, 40'b0} >> (63 - int_exp);
+
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   int_exp=%d >= 0, normal conversion", int_exp);
+                  $display("[CONVERTER]   shifted_man=%h, shift_amount=%d",
+                           shifted_man, (63 - int_exp));
+                  $display("[CONVERTER]   shifted_man[63:32]=%h, shifted_man[31:0]=%h",
+                           shifted_man[63:32], shifted_man[31:0]);
+                  `endif
 
                   // Apply sign for signed conversions
                   if (operation[0] == 1'b0 && sign_fp) begin
@@ -188,8 +209,21 @@ module fp_converter #(
                     int_result <= shifted_man[XLEN-1:0];
                   end
 
-                  // Set inexact flag if rounding occurred
-                  flag_nx <= (shifted_man[63:XLEN] != 0);
+                  // Set inexact flag if fractional bits were lost during conversion
+                  // After shifting, the binary point is at position (63 - int_exp)
+                  // Fractional bits are below that: bits [(62-int_exp):0]
+                  // Bug #13 fix: Check fractional bits, not upper bits
+                  if (int_exp < 63) begin
+                    // Check if fractional bits (below the binary point) are non-zero
+                    flag_nx <= (shifted_man & ((64'h1 << (63 - int_exp)) - 1)) != 0;
+                  end else begin
+                    // No fractional bits if exponent >= 63
+                    flag_nx <= 1'b0;
+                  end
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   Setting int_result=%h, flag_nx=%b (frac_bits check)",
+                           shifted_man[XLEN-1:0], (int_exp < 63) ? ((shifted_man & ((64'h1 << (63 - int_exp)) - 1)) != 0) : 1'b0);
+                  `endif
                 end
               end
             end

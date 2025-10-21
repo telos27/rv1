@@ -1319,7 +1319,8 @@ module rv_core_pipelined #(
     .fflags_out(csr_fflags),
     // Bug #7b fix: Only accumulate flags for FP ALU operations, not FP loads
     // FP loads have wb_sel=001 (memory data), FP ALU has other wb_sel values
-    .fflags_we(memwb_fp_reg_write && memwb_valid && (memwb_wb_sel != 3'b001)),
+    // Bug #14 fix: Include FP→INT operations (fcvt.w.s, fclass, etc.)
+    .fflags_we((memwb_fp_reg_write || memwb_int_reg_write_fp) && memwb_valid && (memwb_wb_sel != 3'b001)),
     .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx})
   );
 

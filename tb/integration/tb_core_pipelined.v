@@ -154,6 +154,20 @@ module tb_core_pipelined;
       end
       `endif
 
+      // Instruction trace for debugging fcvt_w test
+      `ifdef DEBUG_FCVT_TRACE
+      if (DUT.memwb_valid) begin
+        $display("[%0d] WB | gp=x3=%d | a0=x10=%08h a1=x11=%08h a2=x12=%08h a3=x13=%08h | PC+4=%08h",
+                 cycle_count,
+                 DUT.regfile.registers[3],   // gp (test number)
+                 DUT.regfile.registers[10],  // a0 (result)
+                 DUT.regfile.registers[11],  // a1 (fflags)
+                 DUT.regfile.registers[12],  // a2 (expected flags)
+                 DUT.regfile.registers[13],  // a3 (expected result)
+                 DUT.memwb_pc_plus_4);
+      end
+      `endif
+
       // FPU debug output - log FP instructions completing in WB stage
       `ifdef DEBUG_FPU
       if (DUT.memwb_fp_reg_write && DUT.memwb_valid) begin
