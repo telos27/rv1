@@ -54,6 +54,7 @@ module fp_divider #(
 
   // Special value flags
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
+  reg special_case_handled;  // Track if special case was processed
 
   // Division computation (SRT radix-2)
   reg [MAN_WIDTH+3:0] quotient;        // Quotient result
@@ -104,6 +105,7 @@ module fp_divider #(
       flag_uf <= 1'b0;
       flag_nx <= 1'b0;
       div_counter <= 6'd0;
+      special_case_handled <= 1'b0;
     end else begin
       case (state)
 
@@ -141,6 +143,12 @@ module fp_divider #(
           is_zero_a <= (operand_a[FLEN-2:0] == 0);
           is_zero_b <= (operand_b[FLEN-2:0] == 0);
 
+          // Initialize division counter for next state
+          div_counter <= DIV_CYCLES;
+
+          // Clear special case flag for new operation
+          special_case_handled <= 1'b0;
+
           // Handle special cases (check in next state for timing)
         end
 
@@ -154,28 +162,61 @@ module fp_divider #(
               // NaN propagation
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
               flag_nv <= 1'b1;
+              flag_dz <= 1'b0;
+              flag_of <= 1'b0;
+              flag_uf <= 1'b0;
+              flag_nx <= 1'b0;
+              special_case_handled <= 1'b1;
               state <= DONE;
             end else if ((is_inf_a && is_inf_b) || (is_zero_a && is_zero_b)) begin
               // ∞/∞ or 0/0: Invalid
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
               flag_nv <= 1'b1;
+              flag_dz <= 1'b0;
+              flag_of <= 1'b0;
+              flag_uf <= 1'b0;
+              flag_nx <= 1'b0;
+              special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_inf_a) begin
               // ∞/x: return ±∞
               result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+              flag_nv <= 1'b0;
+              flag_dz <= 1'b0;
+              flag_of <= 1'b0;
+              flag_uf <= 1'b0;
+              flag_nx <= 1'b0;
+              special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_inf_b) begin
               // x/∞: return ±0
               result <= {sign_result, {FLEN-1{1'b0}}};
+              flag_nv <= 1'b0;
+              flag_dz <= 1'b0;
+              flag_of <= 1'b0;
+              flag_uf <= 1'b0;
+              flag_nx <= 1'b0;
+              special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_zero_a) begin
               // 0/x: return ±0
               result <= {sign_result, {FLEN-1{1'b0}}};
+              flag_nv <= 1'b0;
+              flag_dz <= 1'b0;
+              flag_of <= 1'b0;
+              flag_uf <= 1'b0;
+              flag_nx <= 1'b0;
+              special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_zero_b) begin
               // x/0: Divide by zero, return ±∞
               result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+              flag_nv <= 1'b0;
               flag_dz <= 1'b1;
+              flag_of <= 1'b0;
+              flag_uf <= 1'b0;
+              flag_nx <= 1'b0;
+              special_case_handled <= 1'b1;
               state <= DONE;
             end else begin
               // Initialize division

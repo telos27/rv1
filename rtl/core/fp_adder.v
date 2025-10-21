@@ -55,6 +55,7 @@ module fp_adder #(
   // Special value flags
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
   reg is_subnormal_a, is_subnormal_b;
+  reg special_case_handled;  // Track if special case was processed in ALIGN stage
 
   // Computation
   reg [MAN_WIDTH+3:0] aligned_man_a, aligned_man_b;  // +3 for GRS bits
@@ -118,6 +119,7 @@ module fp_adder #(
       flag_nx <= 1'b0;
       sign_result <= 1'b0;
       exp_result <= {EXP_WIDTH{1'b0}};
+      special_case_handled <= 1'b0;
     end else begin
       case (state)
 
@@ -125,6 +127,9 @@ module fp_adder #(
         // UNPACK: Extract sign, exponent, mantissa
         // ============================================================
         UNPACK: begin
+          // Clear special case flag for new operation
+          special_case_handled <= 1'b0;
+
           // Extract sign
           sign_a <= operand_a[FLEN-1];
           sign_b <= operand_b[FLEN-1] ^ is_sub;  // Flip sign for subtraction
@@ -171,6 +176,10 @@ module fp_adder #(
             // NaN propagation: return canonical NaN
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;  // Invalid operation
+            flag_nx <= 1'b0;  // Clear inexact flag for special cases
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            special_case_handled <= 1'b1;  // Mark as special case
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] NaN detected, returning canonical NaN");
             `endif
@@ -178,37 +187,66 @@ module fp_adder #(
             // ∞ - ∞: Invalid
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
+            flag_nx <= 1'b0;  // Clear inexact flag for invalid operations
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            special_case_handled <= 1'b1;  // Mark as special case
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] Inf - Inf detected, invalid operation");
             `endif
           end else if (is_inf_a) begin
-            // a is ∞: return a
+            // a is ∞: return a (exact result, no exceptions)
             result <= {sign_a, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            flag_nv <= 1'b0;
+            flag_nx <= 1'b0;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            special_case_handled <= 1'b1;  // Mark as special case
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] Operand A is Inf, returning Inf");
             `endif
           end else if (is_inf_b) begin
-            // b is ∞: return b (with potentially flipped sign)
+            // b is ∞: return b (exact result, no exceptions)
             result <= {sign_b, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            flag_nv <= 1'b0;
+            flag_nx <= 1'b0;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            special_case_handled <= 1'b1;  // Mark as special case
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] Operand B is Inf, returning Inf");
             `endif
           end else if (is_zero_a && is_zero_b) begin
-            // 0 + 0: sign depends on rounding mode and operand signs
+            // 0 + 0: sign depends on rounding mode and operand signs (exact result)
             sign_result <= (sign_a && sign_b) || ((sign_a || sign_b) && (rounding_mode == 3'b010));
             result <= {sign_result, {FLEN-1{1'b0}}};
+            flag_nv <= 1'b0;
+            flag_nx <= 1'b0;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            special_case_handled <= 1'b1;  // Mark as special case
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] Both operands zero, returning zero");
             `endif
           end else if (is_zero_a) begin
-            // a is 0: return b
+            // a is 0: return b (exact result)
             result <= {sign_b, exp_b, man_b[MAN_WIDTH-1:0]};
+            flag_nv <= 1'b0;
+            flag_nx <= 1'b0;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            special_case_handled <= 1'b1;  // Mark as special case
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] Operand A is zero, returning B");
             `endif
           end else if (is_zero_b) begin
-            // b is 0: return a
+            // b is 0: return a (exact result)
             result <= {sign_a, exp_a, man_a[MAN_WIDTH-1:0]};
+            flag_nv <= 1'b0;
+            flag_nx <= 1'b0;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            special_case_handled <= 1'b1;  // Mark as special case
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] Operand B is zero, returning A");
             `endif
@@ -374,28 +412,32 @@ module fp_adder #(
         // ROUND: Apply rounding mode
         // ============================================================
         ROUND: begin
-          `ifdef DEBUG_FPU
-          $display("[FP_ADDER] ROUND inputs: G=%b R=%b S=%b LSB=%b rmode=%d",
-                   guard, round, sticky, normalized_man[3], rounding_mode);
-          `endif
+          // Only process normal cases - special cases already handled in ALIGN
+          if (!special_case_handled) begin
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] ROUND inputs: G=%b R=%b S=%b LSB=%b rmode=%d",
+                     guard, round, sticky, normalized_man[3], rounding_mode);
+            `endif
 
-          // Apply rounding (using combinational round_up_comb)
-          // Extract mantissa without implicit 1: normalized_man[MAN_WIDTH+2:3]
-          // This gives us 23 bits for single-precision (bits 25:3)
-          `ifdef DEBUG_FPU
-          $display("[FP_ADDER] ROUND: sign=%b exp=%h man=%h round_up=%b",
-                   sign_result, adjusted_exp[EXP_WIDTH-1:0], normalized_man[MAN_WIDTH+2:3], round_up_comb);
-          `endif
-          if (round_up_comb) begin
-            result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
-                       normalized_man[MAN_WIDTH+2:3] + 1'b1};
-          end else begin
-            result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
-                       normalized_man[MAN_WIDTH+2:3]};
+            // Apply rounding (using combinational round_up_comb)
+            // Extract mantissa without implicit 1: normalized_man[MAN_WIDTH+2:3]
+            // This gives us 23 bits for single-precision (bits 25:3)
+            `ifdef DEBUG_FPU
+            $display("[FP_ADDER] ROUND: sign=%b exp=%h man=%h round_up=%b",
+                     sign_result, adjusted_exp[EXP_WIDTH-1:0], normalized_man[MAN_WIDTH+2:3], round_up_comb);
+            `endif
+            if (round_up_comb) begin
+              result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
+                         normalized_man[MAN_WIDTH+2:3] + 1'b1};
+            end else begin
+              result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
+                         normalized_man[MAN_WIDTH+2:3]};
+            end
+
+            // Set inexact flag (only for normal cases)
+            flag_nx <= guard || round || sticky;
           end
-
-          // Set inexact flag
-          flag_nx <= guard || round || sticky;
+          // else: special case - result and flags already set in ALIGN stage
         end
 
         // ============================================================

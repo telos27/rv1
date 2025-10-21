@@ -376,10 +376,10 @@ Before adding new features, consider fixing these existing issues:
    - Impact: Low for typical code, medium for lock-heavy workloads
    - See: KNOWN_ISSUES.md §1, hazard_detection_unit.v:126-155
 
-2. ~~**FPU Pipeline Hazards (Bugs #5, #6, #7, #7b)**~~ - ✅ **ALL FIXED (2025-10-14)**
+2. ~~**FPU Pipeline Hazards (Bugs #5, #6, #7, #7b, #8, #9, #10, #11, #12)**~~ - ✅ **ALL FIXED (2025-10-20)**
    - **Before**: 3/11 RV32UF passing (27%) - Tests failing at #11 due to flag contamination
-   - **After**: 3/11 RV32UF passing (27%) - Tests now failing at #21, different failure mode
-   - **Progress**: 10 more tests passing internally (tests #11-#20), infrastructure test #21 failing
+   - **After**: 4/11 RV32UF passing (36%) - Major progress on special case handling
+   - **Progress**: fadd test now passing, fdiv timeout eliminated (342x faster!)
 
    **Fixed bugs** (2025-10-13 AM):
      1. Mantissa extraction bug in FP_ADDER: `normalized_man[26:3]` → `normalized_man[25:3]`
@@ -423,8 +423,31 @@ Before adding new features, consider fixing these existing issues:
         - Location: rtl/core/fp_multiplier.v:188-208
         - See: docs/FPU_BUG9_NORMALIZATION_FIX.md
 
-   - **Remaining**: Flag contamination (test #23: Inf-Inf sets NX+NV instead of just NV)
-   - See: docs/FPU_BUG7_ANALYSIS.md, docs/BUG6_CSR_FPU_HAZARD.md, docs/FPU_BUG9_NORMALIZATION_FIX.md
+   **Fixed bugs** (2025-10-20):
+     10. **Bug #10**: FP Adder special case flag contamination ✅ **CRITICAL FIX**
+         - Root cause: ROUND stage unconditionally set flag_nx even for special cases
+         - Special cases (Inf-Inf, NaN, etc.) set flags in ALIGN stage but ROUND overwrote them
+         - Fix: Added `special_case_handled` flag to bypass ROUND stage updates
+         - Impact: rv32uf-p-fadd test now PASSING! ✅
+         - Location: rtl/core/fp_adder.v
+         - See: docs/FPU_BUG10_SPECIAL_CASE_FLAGS.md
+
+     11. **Bug #11**: FP Divider timeout - Uninitialized counter ✅ **CRITICAL FIX**
+         - Root cause: div_counter not initialized before DIVIDE state entry
+         - Caused infinite loops, 49,999 cycle timeouts (vs expected ~150 cycles)
+         - Fix: Initialize div_counter = DIV_CYCLES in UNPACK stage
+         - Also applied special_case_handled pattern from Bug #10
+         - Impact: Timeout eliminated! 49,999 → 146 cycles (342x faster)
+         - Location: rtl/core/fp_divider.v
+         - See: docs/FPU_BUG11_FDIV_TIMEOUT.md
+
+     12. **Bug #12**: FP Multiplier special case flag contamination ✅
+         - Same pattern as Bug #10 - ROUND stage contaminating flags
+         - Fix: Applied special_case_handled pattern to multiplier
+         - Location: rtl/core/fp_multiplier.v
+
+   - **Remaining**: 7 tests still failing (fcmp, fcvt, fcvt_w, fdiv, fmadd, fmin, recoding)
+   - See: docs/FPU_BUG10_SPECIAL_CASE_FLAGS.md, docs/FPU_BUG11_FDIV_TIMEOUT.md
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
@@ -474,7 +497,7 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 3    | 27%  | ⚠️ Edge Cases Remaining |
+| RV32F     | 11    | 4    | 36%  | ⚠️ Edge Cases Remaining (fadd passing!) |
 | RV32D     | 9     | 0    | 0%   | ⚠️ Not Yet Debugged |
 
 ### Custom Test Coverage
@@ -513,6 +536,8 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-20**: FPU special case handling - Fixed Bugs #10, #11, #12 - fadd passing, fdiv timeout fixed (342x faster!)
+**2025-10-19**: FPU multiplier debugging - Fixed Bugs #8 and #9 (bit extraction and normalization)
 **2025-10-14**: FPU pipeline hazard marathon - Fixed Bugs #7 and #7b, tests now progress from #11 → #17
 **2025-10-13 (pm afternoon)**: Deep FPU debugging - Fixed Bug #5 (FFLAGS priority), attempted Bug #6 (CSR-FPU hazard) but needs refinement
 **2025-10-13 (pm)**: FPU debugging session - Fixed 2 critical bugs (mantissa/rounding), 15% → 27% pass rate

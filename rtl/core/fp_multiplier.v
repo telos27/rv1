@@ -52,6 +52,7 @@ module fp_multiplier #(
 
   // Special value flags
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
+  reg special_case_handled;  // Track if special case was processed
 
   // Computation
   reg [EXP_WIDTH+1:0] exp_sum;  // +2 bits for overflow handling
@@ -98,6 +99,7 @@ module fp_multiplier #(
       flag_of <= 1'b0;
       flag_uf <= 1'b0;
       flag_nx <= 1'b0;
+      special_case_handled <= 1'b0;
     end else begin
       case (state)
 
@@ -105,6 +107,9 @@ module fp_multiplier #(
         // UNPACK: Extract sign, exponent, mantissa
         // ============================================================
         UNPACK: begin
+          // Clear special case flag for new operation
+          special_case_handled <= 1'b0;
+
           // Extract sign (XOR for multiplication)
           sign_a <= operand_a[FLEN-1];
           sign_b <= operand_b[FLEN-1];
@@ -145,19 +150,37 @@ module fp_multiplier #(
             // NaN propagation
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            flag_nx <= 1'b0;
+            special_case_handled <= 1'b1;
             state <= DONE;
           end else if ((is_inf_a && is_zero_b) || (is_zero_a && is_inf_b)) begin
             // 0 × ∞: Invalid
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
             flag_nv <= 1'b1;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            flag_nx <= 1'b0;
+            special_case_handled <= 1'b1;
             state <= DONE;
           end else if (is_inf_a || is_inf_b) begin
             // ∞ × x: return ±∞
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            flag_nv <= 1'b0;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            flag_nx <= 1'b0;
+            special_case_handled <= 1'b1;
             state <= DONE;
           end else if (is_zero_a || is_zero_b) begin
             // 0 × x: return ±0
             result <= {sign_result, {FLEN-1{1'b0}}};
+            flag_nv <= 1'b0;
+            flag_of <= 1'b0;
+            flag_uf <= 1'b0;
+            flag_nx <= 1'b0;
+            special_case_handled <= 1'b1;
             state <= DONE;
           end else begin
             // Normal multiplication
@@ -231,43 +254,47 @@ module fp_multiplier #(
         // ROUND: Apply rounding mode
         // ============================================================
         ROUND: begin
-          // Determine if we should round up
-          case (rounding_mode)
-            3'b000: begin  // RNE: Round to nearest, ties to even
-              round_up <= guard && (round || sticky || normalized_man[0]);
-            end
-            3'b001: begin  // RTZ: Round toward zero
-              round_up <= 1'b0;
-            end
-            3'b010: begin  // RDN: Round down (toward -∞)
-              round_up <= sign_result && (guard || round || sticky);
-            end
-            3'b011: begin  // RUP: Round up (toward +∞)
-              round_up <= !sign_result && (guard || round || sticky);
-            end
-            3'b100: begin  // RMM: Round to nearest, ties to max magnitude
-              round_up <= guard;
-            end
-            default: begin  // Invalid rounding mode
-              round_up <= 1'b0;
-            end
-          endcase
+          // Only process normal cases - special cases already handled
+          if (!special_case_handled) begin
+            // Determine if we should round up
+            case (rounding_mode)
+              3'b000: begin  // RNE: Round to nearest, ties to even
+                round_up <= guard && (round || sticky || normalized_man[0]);
+              end
+              3'b001: begin  // RTZ: Round toward zero
+                round_up <= 1'b0;
+              end
+              3'b010: begin  // RDN: Round down (toward -∞)
+                round_up <= sign_result && (guard || round || sticky);
+              end
+              3'b011: begin  // RUP: Round up (toward +∞)
+                round_up <= !sign_result && (guard || round || sticky);
+              end
+              3'b100: begin  // RMM: Round to nearest, ties to max magnitude
+                round_up <= guard;
+              end
+              default: begin  // Invalid rounding mode
+                round_up <= 1'b0;
+              end
+            endcase
 
-          // Apply rounding
-          if (round_up) begin
-            result <= {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0] + 1'b1};
-          end else begin
-            result <= {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0]};
+            // Apply rounding
+            if (round_up) begin
+              result <= {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0] + 1'b1};
+            end else begin
+              result <= {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0]};
+            end
+
+            `ifdef DEBUG_FPU
+            $display("[FP_MUL] ROUND: sign=%b exp=%h normalized_man=%h man[22:0]=%h GRS=%b%b%b round_up=%b",
+                     sign_result, exp_result, normalized_man, normalized_man[MAN_WIDTH-1:0], guard, round, sticky, round_up);
+            $display("[FP_MUL] Result: %h", {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0] + (round_up ? 1'b1 : 1'b0)});
+            `endif
+
+            // Set inexact flag (only for normal cases)
+            flag_nx <= guard || round || sticky;
           end
-
-          `ifdef DEBUG_FPU
-          $display("[FP_MUL] ROUND: sign=%b exp=%h normalized_man=%h man[22:0]=%h GRS=%b%b%b round_up=%b",
-                   sign_result, exp_result, normalized_man, normalized_man[MAN_WIDTH-1:0], guard, round, sticky, round_up);
-          $display("[FP_MUL] Result: %h", {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0] + (round_up ? 1'b1 : 1'b0)});
-          `endif
-
-          // Set inexact flag
-          flag_nx <= guard || round || sticky;
+          // else: special case - result and flags already set
         end
 
         // ============================================================
