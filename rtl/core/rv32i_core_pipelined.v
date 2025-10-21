@@ -69,6 +69,7 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] ifid_pc;
   wire [31:0]     ifid_instruction;  // Instructions always 32-bit
   wire            ifid_valid;
+  wire            ifid_is_compressed; // Was the instruction originally compressed?
 
   //==========================================================================
   // ID Stage Signals
@@ -125,7 +126,8 @@ module rv_core_pipelined #(
   wire            id_is_mret;
   wire            id_is_sret;
   wire            id_is_sfence_vma;
-  wire            id_illegal_inst;
+  wire            id_illegal_inst_from_control; // Illegal from control unit only
+  wire            id_illegal_inst;               // Combined illegal (control + RVC)
 
   // Register file outputs
   wire [XLEN-1:0] id_rs1_data;
@@ -560,10 +562,12 @@ module rv_core_pipelined #(
     .stall(stall_ifid),
     .flush(flush_ifid),
     .pc_in(pc_current),
-    .instruction_in(if_instruction),  // Already decompressed if it was compressed
+    .instruction_in(if_instruction),    // Already decompressed if it was compressed
+    .is_compressed_in(if_is_compressed),
     .pc_out(ifid_pc),
     .instruction_out(ifid_instruction),
-    .valid_out(ifid_valid)
+    .valid_out(ifid_valid),
+    .is_compressed_out(ifid_is_compressed)
   );
 
   //==========================================================================
@@ -674,8 +678,24 @@ module rv_core_pipelined #(
     .fp_alu_en(id_fp_alu_en),
     .fp_alu_op(id_fp_alu_op),
     .fp_use_dynamic_rm(id_fp_use_dynamic_rm),
-    .illegal_inst(id_illegal_inst)
+    .illegal_inst(id_illegal_inst_from_control)
   );
+
+  // Combine illegal instruction signals from control unit and RVC decoder
+  // Bug #29: Illegal compressed instructions were not being caught, causing PC corruption
+  // Only check RVC illegal flag if the instruction was actually compressed (after pipelining through IFID)
+  // Note: We need to buffer the illegal flag for one cycle to match the pipeline stage
+  reg if_illegal_c_instr_buffered;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      if_illegal_c_instr_buffered <= 1'b0;
+    else if (!stall_ifid && !flush_ifid)
+      if_illegal_c_instr_buffered <= if_illegal_c_instr;
+    else if (flush_ifid)
+      if_illegal_c_instr_buffered <= 1'b0;  // Flush clears the illegal flag
+  end
+
+  assign id_illegal_inst = id_illegal_inst_from_control | (ifid_is_compressed & if_illegal_c_instr_buffered);
 
   // Pass through decoder flags for pipeline
   assign id_is_ecall = id_is_ecall_dec;

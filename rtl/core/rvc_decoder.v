@@ -514,8 +514,10 @@ module rvc_decoder #(
       // ================================================================
       2'b11: begin
         // This is a 32-bit instruction, not compressed
-        // Should not reach here if caller checks is_compressed first
-        illegal_instr = 1'b1;
+        // Not illegal - just not a compressed instruction
+        // Caller should check is_compressed_out before using decompressed output
+        illegal_instr = 1'b0;
+        decompressed_instr = 32'h00000013;  // Output NOP (not used for 32-bit instructions)
       end
     endcase
   end

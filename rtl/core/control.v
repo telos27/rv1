@@ -512,13 +512,15 @@ module control #(
 
         end else if (is_mret) begin
           // MRET: return from trap
-          // This is handled as a special jump in the core
-          jump = 1'b1;  // Indicate control flow change
+          // Bug #30: Do NOT set jump=1 - MRET is handled specially via mret_flush in MEM stage
+          // Setting jump=1 would cause wrong target to be used in EX stage
+          jump = 1'b0;
 
         end else if (is_sret) begin
           // SRET: return from supervisor trap
-          // This is handled as a special jump in the core
-          jump = 1'b1;  // Indicate control flow change
+          // Bug #30: Do NOT set jump=1 - SRET is handled specially via sret_flush in MEM stage
+          // Setting jump=1 would cause wrong target to be used in EX stage
+          jump = 1'b0;
 
         end else if (is_sfence_vma) begin
           // SFENCE.VMA: TLB fence (flush TLB)
