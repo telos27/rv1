@@ -432,8 +432,9 @@ module control #(
             end
             5'b11000, 5'b11001, 5'b11010, 5'b11011: begin  // FCVT (float to int, int to float, float to float)
               if (funct7[1:0] == 2'b00 || funct7[1:0] == 2'b01) begin  // FCVT to/from integer
-                // Check rs2 for conversion type
-                if (funct7[6] == 1'b1) begin
+                // Check funct7[3] for conversion direction (per RISC-V spec)
+                // funct7[3]=0: FP→INT (FCVT.W.S = 0x60), funct7[3]=1: INT→FP (FCVT.S.W = 0x68)
+                if (funct7[3] == 1'b0) begin
                   // FCVT.W.S/D, FCVT.WU.S/D, FCVT.L.S/D, FCVT.LU.S/D (FP to int)
                   reg_write = 1'b1;         // Enable write to integer register
                   int_reg_write_fp = 1'b1;  // Mark as FP-to-INT operation

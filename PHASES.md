@@ -475,11 +475,21 @@ Before adding new features, consider fixing these existing issues:
          - Fix: Refactored CONVERT state to use blocking = for all intermediate values
          - Location: rtl/core/fp_converter.v:268-401
          - **This bug caused all converter outputs to be undefined**
+     19. **Bug #19**: **CRITICAL** - Control unit FCVT direction bit wrong ✅ **MAJOR FIX**
+         - Root cause: Same as Bug #17 but in control.v instead of fpu.v
+         - Checked funct7[6] instead of funct7[3] for INT↔FP direction
+         - Impact: `fp_reg_write` signal NEVER set for INT→FP conversions!
+         - Fix: Changed control.v:437 to check funct7[3] with correct polarity:
+           - `funct7[3]=0`: FP→INT (FCVT.W.S=0x60) → write to integer register
+           - `funct7[3]=1`: INT→FP (FCVT.S.W=0x68) → write to FP register
+         - Location: rtl/core/control.v:437
+         - Verification: Added pipeline debug showing full writeback path working
+         - **This bug prevented converter results from EVER reaching FP register file**
 
-   - **Current Status**: Converter infrastructure fixed, produces correct values (test #2: 2→0x40000000 ✓)
-   - **Remaining Issue**: Writeback path integration - values not reaching FP register file
-   - **Next Steps**: Debug pipeline writeback for FPU multi-cycle operations
-   - See: docs/SESSION_2025-10-20_FPU_CONVERTER_DEBUG.md
+   - **Current Status**: Writeback path FIXED! Converter results successfully reach FP register file ✅
+   - **Progress**: Test #2 passes (2→0x40000000), writes to f10, transfers to a0 via FMV.X.S
+   - **Remaining Issues**: Other FPU edge cases (tests #3-5 in fcvt, test #17 in fcvt_w)
+   - See: docs/SESSION_2025-10-21_BUG19_WRITEBACK_FIX.md
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
@@ -568,7 +578,9 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
-**2025-10-20**: FPU special case handling - Fixed Bugs #10, #11, #12 - fadd passing, fdiv timeout fixed (342x faster!)
+**2025-10-21**: FPU writeback path - Fixed Bug #19 (control unit FCVT direction bit) - Converter results now reach FP register file!
+**2025-10-20 (PM)**: FPU converter infrastructure - Fixed Bugs #13-#18 (leading zeros, flags, rounding, funct7, timing)
+**2025-10-20 (AM)**: FPU special case handling - Fixed Bugs #10, #11, #12 - fadd passing, fdiv timeout fixed (342x faster!)
 **2025-10-19**: FPU multiplier debugging - Fixed Bugs #8 and #9 (bit extraction and normalization)
 **2025-10-14**: FPU pipeline hazard marathon - Fixed Bugs #7 and #7b, tests now progress from #11 → #17
 **2025-10-13 (pm afternoon)**: Deep FPU debugging - Fixed Bug #5 (FFLAGS priority), attempted Bug #6 (CSR-FPU hazard) but needs refinement

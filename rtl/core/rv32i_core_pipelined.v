@@ -702,6 +702,17 @@ module rv_core_pipelined #(
   end
   `endif
 
+  // Debug: WB stage FP register write
+  `ifdef DEBUG_FPU_CONVERTER
+  always @(posedge clk) begin
+    if (memwb_fp_reg_write) begin
+      $display("[%0t] [WB] FP write: f%0d <= 0x%h (wb_sel=%b, from %s)",
+               $time, memwb_fp_rd_addr, wb_fp_data, memwb_wb_sel,
+               (memwb_wb_sel == 3'b001) ? "MEM" : "FPU");
+    end
+  end
+  `endif
+
   // FP Register File
   fp_register_file #(
     .FLEN(XLEN)  // 32 for RV32, 64 for RV64
@@ -1417,6 +1428,15 @@ module rv_core_pipelined #(
     .flag_nx(ex_fp_flag_nx)
   );
 
+  // Debug: FPU output
+  `ifdef DEBUG_FPU_CONVERTER
+  always @(posedge clk) begin
+    if (ex_fpu_done) begin
+      $display("[%0t] [FPU] done=1, fp_result=0x%h, busy=%b", $time, ex_fp_result, ex_fpu_busy);
+    end
+  end
+  `endif
+
   // FSW data path: Use FP register data for FP stores, integer register data for integer stores
   wire [XLEN-1:0] ex_mem_write_data_mux;
   assign ex_mem_write_data_mux = (idex_mem_write && idex_fp_mem_op) ? ex_fp_operand_b : ex_rs2_data_forwarded;
@@ -1509,6 +1529,16 @@ module rv_core_pipelined #(
     .instruction_out(exmem_instruction),
     .pc_out(exmem_pc)
   );
+
+  // Debug: EX/MEM FP register transfers
+  `ifdef DEBUG_FPU_CONVERTER
+  always @(posedge clk) begin
+    if (exmem_fp_reg_write) begin
+      $display("[%0t] [EXMEM] FP transfer: f%0d <= 0x%h (fp_result)",
+               $time, exmem_fp_rd_addr, exmem_fp_result);
+    end
+  end
+  `endif
 
   // Debug: EX/MEM register transfers
   `ifdef DEBUG_EXMEM
@@ -1717,6 +1747,16 @@ module rv_core_pipelined #(
     // CSR output
     .csr_rdata_out(memwb_csr_rdata)
   );
+
+  // Debug: MEM/WB FP register transfers
+  `ifdef DEBUG_FPU_CONVERTER
+  always @(posedge clk) begin
+    if (memwb_fp_reg_write) begin
+      $display("[%0t] [MEMWB] FP transfer: f%0d <= 0x%h (wb_sel=%b)",
+               $time, memwb_fp_rd_addr, memwb_fp_result, memwb_wb_sel);
+    end
+  end
+  `endif
 
   // Debug: MEM/WB register transfers
   `ifdef DEBUG_MEMWB
