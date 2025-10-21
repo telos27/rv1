@@ -491,6 +491,37 @@ Before adding new features, consider fixing these existing issues:
    - **Remaining Issues**: Other FPU edge cases (tests #3-5 in fcvt, test #17 in fcvt_w)
    - See: docs/SESSION_2025-10-21_BUG19_WRITEBACK_FIX.md
 
+   **Fixed bugs** (2025-10-21): FP→INT Conversion Overflow & Flags - Bugs #20-#22 ✅
+     20. **Bug #20**: FP→INT overflow detection missing int_exp==31 edge case ✅ **CRITICAL FIX**
+         - Root cause: Overflow check was `int_exp > 31`, missing boundary case
+         - Impact: -3e9 with int_exp=31, man≠0 incorrectly calculated instead of saturating
+         - Test case: fcvt.w.s -3e9 → should be 0x80000000, was 0x4d2fa200
+         - Fix: Added special handling for int_exp==31 and int_exp==63:
+           - Signed: Only -2^31 (man=0, sign=1) valid; else overflow
+           - Unsigned: All values with int_exp≥31 overflow
+         - Location: rtl/core/fp_converter.v:206-258
+         - Impact: Tests #8, #9 now pass (overflow saturation cases)
+         - **This bug caused incorrect results for large magnitude conversions**
+     21. **Bug #21**: Missing invalid flag for unsigned FP→INT with negative input ✅
+         - Root cause: Saturated to 0 but didn't set flag_nv
+         - Impact: Tests #12, #13, #18 expected flag_nv=0x10, got 0x00
+         - Fix: Added `flag_nv <= 1'b1` for unsigned conversions with negative inputs
+         - Location: rtl/core/fp_converter.v:432
+         - Impact: Tests #12, #13, #18 now pass
+     22. **Bug #22**: Incorrect invalid flag for fractional unsigned negative conversions ✅
+         - Root cause: Bug #21 fix too broad - set invalid for ALL negative→unsigned
+         - Impact: Test #14 (fcvt.wu.s -0.9) expected inexact only, got invalid+inexact
+         - Analysis: -0.9 rounds to 0 (RTZ), which IS representable → inexact only
+         - Fix: Refined fractional path - only set invalid if rounded magnitude ≥ 1.0
+         - Location: rtl/core/fp_converter.v:305-313
+         - Impact: Tests #14-17 now pass
+         - **This bug fixed IEEE 754 flag semantics for fractional conversions**
+
+   - **Final Status** (2025-10-21): RV32UF 6/11 (54%), fcvt_w at 94% (15/16 tests)
+   - **New Passing**: rv32uf-p-fcvt ✅, rv32uf-p-fcmp ✅
+   - **Improved**: fcvt_w from test #17 → test #37 (11 ops → 15 ops)
+   - See: docs/SESSION_2025-10-21_BUGS20-22_FP_TO_INT_OVERFLOW.md
+
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
    - See: KNOWN_ISSUES.md §2
@@ -509,7 +540,8 @@ Before adding new features, consider fixing these existing issues:
 - [x] **Fix FP adder mantissa computation** ✓ *Fixed 2025-10-13: +12% improvement*
 - [x] **Re-run FPU compliance tests after fix** 🧪 *Result: 3/11 RV32UF (27%)*
 - [x] **Fix FPU pipeline hazards (Bugs #6, #7, #7b)** ✓ *Fixed 2025-10-14: Flag contamination resolved*
-- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - NaN handling, special values, test #17*
+- [x] **Fix FPU converter overflow & flags (Bugs #20, #21, #22)** ✓ *Fixed 2025-10-21: fcvt passing, fcvt_w 94%*
+- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fcvt_w test #37, fdiv/fmadd/fmin/recoding*
 - [ ] **Debug mixed compressed/normal instructions** 🔀
 - [ ] Performance benchmarking (Dhrystone, CoreMark)
 - [ ] Formal verification for critical paths
@@ -539,7 +571,7 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 4    | 36%  | ⚠️ Edge Cases Remaining (fadd passing!) |
+| RV32F     | 11    | 6    | 54%  | ⚠️ fcvt_w, fdiv, fmadd, fmin, recoding failing |
 | RV32D     | 9     | 0    | 0%   | ⚠️ Not Yet Debugged |
 
 ### Custom Test Coverage
@@ -578,7 +610,8 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
-**2025-10-21**: FPU writeback path - Fixed Bug #19 (control unit FCVT direction bit) - Converter results now reach FP register file!
+**2025-10-21 (PM)**: FPU FP→INT overflow & flags - Fixed Bugs #20-#22 (overflow detection, invalid flags) - fcvt passing, fcvt_w 94%!
+**2025-10-21 (AM)**: FPU writeback path - Fixed Bug #19 (control unit FCVT direction bit) - Converter results now reach FP register file!
 **2025-10-20 (PM)**: FPU converter infrastructure - Fixed Bugs #13-#18 (leading zeros, flags, rounding, funct7, timing)
 **2025-10-20 (AM)**: FPU special case handling - Fixed Bugs #10, #11, #12 - fadd passing, fdiv timeout fixed (342x faster!)
 **2025-10-19**: FPU multiplier debugging - Fixed Bugs #8 and #9 (bit extraction and normalization)

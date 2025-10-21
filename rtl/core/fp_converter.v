@@ -203,8 +203,20 @@ module fp_converter #(
                 // Compute integer exponent
                 int_exp = exp_fp - BIAS;
 
-                // Check if exponent is too large (overflow)
-                if (int_exp > 31 || (operation_latched[1:0] == 2'b10 && int_exp > 63)) begin
+                // Bug #20 fix: Check if exponent is too large (overflow)
+                // For 32-bit conversions: int_exp > 31 always overflows
+                // For int_exp == 31: need to check mantissa
+                //   - Signed: -2^31 is representable (0x80000000), but values > 2^31-1 or < -2^31 overflow
+                //   - Unsigned: any value >= 2^32 overflows
+
+                // Check for 32-bit overflow
+                if ((int_exp > 31) ||
+                    (int_exp == 31 && operation_latched[1:0] != 2'b00) ||  // Unsigned at 2^31 always overflows
+                    (int_exp == 31 && operation_latched[1:0] == 2'b00 && (man_fp != 0 || !sign_fp)) || // Signed: overflow except for exactly -2^31
+                    // Check for 64-bit overflow
+                    (operation_latched[1:0] == 2'b10 && (int_exp > 63 ||
+                     (int_exp == 63 && man_fp != 0) ||
+                     (int_exp == 63 && !sign_fp)))) begin
                   // Overflow: return max/min
                   case (operation)
                     FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
@@ -213,6 +225,11 @@ module fp_converter #(
                     FCVT_LU_S: int_result <= 64'hFFFFFFFFFFFFFFFF;
                   endcase
                   flag_nv <= 1'b1;
+
+                  `ifdef DEBUG_FPU_CONVERTER
+                  $display("[CONVERTER]   OVERFLOW: int_exp=%d, man_fp=%h, sign=%b -> saturate",
+                           int_exp, man_fp, sign_fp);
+                  `endif
                 end
                 // Check if exponent is negative (fractional result)
                 else if (int_exp < 0) begin
@@ -285,8 +302,15 @@ module fp_converter #(
 
                   // Apply rounding
                   if (operation_latched[0] == 1'b1 && sign_fp) begin
-                    // Unsigned conversion with negative value: saturate to 0
+                    // Bug #22 fix: Unsigned conversion with negative value: saturate to 0
+                    // Set invalid flag ONLY if the rounded magnitude >= 1.0
+                    // For fractional values that round to 0, only set inexact (already set above)
                     int_result <= {XLEN{1'b0}};
+                    if (should_round_up_frac) begin
+                      // Rounded to -1 (magnitude 1), which doesn't fit in unsigned: invalid
+                      flag_nv <= 1'b1;
+                    end
+                    // else: rounds to 0, which is valid (just inexact, already handled)
                   end else if (operation_latched[0] == 1'b0 && sign_fp) begin
                     // Signed negative: -0 or -1
                     int_result <= should_round_up_frac ? {XLEN{1'b1}} : {XLEN{1'b0}}; // -1 or 0
@@ -403,8 +427,9 @@ module fp_converter #(
 
                   // Apply sign for signed conversions, or saturate for unsigned
                   if (operation_latched[0] == 1'b1 && sign_fp) begin
-                    // Unsigned conversion with negative value: saturate to 0
+                    // Bug #21 fix: Unsigned conversion with negative value: saturate to 0 and set invalid flag
                     int_result <= {XLEN{1'b0}};
+                    flag_nv <= 1'b1;
                   end else if (operation_latched[0] == 1'b0 && sign_fp) begin
                     // Signed negative
                     int_result <= -rounded_result[XLEN-1:0];
