@@ -24,15 +24,15 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
 - **RV32M**: 8/8 (100%) ✅
 - **RV32A**: 10/10 (100%) ✅
 - **RV32C**: 1/1 (100%) ✅
-- **RV32F**: 3/11 (27%) ⚠️ Bugs found
-- **RV32D**: 0/9 (0%) ⚠️ Bugs found
+- **RV32F**: 4/11 (36%) ⚠️ Active debugging - 15/19 fcvt_w tests passing
+- **RV32D**: 0/9 (0%) ⚠️ Pending after RV32F fixes
 
 ### **Key Features Implemented:**
 - ✅ **RV32I/RV64I** - Base integer instruction set (47 instructions) - **100% compliant**
 - ✅ **M Extension** - Multiply/Divide (13 instructions) - **Verified**
 - ✅ **A Extension** - Atomic operations (22 instructions) - **Verified**
-- ⚠️ **F Extension** - Single-precision floating-point (26 instructions) - **Partial (27% compliance)**
-- ⚠️ **D Extension** - Double-precision floating-point (26 instructions) - **Needs fixes (0% compliance)**
+- ⚠️ **F Extension** - Single-precision floating-point (26 instructions) - **Partial (36% compliance, improving)**
+- ⚠️ **D Extension** - Double-precision floating-point (26 instructions) - **Pending (0% compliance)**
 - ✅ **C Extension** - Compressed instructions (40 instructions) - **100% validated**
 - ✅ **Zicsr** - CSR instructions and privilege system
 - ✅ **Privilege Modes** - M-mode and S-mode fully functional, U-mode ready
@@ -48,7 +48,7 @@ A comprehensive RISC-V processor implementation in Verilog, built incrementally 
   - RV32M: 8/8 (100%) ✅
   - RV32A: 10/10 (100%) ✅
   - RV32C: 1/1 (100%) ✅
-  - RV32F: 3/11 (27%) ⚠️
+  - RV32F: 4/11 (36%) ⚠️ (fcvt_w: 15/19 tests passing internally)
   - RV32D: 0/9 (0%) ⚠️
 - **Custom Tests**: 13/13 FPU tests PASSING (100%)
 - **Supervisor Mode Tests**: 10/12 tests PASSING (83%)
@@ -64,13 +64,14 @@ Before implementing new features, consider these existing limitations:
    - Trade-off: Simplicity chosen over performance
    - **Action**: Consider optimizing before adding more complex features
 
-2. **🧪 FPU Compliance Issues (27% pass rate)** - Pipeline hazards fixed, edge cases remain
+2. **🧪 FPU Compliance Issues (36% pass rate)** - Converter bugs fixed, progress ongoing
    - Custom tests: 13/13 passing (basic operations work) ✅
-   - Official tests: 3/11 RV32UF passing (27%)
-   - **Fixed (2025-10-14)**: CSR-FPU pipeline hazards (Bugs #5, #6, #7, #7b)
-   - **Progress**: Tests now reach #17 (was #11), 6 more tests passing internally
-   - Remaining issues: NaN handling, special values, FDIV timeout
-   - **Action**: Continue edge case debugging (see docs/FPU_BUG7_ANALYSIS.md)
+   - Official tests: 4/11 RV32UF passing (36%)
+   - **Fixed (2025-10-20)**: FP→INT converter bugs #13, #14, #15 (inexact flag logic)
+   - **Progress**: fcvt_w test 15/19 tests passing internally (was 5/19)
+   - **Latest Fixes**: Inexact flag for exact conversions, FFLAGS accumulation for FP→INT ops
+   - Remaining issues: fcvt_w test #17+, fcmp, fcvt, fmin edge cases
+   - **Action**: Continue methodical one-test-at-a-time debugging
 
 3. **🔀 Mixed Compressed/Normal Instructions** - Addressing issue with mixed 16/32-bit streams
    - Pure compressed: Works correctly

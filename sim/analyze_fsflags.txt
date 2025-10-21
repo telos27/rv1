@@ -1,0 +1,19 @@
+# HYPOTHESIS: The issue might be with fsflags accumulation or reading
+
+## Test #7 flow:
+1. Previous tests (#2-#6) have already executed
+2. They've already set FFLAGS bits
+3. Test #7 loads 1.1 into f10
+4. Executes: fcvt.w.s a0, f10, rtz
+5. Reads FFLAGS: fsflags a1, x0  <- This reads FFLAGS and clears it
+6. Expects a1 = 0x01 (only NX from THIS operation)
+
+## Potential bug:
+- If FFLAGS accumulated from previous tests, a1 might have MORE than just 0x01
+- The test expects ONLY the flags from test #7, not accumulated from all tests
+
+## Need to check:
+1. Does fsflags read the full accumulated FFLAGS?
+2. Should each test start with clean FFLAGS?
+3. Is there a FFLAGS clear between tests?
+

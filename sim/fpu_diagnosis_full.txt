@@ -1,0 +1,20 @@
+===============================================
+RV32UF Compliance Test Diagnostic Report
+Date: Mon Oct 20 21:18:39 PDT 2025
+Timeout: 120s per test
+===============================================
+
+=== Testing: rv32uf-p-fadd ===
+  Compiling...
+  Running simulation (timeout: 120s)...
+  ✅ PASSED
+
+=== Testing: rv32uf-p-fclass ===
+  Compiling...
+  Running simulation (timeout: 120s)...
+  ✅ PASSED
+
+=== Testing: rv32uf-p-fcmp ===
+  Compiling...
+  Running simulation (timeout: 120s)...
+  ❌ FAILED

@@ -1,0 +1,2 @@
+rtl/core/rv32i_core.v:119: warning: Port 27 (wb_sel) of control expects 3 bits, got 2.
+rtl/core/rv32i_core.v:119:        : Padding 1 high bits of the port.

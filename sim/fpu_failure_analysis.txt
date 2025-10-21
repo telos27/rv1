@@ -1,0 +1,51 @@
+=== Detailed Failure Analysis ===
+
+Test: rv32uf-p-fcmp
+==================
+Failed at test #13
+Cycles: 185
+Final registers:
+
+
+Test: rv32uf-p-fcvt
+==================
+Failed at test #5
+Cycles: 110
+Final registers:
+
+
+Test: rv32uf-p-fcvt_w
+==================
+Failed at test #5
+Cycles: 116
+Final registers:
+
+
+Test: rv32uf-p-fdiv
+==================
+Failed at test #5
+Cycles: 146
+Final registers:
+
+
+Test: rv32uf-p-fmadd
+==================
+Failed at test #5
+Cycles: 120
+Final registers:
+
+
+Test: rv32uf-p-fmin
+==================
+Failed at test #15
+Cycles: 215
+Final registers:
+
+
+Test: rv32uf-p-recoding
+==================
+Failed at test #5
+Cycles: 118
+Final registers:
+
+

@@ -1,0 +1,38 @@
+==========================================
+RV1 Compliance Tests (from hex files)
+==========================================
+Pattern: rv32uf
+
+  rv32uf-p-fadd...                    [0;32mPASSED[0m
+  rv32uf-p-fclass...                  [0;32mPASSED[0m
+  rv32uf-p-fcmp...                    [0;31mFAILED[0m
+  rv32uf-p-fcvt...                    [0;31mFAILED[0m
+  rv32uf-p-fcvt_w...                  [0;31mFAILED[0m
+  rv32uf-p-fdiv...                    [0;31mFAILED[0m
+  rv32uf-p-fmadd...                   [0;31mFAILED[0m
+  rv32uf-p-fmin...                    [0;31mFAILED[0m
+  rv32uf-p-ldst...                    [0;32mPASSED[0m
+  rv32uf-p-move...                    [0;32mPASSED[0m
+  rv32uf-p-recoding...                [0;31mFAILED[0m
+
+==========================================
+Test Summary
+==========================================
+Total:   11
+[0;32mPassed:  4[0m
+[0;31mFailed:  7[0m
+[1;33mTimeout: 0[0m
+Pass rate: 36%
+
+Failed/Timeout tests:
+
+    - rv32uf-p-fcmp
+    - rv32uf-p-fcvt
+    - rv32uf-p-fcvt_w
+    - rv32uf-p-fdiv
+    - rv32uf-p-fmadd
+    - rv32uf-p-fmin
+    - rv32uf-p-recoding
+
+Logs in: /home/lei/rv1/sim/test_*.log
+
