@@ -110,6 +110,37 @@ module fp_fma #(
       flag_of <= 1'b0;
       flag_uf <= 1'b0;
       flag_nx <= 1'b0;
+      // Initialize working registers to prevent X propagation
+      sign_a <= 1'b0;
+      sign_b <= 1'b0;
+      sign_c <= 1'b0;
+      sign_prod <= 1'b0;
+      sign_result <= 1'b0;
+      exp_a <= {EXP_WIDTH{1'b0}};
+      exp_b <= {EXP_WIDTH{1'b0}};
+      exp_c <= {EXP_WIDTH{1'b0}};
+      man_a <= {(MAN_WIDTH+1){1'b0}};
+      man_b <= {(MAN_WIDTH+1){1'b0}};
+      man_c <= {(MAN_WIDTH+1){1'b0}};
+      is_nan_a <= 1'b0;
+      is_nan_b <= 1'b0;
+      is_nan_c <= 1'b0;
+      is_inf_a <= 1'b0;
+      is_inf_b <= 1'b0;
+      is_inf_c <= 1'b0;
+      is_zero_a <= 1'b0;
+      is_zero_b <= 1'b0;
+      is_zero_c <= 1'b0;
+      exp_prod <= {(EXP_WIDTH+2){1'b0}};
+      product <= {(2*MAN_WIDTH+4){1'b0}};
+      aligned_c <= {(2*MAN_WIDTH+6){1'b0}};
+      sum <= {(2*MAN_WIDTH+7){1'b0}};
+      exp_diff <= {(EXP_WIDTH+2){1'b0}};
+      exp_result <= {EXP_WIDTH{1'b0}};
+      guard <= 1'b0;
+      round <= 1'b0;
+      sticky <= 1'b0;
+      round_up <= 1'b0;
     end else begin
       case (state)
 
@@ -196,11 +227,12 @@ module fp_fma #(
             // Addend is 0, return product
             sign_prod <= sign_a ^ sign_b ^ negate_product;
             exp_prod <= exp_a + exp_b - BIAS;
+            // Store 48-bit product directly - we'll position it during ADD
             product <= man_a * man_b;
-            // Will normalize in later stages
           end else begin
             // Normal multiplication
             sign_prod <= sign_a ^ sign_b ^ negate_product;
+            // Store 48-bit product directly - we'll position it during ADD
             product <= man_a * man_b;
             exp_prod <= exp_a + exp_b - BIAS;
           end
@@ -210,44 +242,73 @@ module fp_fma #(
         // ADD: Add product and addend (single rounding point!)
         // ============================================================
         ADD: begin
+          `ifdef DEBUG_FPU
+          $display("[FMA_ADD_START] exp_prod=%d exp_c=%d man_c=%h product=%h",
+                   exp_prod, exp_c, man_c, product);
+          `endif
+
           // Align operands by exponent
+          // Product is 48 bits (from man_a * man_b)
+          // man_c is 24 bits
+          // Strategy: Position both in 53-bit sum register, aligned by their exponents
+          //
+          // Key insight: product and addend must be aligned so that equal exponents
+          // have their leading 1's at the SAME bit position in the sum register.
+          // When exponents differ, the smaller one is shifted right.
+          //
+          // Use blocking assignments (=) for intermediate computations
           if (exp_prod >= exp_c) begin
-            exp_result <= exp_prod;
-            exp_diff <= exp_prod - exp_c;
+            exp_result = exp_prod;
+            exp_diff = exp_prod - exp_c;
 
-            // Product is larger, keep it and shift addend
+            // Product has larger exponent, so it sets the reference position
+            // Position product: 48 bits with leading bit at sum[51]
+            // Position addend: 24 bits shifted right by exp_diff from sum[51]
             if (exp_diff > (2*MAN_WIDTH + 6))
-              aligned_c <= {1'b0, {(2*MAN_WIDTH+5){1'b0}}, 1'b1};  // Sticky bit only
+              aligned_c = {1'b0, {(2*MAN_WIDTH+5){1'b0}}, 1'b1};  // Sticky bit only
             else
-              aligned_c <= ({man_c, {MAN_WIDTH+3{1'b0}}} >> exp_diff);
+              // Position man_c with leading bit at sum[51], then shift right by exp_diff
+              // man_c needs 51-23=28 bits of padding to reach bit [51]
+              aligned_c = ({man_c[MAN_WIDTH:0], 28'b0} >> exp_diff);
           end else begin
-            exp_result <= exp_c;
-            exp_diff <= exp_c - exp_prod;
+            exp_result = exp_c;
+            exp_diff = exp_c - exp_prod;
 
-            // Addend is larger, shift product
+            // Addend has larger exponent
+            // Shift product right by exp_diff relative to addend position
             if (exp_diff > (2*MAN_WIDTH + 6))
-              product <= {1'b0, {(2*MAN_WIDTH+3){1'b0}}, 1'b1};  // Sticky bit only
+              product = {1'b0, {(2*MAN_WIDTH+3){1'b0}}, 1'b1};  // Sticky bit only
             else
-              product <= product >> exp_diff;
+              product = product >> exp_diff;
 
-            aligned_c <= {man_c, {MAN_WIDTH+3{1'b0}}};
+            // Position man_c with leading bit at sum[51]: need 28 bits of padding
+            aligned_c = {man_c, 28'b0};
           end
 
-          // Perform addition/subtraction based on signs
+          // Perform addition/subtraction
+          // Position product to have leading bit at sum[51]: need (51-46)=5 bits of shift
+          // (product has 48 bits in Q2.46 format, leading 1 at bit [46], we want it at [51])
           if (sign_prod == sign_c) begin
             // Same sign: add magnitudes
-            sum <= product + aligned_c;
+            sum <= (product << 5) + aligned_c;
             sign_result <= sign_prod;
           end else begin
             // Different signs: subtract magnitudes
-            if (product >= aligned_c) begin
-              sum <= product - aligned_c;
+            if ((product << 5) >= aligned_c) begin
+              sum <= (product << 5) - aligned_c;
               sign_result <= sign_prod;
             end else begin
-              sum <= aligned_c - product;
+              sum <= aligned_c - (product << 5);
               sign_result <= sign_c;
             end
           end
+          state <= NORMALIZE;
+          `ifdef DEBUG_FPU
+          $display("[FMA_ADD] product=%h aligned_c=%h exp_result=%d exp_diff=%d",
+                   product, aligned_c, exp_result, exp_diff);
+          $display("[FMA_ADD_DEBUG] man_c=%h shift_in=%h shift_amount=%d",
+                   man_c, {man_c[MAN_WIDTH:0], 29'b0}, exp_diff);
+          `endif
         end
 
         // ============================================================
@@ -309,13 +370,19 @@ module fp_fma #(
             end
           endcase
 
+          `ifdef DEBUG_FPU
+          $display("[FMA_ROUND] sign=%b exp_result=%d sum=%h mantissa_extract=%h (bits [50:28])",
+                   sign_result, exp_result, sum, sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)]);
+          `endif
+
           // Apply rounding
+          // Extract mantissa from sum[50:28] (23 bits), assuming sum[51] is the implicit 1
           if (round_up) begin
             result <= {sign_result, exp_result[EXP_WIDTH-1:0],
-                       sum[(2*MAN_WIDTH+5):(MAN_WIDTH+3)] + 1'b1};
+                       sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)] + 1'b1};
           end else begin
             result <= {sign_result, exp_result[EXP_WIDTH-1:0],
-                       sum[(2*MAN_WIDTH+5):(MAN_WIDTH+3)]};
+                       sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)]};
           end
 
           // Set inexact flag

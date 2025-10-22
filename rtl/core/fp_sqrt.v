@@ -154,6 +154,9 @@ module fp_sqrt #(
                     (operand[MAN_WIDTH-1:0] == 0);
           is_zero <= (operand[FLEN-2:0] == 0);
           is_negative <= operand[FLEN-1] && !((operand[FLEN-2:0] == 0));  // -0 is OK
+
+          // Initialize counter for COMPUTE state
+          sqrt_counter <= SQRT_CYCLES;
         end
 
         // ============================================================
