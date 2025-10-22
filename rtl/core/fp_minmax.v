@@ -48,9 +48,23 @@ module fp_minmax #(
   wire is_zero_a = (operand_a[FLEN-2:0] == 0);
   wire is_zero_b = (operand_b[FLEN-2:0] == 0);
 
-  // Magnitude comparison (as signed numbers)
-  // Treat as two's complement for easy comparison
-  wire a_less_than_b = $signed(operand_a) < $signed(operand_b);
+  // Floating-point comparison
+  // Cannot use $signed comparison because FP bit patterns don't match signed integer order
+  // For floats: need to compare sign first, then magnitude
+  wire both_positive = !sign_a && !sign_b;
+  wire both_negative = sign_a && sign_b;
+  wire a_positive_b_negative = !sign_a && sign_b;
+  wire a_negative_b_positive = sign_a && !sign_b;
+
+  // Magnitude comparison (exponent first, then mantissa)
+  wire mag_a_less_than_b = (exp_a < exp_b) ||
+                            ((exp_a == exp_b) && (man_a < man_b));
+
+  // Full floating-point comparison: a < b
+  wire a_less_than_b = a_positive_b_negative ? 1'b0 :           // +a vs -b: a > b
+                       a_negative_b_positive ? 1'b1 :           // -a vs +b: a < b
+                       both_positive ? mag_a_less_than_b :      // both positive: compare magnitudes
+                       both_negative ? !mag_a_less_than_b && (operand_a != operand_b) : 1'b0;  // both negative: reverse magnitude comparison
 
   // Canonical NaN
   wire [FLEN-1:0] canonical_nan = (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;

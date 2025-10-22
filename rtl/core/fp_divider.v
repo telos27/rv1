@@ -57,9 +57,9 @@ module fp_divider #(
   reg special_case_handled;  // Track if special case was processed
 
   // Division computation (SRT radix-2)
-  reg [MAN_WIDTH+3:0] quotient;        // Quotient result
-  reg [MAN_WIDTH+4:0] remainder;       // Current remainder
-  reg [MAN_WIDTH+4:0] divisor_shifted; // Shifted divisor for comparison
+  reg [MAN_WIDTH+3:0] quotient;        // Quotient result (27 bits)
+  reg [MAN_WIDTH+4:0] remainder;       // Current remainder (28 bits - FIXME: needs 29!)
+  reg [MAN_WIDTH+4:0] divisor_shifted; // Shifted divisor for comparison (28 bits - FIXME: needs 29!)
   reg [5:0] div_counter;               // Iteration counter
   reg [EXP_WIDTH+1:0] exp_diff;        // Exponent difference
   reg [EXP_WIDTH-1:0] exp_result;
@@ -81,7 +81,10 @@ module fp_divider #(
     case (state)
       IDLE:      next_state = start ? UNPACK : IDLE;
       UNPACK:    next_state = DIVIDE;
-      DIVIDE:    next_state = (div_counter == 0) ? NORMALIZE : DIVIDE;
+      // Transition after all DIV_CYCLES iterations (counter: DIV_CYCLES-1 → 0)
+      // When counter hits 0, we do the final iteration, then transition
+      // Special cases jump directly to DONE via state assignment in datapath
+      DIVIDE:    next_state = (div_counter == 6'd0) ? NORMALIZE : DIVIDE;
       NORMALIZE: next_state = ROUND;
       ROUND:     next_state = DONE;
       DONE:      next_state = IDLE;
@@ -324,11 +327,17 @@ module fp_divider #(
             end
           endcase
 
-          // Apply rounding
+          // Apply rounding with overflow handling
           if (round_up) begin
-            result <= {sign_result, exp_result, quotient[MAN_WIDTH+3:3] + 1'b1};
+            // Check if rounding causes mantissa overflow
+            if (quotient[MAN_WIDTH+2:3] == {MAN_WIDTH{1'b1}}) begin
+              // Mantissa overflow: increment exponent, mantissa becomes 0
+              result <= {sign_result, exp_result + 1'b1, {MAN_WIDTH{1'b0}}};
+            end else begin
+              result <= {sign_result, exp_result, quotient[MAN_WIDTH+2:3] + 1'b1};
+            end
           end else begin
-            result <= {sign_result, exp_result, quotient[MAN_WIDTH+3:3]};
+            result <= {sign_result, exp_result, quotient[MAN_WIDTH+2:3]};
           end
 
           // Set inexact flag
