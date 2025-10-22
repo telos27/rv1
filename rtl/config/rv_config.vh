@@ -10,9 +10,22 @@
 // Architecture Width Configuration
 // ============================================================================
 
-// XLEN: Register and data path width (32 or 64)
+// XLEN: Integer register and data path width (32 or 64)
 `ifndef XLEN
   `define XLEN 32
+`endif
+
+// FLEN: Floating-point register width (0=no FPU, 32=F only, 64=F+D)
+`ifndef FLEN
+  `define FLEN 64  // Default to 64 to support both F and D extensions
+`endif
+
+// DWIDTH: Data memory interface width (use FLEN to support RV32D with 64-bit FP loads/stores)
+// For RV32I/M/A/C: XLEN=32, FLEN=0, DWIDTH should be 32
+// For RV32F: XLEN=32, FLEN=32, DWIDTH=32
+// For RV32D: XLEN=32, FLEN=64, DWIDTH=64
+`ifndef DWIDTH
+  `define DWIDTH `FLEN  // Use FLEN as data width to support wide FP loads/stores
 `endif
 
 // Derived parameters

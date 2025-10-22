@@ -6,7 +6,8 @@
 `include "config/rv_config.vh"
 
 module exmem_register #(
-  parameter XLEN = `XLEN  // Data/address width: 32 or 64 bits
+  parameter XLEN = `XLEN,  // Data/address width: 32 or 64 bits
+  parameter FLEN = `FLEN   // FP register width: 32 or 64 bits
 ) (
   input  wire             clk,
   input  wire             reset_n,
@@ -34,7 +35,7 @@ module exmem_register #(
   input  wire            is_atomic_in,       // Atomic instruction flag
 
   // F/D extension signals from EX stage
-  input  wire [XLEN-1:0]  fp_result_in,          // FP result
+  input  wire [FLEN-1:0]  fp_result_in,          // FP result
   input  wire [XLEN-1:0]  int_result_fp_in,      // Integer result (FP compare/classify/FMV.X.W)
   input  wire [4:0]       fp_rd_addr_in,         // FP destination register
   input  wire             fp_reg_write_in,       // FP register write enable
@@ -83,7 +84,7 @@ module exmem_register #(
   output reg             is_atomic_out,       // Atomic instruction flag
 
   // F/D extension signals to MEM stage
-  output reg  [XLEN-1:0]  fp_result_out,
+  output reg  [FLEN-1:0]  fp_result_out,
   output reg  [XLEN-1:0]  int_result_fp_out,
   output reg  [4:0]       fp_rd_addr_out,
   output reg              fp_reg_write_out,
@@ -131,7 +132,7 @@ module exmem_register #(
       atomic_result_out  <= {XLEN{1'b0}};
       is_atomic_out      <= 1'b0;
 
-      fp_result_out      <= {XLEN{1'b0}};
+      fp_result_out      <= {FLEN{1'b0}};
       int_result_fp_out  <= {XLEN{1'b0}};
       fp_rd_addr_out     <= 5'h0;
       fp_reg_write_out   <= 1'b0;

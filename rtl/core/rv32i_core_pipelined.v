@@ -142,12 +142,12 @@ module rv_core_pipelined #(
   wire            id_fp_use_dynamic_rm; // Use dynamic rounding mode from frm CSR
 
   // FP register file outputs
-  wire [XLEN-1:0] id_fp_rs1_data;
-  wire [XLEN-1:0] id_fp_rs2_data;
-  wire [XLEN-1:0] id_fp_rs3_data;
-  wire [XLEN-1:0] id_fp_rs1_data_raw; // Raw FP register file output
-  wire [XLEN-1:0] id_fp_rs2_data_raw;
-  wire [XLEN-1:0] id_fp_rs3_data_raw;
+  wire [`FLEN-1:0] id_fp_rs1_data;
+  wire [`FLEN-1:0] id_fp_rs2_data;
+  wire [`FLEN-1:0] id_fp_rs3_data;
+  wire [`FLEN-1:0] id_fp_rs1_data_raw; // Raw FP register file output
+  wire [`FLEN-1:0] id_fp_rs2_data_raw;
+  wire [`FLEN-1:0] id_fp_rs3_data_raw;
 
   // Immediate selection
   wire [XLEN-1:0] id_immediate;
@@ -181,9 +181,9 @@ module rv_core_pipelined #(
   wire [4:0]      idex_funct5;
   wire            idex_aq;
   wire            idex_rl;
-  wire [XLEN-1:0] idex_fp_rs1_data;
-  wire [XLEN-1:0] idex_fp_rs2_data;
-  wire [XLEN-1:0] idex_fp_rs3_data;
+  wire [`FLEN-1:0] idex_fp_rs1_data;
+  wire [`FLEN-1:0] idex_fp_rs2_data;
+  wire [`FLEN-1:0] idex_fp_rs3_data;
   wire [4:0]      idex_fp_rs1_addr;
   wire [4:0]      idex_fp_rs2_addr;
   wire [4:0]      idex_fp_rs3_addr;
@@ -233,10 +233,10 @@ module rv_core_pipelined #(
   wire            ex_mul_div_ready;
 
   // F/D extension signals
-  wire [XLEN-1:0] ex_fp_operand_a;        // FP operand A (potentially forwarded)
-  wire [XLEN-1:0] ex_fp_operand_b;        // FP operand B (potentially forwarded)
-  wire [XLEN-1:0] ex_fp_operand_c;        // FP operand C (potentially forwarded, for FMA)
-  wire [XLEN-1:0] ex_fp_result;           // FP result from FPU
+  wire [`FLEN-1:0] ex_fp_operand_a;        // FP operand A (potentially forwarded)
+  wire [`FLEN-1:0] ex_fp_operand_b;        // FP operand B (potentially forwarded)
+  wire [`FLEN-1:0] ex_fp_operand_c;        // FP operand C (potentially forwarded, for FMA)
+  wire [`FLEN-1:0] ex_fp_result;           // FP result from FPU
   wire [XLEN-1:0] ex_int_result_fp;       // Integer result from FP ops (compare/classify/FMV.X.W)
   wire            ex_fpu_busy;             // FPU busy signal
   wire            ex_fpu_done;             // FPU done signal
@@ -324,7 +324,7 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] exmem_mul_div_result;
   wire [XLEN-1:0] exmem_atomic_result;
   wire            exmem_is_atomic;
-  wire [XLEN-1:0] exmem_fp_result;
+  wire [`FLEN-1:0] exmem_fp_result;
   wire [XLEN-1:0] exmem_int_result_fp;
   wire [4:0]      exmem_fp_rd_addr;
   wire            exmem_fp_reg_write;
@@ -391,7 +391,7 @@ module rv_core_pipelined #(
   wire            memwb_valid;
   wire [XLEN-1:0] memwb_mul_div_result;
   wire [XLEN-1:0] memwb_atomic_result;
-  wire [XLEN-1:0] memwb_fp_result;
+  wire [`FLEN-1:0] memwb_fp_result;
   wire [XLEN-1:0] memwb_int_result_fp;
   wire [4:0]      memwb_fp_rd_addr;
   wire            memwb_fp_reg_write;
@@ -427,7 +427,7 @@ module rv_core_pipelined #(
   // WB Stage Signals
   //==========================================================================
   wire [XLEN-1:0] wb_data;
-  wire [XLEN-1:0] wb_fp_data;         // FP write-back data
+  wire [`FLEN-1:0] wb_fp_data;         // FP write-back data
 
   //==========================================================================
   // Debug outputs
@@ -775,7 +775,7 @@ module rv_core_pipelined #(
 
   // FP Register File
   fp_register_file #(
-    .FLEN(XLEN)  // 32 for RV32, 64 for RV64
+    .FLEN(`FLEN)  // 32 for F-only, 64 for F+D extensions
   ) fp_regfile (
     .clk(clk),
     .reset_n(reset_n),
@@ -876,7 +876,8 @@ module rv_core_pipelined #(
 
   // ID/EX Pipeline Register
   idex_register #(
-    .XLEN(XLEN)
+    .XLEN(XLEN),
+    .FLEN(`FLEN)
   ) idex_reg (
     .clk(clk),
     .reset_n(reset_n),
@@ -1471,7 +1472,7 @@ module rv_core_pipelined #(
 
   // FPU Instantiation
   fpu #(
-    .FLEN(XLEN),
+    .FLEN(`FLEN),
     .XLEN(XLEN)
   ) fpu_inst (
     .clk(clk),
@@ -1514,7 +1515,8 @@ module rv_core_pipelined #(
   // EX/MEM Pipeline Register
   //==========================================================================
   exmem_register #(
-    .XLEN(XLEN)
+    .XLEN(XLEN),
+    .FLEN(`FLEN)
   ) exmem_reg (
     .clk(clk),
     .reset_n(reset_n),
@@ -1764,7 +1766,8 @@ module rv_core_pipelined #(
 
   // MEM/WB Pipeline Register
   memwb_register #(
-    .XLEN(XLEN)
+    .XLEN(XLEN),
+    .FLEN(`FLEN)
   ) memwb_reg (
     .clk(clk),
     .reset_n(reset_n),

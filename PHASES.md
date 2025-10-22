@@ -630,8 +630,8 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 7    | 63.6% | ⚠️ fdiv, fmadd, fmin, recoding failing |
-| RV32D     | 9     | 0    | 0%   | ⚠️ Not Yet Debugged |
+| RV32F     | 11    | 11   | 100% | ✅ Complete |
+| RV32D     | 9     | 0    | 0%   | 🚧 In Progress - FLEN refactoring |
 
 ### Custom Test Coverage
 - **Unit tests**: All modules have dedicated unit tests
@@ -669,6 +669,8 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-22**: RV32D FLEN refactoring - Bugs #27 & #28 (partial) - Refactored FP data paths from XLEN to FLEN-wide (19 signals, 5 files) 🚧
+**2025-10-21 (late PM)**: RV32F completion - All remaining FPU tests passing! RV32UF 11/11 (100%) ✅
 **2025-10-21 (PM session 4)**: FPU NaN conversion - Fixed Bug #26 (NaN→INT sign bit handling) - fcvt_w 100% PASSING! RV32UF 7/11 (63.6%) ✅
 **2025-10-21 (PM session 3)**: FPU unsigned word overflow - Fixed Bugs #24-#25 (operation signal, overflow logic) - fcvt_w test #39 → #85 (98.8%!)
 **2025-10-21 (PM session 2)**: FPU unsigned long saturation - Fixed Bug #23 (negative→unsigned overflow) - fcvt_w test #37 → #39

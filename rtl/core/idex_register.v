@@ -6,7 +6,8 @@
 `include "config/rv_config.vh"
 
 module idex_register #(
-  parameter XLEN = `XLEN  // Data/address width: 32 or 64 bits
+  parameter XLEN = `XLEN,  // Data/address width: 32 or 64 bits
+  parameter FLEN = `FLEN   // FP register width: 32 or 64 bits
 ) (
   input  wire             clk,
   input  wire             reset_n,
@@ -48,9 +49,9 @@ module idex_register #(
   input  wire        rl_in,
 
   // F/D extension signals from ID stage
-  input  wire [XLEN-1:0] fp_rs1_data_in,      // FP register rs1 data
-  input  wire [XLEN-1:0] fp_rs2_data_in,      // FP register rs2 data
-  input  wire [XLEN-1:0] fp_rs3_data_in,      // FP register rs3 data (for FMA)
+  input  wire [FLEN-1:0] fp_rs1_data_in,      // FP register rs1 data
+  input  wire [FLEN-1:0] fp_rs2_data_in,      // FP register rs2 data
+  input  wire [FLEN-1:0] fp_rs3_data_in,      // FP register rs3 data (for FMA)
   input  wire [4:0]      fp_rs1_addr_in,      // FP rs1 address
   input  wire [4:0]      fp_rs2_addr_in,      // FP rs2 address
   input  wire [4:0]      fp_rs3_addr_in,      // FP rs3 address
@@ -117,9 +118,9 @@ module idex_register #(
   output reg         rl_out,
 
   // F/D extension signals to EX stage
-  output reg  [XLEN-1:0] fp_rs1_data_out,
-  output reg  [XLEN-1:0] fp_rs2_data_out,
-  output reg  [XLEN-1:0] fp_rs3_data_out,
+  output reg  [FLEN-1:0] fp_rs1_data_out,
+  output reg  [FLEN-1:0] fp_rs2_data_out,
+  output reg  [FLEN-1:0] fp_rs3_data_out,
   output reg  [4:0]      fp_rs1_addr_out,
   output reg  [4:0]      fp_rs2_addr_out,
   output reg  [4:0]      fp_rs3_addr_out,
@@ -201,9 +202,9 @@ module idex_register #(
       aq_out          <= 1'b0;
       rl_out          <= 1'b0;
 
-      fp_rs1_data_out <= {XLEN{1'b0}};
-      fp_rs2_data_out <= {XLEN{1'b0}};
-      fp_rs3_data_out <= {XLEN{1'b0}};
+      fp_rs1_data_out <= {FLEN{1'b0}};
+      fp_rs2_data_out <= {FLEN{1'b0}};
+      fp_rs3_data_out <= {FLEN{1'b0}};
       fp_rs1_addr_out <= 5'h0;
       fp_rs2_addr_out <= 5'h0;
       fp_rs3_addr_out <= 5'h0;

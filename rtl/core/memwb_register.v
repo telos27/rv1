@@ -6,7 +6,8 @@
 `include "config/rv_config.vh"
 
 module memwb_register #(
-  parameter XLEN = `XLEN  // Data/address width: 32 or 64 bits
+  parameter XLEN = `XLEN,  // Data/address width: 32 or 64 bits
+  parameter FLEN = `FLEN   // FP register width: 32 or 64 bits
 ) (
   input  wire             clk,
   input  wire             reset_n,
@@ -29,7 +30,7 @@ module memwb_register #(
   input  wire [XLEN-1:0] atomic_result_in,
 
   // F/D extension signals from MEM stage
-  input  wire [XLEN-1:0]  fp_result_in,
+  input  wire [FLEN-1:0]  fp_result_in,
   input  wire [XLEN-1:0]  int_result_fp_in,
   input  wire [4:0]       fp_rd_addr_in,
   input  wire             fp_reg_write_in,
@@ -62,7 +63,7 @@ module memwb_register #(
   output reg  [XLEN-1:0] atomic_result_out,
 
   // F/D extension signals to WB stage
-  output reg  [XLEN-1:0]  fp_result_out,
+  output reg  [FLEN-1:0]  fp_result_out,
   output reg  [XLEN-1:0]  int_result_fp_out,
   output reg  [4:0]       fp_rd_addr_out,
   output reg              fp_reg_write_out,
@@ -94,7 +95,7 @@ module memwb_register #(
 
       atomic_result_out  <= {XLEN{1'b0}};
 
-      fp_result_out      <= {XLEN{1'b0}};
+      fp_result_out      <= {FLEN{1'b0}};
       int_result_fp_out  <= {XLEN{1'b0}};
       fp_rd_addr_out     <= 5'h0;
       fp_reg_write_out   <= 1'b0;

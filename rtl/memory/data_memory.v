@@ -73,7 +73,9 @@ module data_memory #(
           mem[masked_addr + 2] <= write_data[23:16];
           mem[masked_addr + 3] <= write_data[31:24];
         end
-        3'b011: begin  // SD (store doubleword - RV64 only) - supports misaligned access
+        3'b011: begin  // SD/FSD (store doubleword) - supports RV64 and RV32D (FSD)
+          // For RV32D, write_data will be 32 bits, so we only write lower 32 bits here.
+          // Upper 32 bits for FSD in RV32D requires separate handling in the pipeline.
           if (XLEN == 64) begin
             mem[masked_addr]     <= write_data[7:0];
             mem[masked_addr + 1] <= write_data[15:8];
@@ -83,6 +85,13 @@ module data_memory #(
             mem[masked_addr + 5] <= write_data[47:40];
             mem[masked_addr + 6] <= write_data[55:48];
             mem[masked_addr + 7] <= write_data[63:56];
+          end else begin
+            // RV32D: For now, just write lower 32 bits
+            // TODO: This is incorrect for FSD - need 64-bit write path
+            mem[masked_addr]     <= write_data[7:0];
+            mem[masked_addr + 1] <= write_data[15:8];
+            mem[masked_addr + 2] <= write_data[23:16];
+            mem[masked_addr + 3] <= write_data[31:24];
           end
         end
       endcase
