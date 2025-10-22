@@ -12,8 +12,14 @@
 - rv32uf-p-recoding now PASSING
 - Progress: 9/11 → 10/11 (81% → 90%)
 
-**❌ Bug #37 REMAINING**: FP Square Root implementation broken
-- rv32uf-p-fdiv fails at test #11 (fsqrt)
+**✅ Bug #39 FIXED**: FP Square Root counter initialization
+- Perfect squares now work (sqrt(4)=2, sqrt(9)=3)
+- Progress: 0% fsqrt → 50% fsqrt working
+
+**❌ Bug #40 REMAINING**: FP Square Root precision for non-perfect squares
+- rv32uf-p-fdiv still fails at test #11
+- Non-perfect squares incorrect (sqrt(π)=1.5 instead of 1.7724539)
+- Requires algorithm rewrite
 
 ---
 
@@ -41,18 +47,23 @@ Result: is_zero_a=1, produced NaN instead of -Inf for 3.0 × -Inf
 
 ---
 
-## Priority 1: Fix FSQRT (Bug #37)
+## Priority 1: Fix FSQRT (Bugs #39, #40)
 
-### Current Status
-- Bugs #34-#36 fixed (mantissa extraction, timing, width)
-- Algorithm rewritten but still broken - returns 0x00000000
-- Need working sqrt implementation
+### ✅ Bug #39 Fixed - Counter Initialization
+- **Was**: Counter initialized to 15, expected 26 → skipped initialization
+- **Fix**: Corrected counter initialization in UNPACK and COMPUTE states
+- **Result**: Algorithm now executes and works for perfect squares
 
-### Test Case
+### ⚠️ Bug #40 Open - Precision for Non-Perfect Squares
+- **Status**: Algorithm only accepts first bit, rejects all others
+- **Impact**: sqrt(π) = 1.5 instead of 1.7724539
+- **Root Cause**: After first acceptance, `ac - (2*root+1)` always negative
+
+### Test Cases
 ```
-Input:  sqrt(π) = sqrt(0x40490FDB)
-Expected: 0x3FE2DFC5 ≈ 1.7724539
-Current:  0x00000000 (zero)
+sqrt(4.0):  ✅ 0x40000000 (2.0) - Correct
+sqrt(9.0):  ✅ 0x40400000 (3.0) - Correct
+sqrt(π):    ❌ 0x3FC00000 (1.5) - Should be 0x3FE2DFC5 (1.7724539)
 ```
 
 ### Recommended Solution
@@ -98,9 +109,10 @@ Current:  0x00000000 (zero)
 
 ### Success Criteria
 - ✅ rv32uf-p-recoding PASSING (Bug #38 fixed)
-- ⬜ rv32uf-p-fdiv PASSING (Bug #37 pending)
-- 🎯 RV32UF: 11/11 tests passing (100%)
-- 🎯 All FPU operations working correctly
+- ✅ FSQRT perfect squares working (Bug #39 fixed)
+- ⬜ rv32uf-p-fdiv PASSING (Bug #40 pending)
+- 🎯 RV32UF: 10/11 tests passing (90%, was 81%)
+- 🎯 Target: 11/11 tests (100%) - need Bug #40 fix
 - 🎯 Ready to move to RV32D (double precision)
 
 ---

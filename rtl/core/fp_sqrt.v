@@ -110,9 +110,46 @@ module fp_sqrt #(
       $display("[SQRT_TRANSITION] t=%0t state=%d->%d", $time, state, next_state);
     end
 
-    // Print when busy changes
-    if (busy) begin
-      $display("[SQRT_BUSY] t=%0t state=%d counter=%0d", $time, state, sqrt_counter);
+    // Print UNPACK details
+    if (state == UNPACK) begin
+      $display("[SQRT_UNPACK] exp=0x%h mant=0x%h special: nan=%b inf=%b zero=%b neg=%b",
+               operand[FLEN-2:MAN_WIDTH],
+               (operand[FLEN-2:MAN_WIDTH] == 0) ? {1'b0, operand[MAN_WIDTH-1:0]} : {1'b1, operand[MAN_WIDTH-1:0]},
+               (operand[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) && (operand[MAN_WIDTH-1:0] != 0),
+               (operand[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) && (operand[MAN_WIDTH-1:0] == 0),
+               operand[FLEN-2:0] == 0,
+               operand[FLEN-1] && !(operand[FLEN-2:0] == 0));
+    end
+
+    // Print COMPUTE initialization
+    if (state == COMPUTE && sqrt_counter == (MAN_WIDTH+4)-1) begin
+      $display("[SQRT_INIT] exp=%d exp_odd=%b exp_result=%d radicand_shift=0x%h",
+               exp, exp[0],
+               exp[0] ? (exp - BIAS) / 2 + BIAS : (exp - BIAS) / 2 + BIAS,
+               exp[0] ? {mantissa, 4'b0000, {(MAN_WIDTH+3){1'b0}}} << 1 : {mantissa, 4'b0000, {(MAN_WIDTH+3){1'b0}}});
+    end
+
+    // Print ALL iterations to debug
+    if (state == COMPUTE && sqrt_counter != (MAN_WIDTH+4)-1) begin
+      $display("[SQRT_ITER] counter=%0d root=0x%h rem=0x%h radicand=0x%h ac=0x%h test_val=0x%h accept=%b",
+               sqrt_counter, root, remainder, radicand_shift, ac, test_val, test_positive);
+    end
+
+    // Print last few iterations before normalize
+    if (state == COMPUTE && sqrt_counter <= 3) begin
+      $display("[SQRT_LATE] counter=%0d root=0x%h rem=0x%h",
+               sqrt_counter, root, remainder);
+    end
+
+    // Print normalization
+    if (state == NORMALIZE) begin
+      $display("[SQRT_NORM] root=0x%h exp_result=%d GRS=%b%b%b",
+               root, exp_result, root[2], root[1], root[0] || (remainder != 0));
+    end
+
+    // Print final result
+    if (state == DONE || next_state == DONE) begin
+      $display("[SQRT_DONE] result=0x%h flags: nv=%b nx=%b", result, flag_nv, flag_nx);
     end
   end
   `endif
@@ -164,7 +201,8 @@ module fp_sqrt #(
           is_negative <= operand[FLEN-1] && !((operand[FLEN-2:0] == 0));  // -0 is OK
 
           // Initialize counter for COMPUTE state
-          sqrt_counter <= SQRT_CYCLES;
+          // Need MAN_WIDTH+4 bits for mantissa (24) + GRS (3) + 1 extra = 28 bits
+          sqrt_counter <= (MAN_WIDTH + 4) - 1;  // Start at 26 for first iteration check
         end
 
         // ============================================================
@@ -211,7 +249,8 @@ module fp_sqrt #(
 
               // Start iteration (process 1 bit per cycle)
               // Need MAN_WIDTH+4 iterations to compute all bits including GRS
-              sqrt_counter <= (MAN_WIDTH + 4) - 1;
+              // Decrement counter to start iterations (move from 26 to 25)
+              sqrt_counter <= (MAN_WIDTH + 4) - 2;
             end
           end else begin
             // Digit-by-digit sqrt iteration (1 bit per cycle)
@@ -225,11 +264,11 @@ module fp_sqrt #(
             if (test_positive) begin
               // test_val >= 0: accept the bit
               remainder <= test_val;
-              root <= (root << 1) | 1'b1;
+              root <= (root << 1) | 1'b1;  // Shift by 1, set LSB
             end else begin
               // test_val < 0: reject the bit
               remainder <= ac;
-              root <= root << 1;
+              root <= root << 1;  // Shift by 1, no bit set
             end
 
             // Decrement counter
