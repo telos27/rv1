@@ -45,6 +45,9 @@ module fp_multiplier #(
 
   reg [2:0] state, next_state;
 
+  // Latched input operands (captured on start)
+  reg [FLEN-1:0] operand_a_latched, operand_b_latched;
+
   // Unpacked operands
   reg sign_a, sign_b, sign_result;
   reg [EXP_WIDTH-1:0] exp_a, exp_b;
@@ -104,6 +107,16 @@ module fp_multiplier #(
       case (state)
 
         // ============================================================
+        // IDLE: Latch operands when start asserted
+        // ============================================================
+        IDLE: begin
+          if (start) begin
+            operand_a_latched <= operand_a;
+            operand_b_latched <= operand_b;
+          end
+        end
+
+        // ============================================================
         // UNPACK: Extract sign, exponent, mantissa
         // ============================================================
         UNPACK: begin
@@ -111,34 +124,37 @@ module fp_multiplier #(
           special_case_handled <= 1'b0;
 
           // Extract sign (XOR for multiplication)
-          sign_a <= operand_a[FLEN-1];
-          sign_b <= operand_b[FLEN-1];
-          sign_result <= operand_a[FLEN-1] ^ operand_b[FLEN-1];
+          sign_a <= operand_a_latched[FLEN-1];
+          sign_b <= operand_b_latched[FLEN-1];
+          sign_result <= operand_a_latched[FLEN-1] ^ operand_b_latched[FLEN-1];
 
           // Extract exponent
-          exp_a <= operand_a[FLEN-2:MAN_WIDTH];
-          exp_b <= operand_b[FLEN-2:MAN_WIDTH];
+          exp_a <= operand_a_latched[FLEN-2:MAN_WIDTH];
+          exp_b <= operand_b_latched[FLEN-2:MAN_WIDTH];
 
           // Extract mantissa with implicit leading 1 (if normalized)
-          man_a <= (operand_a[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_a[MAN_WIDTH-1:0]} :  // Subnormal: no implicit 1
-                   {1'b1, operand_a[MAN_WIDTH-1:0]};   // Normal: implicit 1
+          man_a <= (operand_a_latched[FLEN-2:MAN_WIDTH] == 0) ?
+                   {1'b0, operand_a_latched[MAN_WIDTH-1:0]} :  // Subnormal: no implicit 1
+                   {1'b1, operand_a_latched[MAN_WIDTH-1:0]};   // Normal: implicit 1
 
-          man_b <= (operand_b[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_b[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_b[MAN_WIDTH-1:0]};
+          man_b <= (operand_b_latched[FLEN-2:MAN_WIDTH] == 0) ?
+                   {1'b0, operand_b_latched[MAN_WIDTH-1:0]} :
+                   {1'b1, operand_b_latched[MAN_WIDTH-1:0]};
 
           // Detect special values
-          is_nan_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] != 0);
-          is_nan_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] != 0);
-          is_inf_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] == 0);
-          is_inf_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] == 0);
-          is_zero_a <= (operand_a[FLEN-2:0] == 0);
-          is_zero_b <= (operand_b[FLEN-2:0] == 0);
+          `ifdef DEBUG_FPU
+          $display("[FP_MUL] UNPACK: operand_a=%h operand_b=%h", operand_a_latched, operand_b_latched);
+          `endif
+          is_nan_a <= (operand_a_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
+                      (operand_a_latched[MAN_WIDTH-1:0] != 0);
+          is_nan_b <= (operand_b_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
+                      (operand_b_latched[MAN_WIDTH-1:0] != 0);
+          is_inf_a <= (operand_a_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
+                      (operand_a_latched[MAN_WIDTH-1:0] == 0);
+          is_inf_b <= (operand_b_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
+                      (operand_b_latched[MAN_WIDTH-1:0] == 0);
+          is_zero_a <= (operand_a_latched[FLEN-2:0] == 0);
+          is_zero_b <= (operand_b_latched[FLEN-2:0] == 0);
         end
 
         // ============================================================
@@ -146,6 +162,10 @@ module fp_multiplier #(
         // ============================================================
         MULTIPLY: begin
           // Handle special cases
+          `ifdef DEBUG_FPU
+          $display("[FP_MUL] MULTIPLY: is_nan_a=%b is_nan_b=%b is_inf_a=%b is_inf_b=%b is_zero_a=%b is_zero_b=%b",
+                   is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b);
+          `endif
           if (is_nan_a || is_nan_b) begin
             // NaN propagation
             result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
