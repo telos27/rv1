@@ -188,13 +188,14 @@ module fp_converter #(
               `endif
 
               if (is_nan || is_inf) begin
-                // NaN or Inf: return max/min integer, set invalid flag
+                // Bug #26 fix: NaN always converts to maximum positive integer (per RISC-V spec)
+                // Infinity respects sign bit: +Inf→max, -Inf→min (signed) or 0 (unsigned)
                 // Bug #24 fix: Use operation_latched not operation
                 case (operation_latched)
-                  FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
-                  FCVT_WU_S: int_result <= sign_fp ? 32'h00000000 : 32'hFFFFFFFF;
-                  FCVT_L_S:  int_result <= sign_fp ? 64'h8000000000000000 : 64'h7FFFFFFFFFFFFFFF;
-                  FCVT_LU_S: int_result <= sign_fp ? 64'h0000000000000000 : 64'hFFFFFFFFFFFFFFFF;
+                  FCVT_W_S:  int_result <= (is_nan || !sign_fp) ? 32'h7FFFFFFF : 32'h80000000;
+                  FCVT_WU_S: int_result <= (is_nan || !sign_fp) ? 32'hFFFFFFFF : 32'h00000000;
+                  FCVT_L_S:  int_result <= (is_nan || !sign_fp) ? 64'h7FFFFFFFFFFFFFFF : 64'h8000000000000000;
+                  FCVT_LU_S: int_result <= (is_nan || !sign_fp) ? 64'hFFFFFFFFFFFFFFFF : 64'h0000000000000000;
                 endcase
                 flag_nv <= 1'b1;
 

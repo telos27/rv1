@@ -1,13 +1,13 @@
 # Next Session Quick Start
 
-## Current Status (2025-10-21 PM Session 3)
+## Current Status (2025-10-21 PM Session 4)
 
-### FPU Compliance: 6/11 tests (54%)
+### FPU Compliance: 7/11 tests (63.6%) 🎉
 - ✅ **fadd** - PASSING
 - ✅ **fclass** - PASSING
 - ✅ **fcmp** - PASSING
 - ✅ **fcvt** - PASSING
-- ❌ **fcvt_w** - **98.8% (84/85 tests)** - Only 1 test left!
+- ✅ **fcvt_w** - **PASSING (100%!)** 🎉 ← **JUST FIXED!**
 - ❌ **fdiv** - FAILING
 - ❌ **fmadd** - FAILING
 - ❌ **fmin** - FAILING
@@ -15,72 +15,84 @@
 - ✅ **move** - PASSING
 - ❌ **recoding** - FAILING
 
-## Last Session Achievements
+## Last Session Achievement
 
-**Bugs Fixed**: #24, #25 (FPU unsigned word overflow detection)
-**Progress**: fcvt_w jumped from test #39 → test #85 (+46 tests!)
-**Tool Created**: `tools/run_single_test.sh` for quick debugging
+**Bug Fixed**: #26 (NaN→INT conversion sign bit handling)
+**Progress**: fcvt_w 84/85 → **85/85 (100% PASSING!)** 🎉
+**Impact**: RV32UF 6/11 → 7/11 (54% → 63.6%)
 
-## Immediate Next Step: Fix fcvt_w Test #85
+### The Fix
+- **Problem**: NaN conversions were checking sign bit and returning INT_MIN for "negative" NaNs
+- **Root Cause**: Treated NaN and Infinity identically, but RISC-V spec says:
+  - **NaN**: Always → maximum positive (ignore sign bit)
+  - **Infinity**: Respect sign bit (+Inf→MAX, -Inf→MIN)
+- **Solution**: Changed condition from `sign_fp ? MIN : MAX` to `(is_nan || !sign_fp) ? MAX : MIN`
+- **Location**: rtl/core/fp_converter.v:190-200
+
+## Next Immediate Step: Fix fmin Test
+
+### Why fmin?
+Similar NaN handling issues likely. The fmin/fmax operations have specific IEEE 754 rules for NaN propagation that we may not be implementing correctly.
 
 ### Quick Debug Command
 ```bash
-./tools/run_single_test.sh rv32uf-p-fcvt_w DEBUG_FPU_CONVERTER
+./tools/run_single_test.sh rv32uf-p-fmin DEBUG_FPU
 ```
 
 ### Where to Look
 1. **Check the log**:
    ```bash
-   grep "CONVERTER.*FP→INT" sim/rv32uf-p-fcvt_w_debug.log | tail -3
+   grep "FAILED" sim/rv32uf-p-fmin_debug.log
+   grep "test number" sim/rv32uf-p-fmin_debug.log
    ```
 
-2. **Expected location**: The last failing conversion before test #85
-3. **Analysis**: Decode the FP value, check operation type, verify result
+2. **Likely issues**:
+   - NaN propagation (which NaN wins when both inputs are NaN?)
+   - Signaling vs Quiet NaN handling
+   - -0 vs +0 handling (fmin(-0, +0) should return -0)
+   - Invalid flag setting
 
-### Debugging Template
-```bash
-# Run test with debug
-./tools/run_single_test.sh rv32uf-p-fcvt_w DEBUG_FPU_CONVERTER
+3. **Module to check**: `rtl/core/fp_minmax.v`
 
-# Find last conversion
-grep "CONVERTER.*FP→INT" sim/rv32uf-p-fcvt_w_debug.log | tail -1
+### IEEE 754 Rules for fmin/fmax
+- If one operand is NaN: return the non-NaN operand (no invalid flag)
+- If both operands are NaN: return canonical NaN (set invalid flag)
+- For zeros: fmin(-0, +0) = -0, fmax(-0, +0) = +0
 
-# Check what happened
-grep -A 15 "fp_operand=<value>" sim/rv32uf-p-fcvt_w_debug.log
-```
-
-## After fcvt_w: Other Failing Tests
+## After fmin: Other Failing Tests
 
 ### Priority Order
-1. **fdiv** - Division edge cases (likely special values)
-2. **fmin** - Min/max operations (NaN handling?)
-3. **fmadd** - Fused multiply-add (rounding/precision?)
+1. **fmin** - Min/max NaN handling (likely quick fix) ← **START HERE**
+2. **fdiv** - Division edge cases (special values)
+3. **fmadd** - Fused multiply-add (complex rounding/precision)
 4. **recoding** - NaN-boxing validation
 
 ### Quick Test Commands
 ```bash
-./tools/run_single_test.sh rv32uf-p-fdiv DEBUG_FPU
 ./tools/run_single_test.sh rv32uf-p-fmin DEBUG_FPU
+./tools/run_single_test.sh rv32uf-p-fdiv DEBUG_FPU
 ./tools/run_single_test.sh rv32uf-p-fmadd DEBUG_FPU
 ./tools/run_single_test.sh rv32uf-p-recoding DEBUG_FPU
 ```
 
-## Reference: Recent Bugs Fixed
+## Reference: Bug #26 Details
 
-- **Bug #20-22**: FP→INT overflow detection and flags
-- **Bug #23**: Unsigned long negative saturation
-- **Bug #24**: Operation signal inconsistency (operation vs operation_latched)
-- **Bug #25**: Unsigned word overflow at int_exp==31 ← **CRITICAL FIX**
+**File**: rtl/core/fp_converter.v:190-200
+**Change**:
+```verilog
+// Before (WRONG)
+FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
 
-## Key Files Modified Recently
-- `rtl/core/fp_converter.v` - Main FPU conversion logic
-- `tools/run_single_test.sh` - NEW debugging tool
-- `docs/SESSION_2025-10-21_BUGS24-25_FCVT_W_OVERFLOW.md` - Full session details
+// After (CORRECT)
+FCVT_W_S:  int_result <= (is_nan || !sign_fp) ? 32'h7FFFFFFF : 32'h80000000;
+```
+
+**Test case**: fcvt.w.s 0xFFFFFFFF (quiet NaN with sign=1) → 0x7FFFFFFF (not 0x80000000)
 
 ## Progress Tracking
-- **Total FPU bugs fixed**: 25 bugs
-- **fcvt_w progress**: 44.7% → 98.8% (this session!)
-- **RV32UF overall**: 54% (6/11 tests)
+- **Total FPU bugs fixed**: 26 bugs
+- **fcvt_w progress**: 44.7% → 98.8% → **100%** ✅
+- **RV32UF overall**: 63.6% (7/11 tests)
 - **Target**: 100% RV32UF compliance
 
 ## Commands Reference
@@ -102,5 +114,6 @@ grep -E "(PASSED|FAILED)" sim/rv32uf_*.log | sort
 
 ---
 
-**Remember**: Test #85 in fcvt_w is the ONLY remaining test in that suite.
-Once fixed, we'll have 7/11 RV32UF tests passing (63%)!
+**Milestone Achieved**: First FPU test with 100% pass rate! 🎉
+**Next Target**: Get fmin passing (likely similar NaN issues)
+**Goal**: 11/11 RV32UF tests (100% compliance)

@@ -543,12 +543,12 @@ Before adding new features, consider fixing these existing issues:
          - Impact: fcvt_w test progressed from #39 → #85 (+46 tests = +54.1%)
          - **This was a critical bug affecting all large unsigned conversions**
 
-   - **Status** (2025-10-21 PM): RV32UF 6/11 (54%), fcvt_w at **98.8%** (test #85/85)
-   - **Massive Progress**: fcvt_w from test #39 → test #85 (+46 tests in one fix!)
+   - **Status** (2025-10-21 PM Session 4): RV32UF **7/11 (63.6%)**, fcvt_w **100% PASSING** ✅
+   - **Massive Progress**: fcvt_w from test #39 → test #85 (+46 tests) → **100% complete!**
    - **New Tool**: Created `tools/run_single_test.sh` for streamlined debugging
-   - See: docs/SESSION_2025-10-21_BUGS24-25_FCVT_W_OVERFLOW.md
+   - See: docs/SESSION_2025-10-21_BUGS24-25_FCVT_W_OVERFLOW.md, docs/SESSION_2025-10-21_PM4_BUG26_NAN_CONVERSION.md
 
-   **Fixed bugs** (2025-10-21 PM):
+   **Fixed bugs** (2025-10-21 PM Session 2):
      23. **Bug #23**: Unsigned long negative saturation ✅ **CRITICAL FIX**
          - Root cause: FCVT.WU.S/FCVT.LU.S saturated negative values to 0xFFFF... instead of 0
          - Impact: All negative→unsigned conversions returned max value instead of 0
@@ -560,6 +560,18 @@ Before adding new features, consider fixing these existing issues:
          - Location: rtl/core/fp_converter.v:213-220
    - **Progress**: fcvt_w test #37 → test #39 (2 tests further)
    - See: docs/SESSION_2025-10-21_BUG23_UNSIGNED_LONG_SATURATION.md
+
+   **Fixed bugs** (2025-10-21 PM Session 4):
+     26. **Bug #26**: NaN→INT conversion sign bit handling ✅ **CRITICAL FIX**
+         - Root cause: NaN conversions checked sign bit, treating NaN same as Infinity
+         - Impact: FCVT.W.S with "negative" NaN (0xFFFFFFFF) returned 0x80000000 instead of 0x7FFFFFFF
+         - RISC-V spec: NaN always converts to maximum positive integer (sign bit ignored)
+         - Infinity: Respects sign bit (+Inf→MAX, -Inf→MIN for signed, 0 for unsigned)
+         - Fix: Changed from `sign_fp ? MIN : MAX` to `(is_nan || !sign_fp) ? MAX : MIN`
+         - Location: rtl/core/fp_converter.v:190-200
+         - Impact: fcvt_w test #85/85 **PASSING (100%)** ✅
+         - **This completed fcvt_w - first perfect FPU test score!**
+         - See: docs/SESSION_2025-10-21_PM4_BUG26_NAN_CONVERSION.md
 
 3. **Mixed Compressed/Normal Instructions** - Addressing issue
    - Pure compressed works, pure 32-bit works, mixed has bugs
@@ -580,9 +592,10 @@ Before adding new features, consider fixing these existing issues:
 - [x] **Re-run FPU compliance tests after fix** 🧪 *Result: 3/11 RV32UF (27%)*
 - [x] **Fix FPU pipeline hazards (Bugs #6, #7, #7b)** ✓ *Fixed 2025-10-14: Flag contamination resolved*
 - [x] **Fix FPU converter overflow & flags (Bugs #20, #21, #22)** ✓ *Fixed 2025-10-21 AM: fcvt passing, fcvt_w 94%*
-- [x] **Fix unsigned long saturation (Bug #23)** ✓ *Fixed 2025-10-21 PM: fcvt_w test #37 → #39*
-- [x] **Fix unsigned word overflow detection (Bugs #24, #25)** ✓ *Fixed 2025-10-21 PM: fcvt_w test #39 → #85 (98.8%!)*
-- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fcvt_w test #85 (1 test left!), fdiv/fmadd/fmin/recoding*
+- [x] **Fix unsigned long saturation (Bug #23)** ✓ *Fixed 2025-10-21 PM Session 2: fcvt_w test #37 → #39*
+- [x] **Fix unsigned word overflow detection (Bugs #24, #25)** ✓ *Fixed 2025-10-21 PM Session 3: fcvt_w test #39 → #85*
+- [x] **Fix NaN→INT conversion (Bug #26)** ✓ *Fixed 2025-10-21 PM Session 4: fcvt_w 100% PASSING!*
+- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fmin/fdiv/fmadd/recoding (4 tests remaining)*
 - [ ] **Debug mixed compressed/normal instructions** 🔀
 - [ ] Performance benchmarking (Dhrystone, CoreMark)
 - [ ] Formal verification for critical paths
@@ -612,7 +625,7 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 6    | 54%  | ⚠️ fcvt_w, fdiv, fmadd, fmin, recoding failing |
+| RV32F     | 11    | 7    | 63.6% | ⚠️ fdiv, fmadd, fmin, recoding failing |
 | RV32D     | 9     | 0    | 0%   | ⚠️ Not Yet Debugged |
 
 ### Custom Test Coverage
@@ -651,8 +664,9 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-21 (PM session 4)**: FPU NaN conversion - Fixed Bug #26 (NaN→INT sign bit handling) - fcvt_w 100% PASSING! RV32UF 7/11 (63.6%) ✅
 **2025-10-21 (PM session 3)**: FPU unsigned word overflow - Fixed Bugs #24-#25 (operation signal, overflow logic) - fcvt_w test #39 → #85 (98.8%!)
-**2025-10-21 (PM session 2)**: FPU unsigned long saturation - Fixed Bug #23 (negative→unsigned overflow) - fcvt_w test #37 → #39!
+**2025-10-21 (PM session 2)**: FPU unsigned long saturation - Fixed Bug #23 (negative→unsigned overflow) - fcvt_w test #37 → #39
 **2025-10-21 (PM session 1)**: FPU FP→INT overflow & flags - Fixed Bugs #20-#22 (overflow detection, invalid flags) - fcvt passing, fcvt_w 94%!
 **2025-10-21 (AM)**: FPU writeback path - Fixed Bug #19 (control unit FCVT direction bit) - Converter results now reach FP register file!
 **2025-10-20 (PM)**: FPU converter infrastructure - Fixed Bugs #13-#18 (leading zeros, flags, rounding, funct7, timing)
