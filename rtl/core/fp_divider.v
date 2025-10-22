@@ -58,8 +58,8 @@ module fp_divider #(
 
   // Division computation (SRT radix-2)
   reg [MAN_WIDTH+3:0] quotient;        // Quotient result (27 bits)
-  reg [MAN_WIDTH+4:0] remainder;       // Current remainder (28 bits - FIXME: needs 29!)
-  reg [MAN_WIDTH+4:0] divisor_shifted; // Shifted divisor for comparison (28 bits - FIXME: needs 29!)
+  reg [MAN_WIDTH+5:0] remainder;       // Current remainder (29 bits - FIXED!)
+  reg [MAN_WIDTH+5:0] divisor_shifted; // Shifted divisor for comparison (29 bits - FIXED!)
   reg [5:0] div_counter;               // Iteration counter
   reg [EXP_WIDTH+1:0] exp_diff;        // Exponent difference
   reg [EXP_WIDTH-1:0] exp_result;
@@ -67,6 +67,58 @@ module fp_divider #(
   // Rounding
   reg guard, round, sticky;
   reg round_up;
+
+  // Debug output
+  `ifdef DEBUG_FPU_DIVIDER
+  always @(posedge clk) begin
+    if (state != IDLE || busy || done) begin
+      $display("[FDIV_STATE] t=%0t state=%d next=%d busy=%b done=%b counter=%0d special=%b",
+               $time, state, next_state, busy, done, div_counter, special_case_handled);
+    end
+
+    if (state == DIVIDE && div_counter <= 3) begin
+      $display("[FDIV_ITER] t=%0t counter=%0d quo=0x%h rem=0x%h div=0x%h cmp=%b",
+               $time, div_counter, quotient, remainder, divisor_shifted,
+               remainder >= divisor_shifted);
+    end
+
+    if (state == UNPACK) begin
+      $display("[FDIV_UNPACK] t=%0t a=0x%h b=0x%h", $time, operand_a, operand_b);
+      $display("[FDIV_UNPACK] special: nan_a=%b nan_b=%b inf_a=%b inf_b=%b zero_a=%b zero_b=%b",
+               is_nan_a || (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}} && operand_a[MAN_WIDTH-1:0] != 0),
+               is_nan_b || (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}} && operand_b[MAN_WIDTH-1:0] != 0),
+               is_inf_a || (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}} && operand_a[MAN_WIDTH-1:0] == 0),
+               is_inf_b || (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}} && operand_b[MAN_WIDTH-1:0] == 0),
+               is_zero_a || (operand_a[FLEN-2:0] == 0),
+               is_zero_b || (operand_b[FLEN-2:0] == 0));
+    end
+
+    if (state == DIVIDE && div_counter == DIV_CYCLES) begin
+      $display("[FDIV_INIT] t=%0t exp_diff=%0d rem=0x%h (width=%0d) div=0x%h (width=%0d)",
+               $time, exp_diff, remainder, $bits(remainder), divisor_shifted, $bits(divisor_shifted));
+      $display("[FDIV_INIT] man_a=0x%h man_b=0x%h", man_a, man_b);
+    end
+
+    if (next_state == NORMALIZE && state == DIVIDE) begin
+      $display("[FDIV_PRENORM] t=%0t quo=0x%h rem=0x%h", $time, quotient, remainder);
+    end
+
+    if (state == NORMALIZE) begin
+      $display("[FDIV_NORM] t=%0t quo=0x%h exp_diff=%0d exp_res=%0d",
+               $time, quotient, exp_diff, exp_result);
+    end
+
+    if (state == ROUND) begin
+      $display("[FDIV_ROUND] t=%0t quo[bits]=0x%h g=%b r=%b s=%b round_up=%b",
+               $time, quotient[MAN_WIDTH+2:3], guard, round, sticky, round_up);
+    end
+
+    if (state == DONE) begin
+      $display("[FDIV_DONE] t=%0t result=0x%h flags=nv:%b dz:%b of:%b uf:%b nx:%b",
+               $time, result, flag_nv, flag_dz, flag_of, flag_uf, flag_nx);
+    end
+  end
+  `endif
 
   // State machine
   always @(posedge clk or negedge reset_n) begin
@@ -109,6 +161,29 @@ module fp_divider #(
       flag_nx <= 1'b0;
       div_counter <= 6'd0;
       special_case_handled <= 1'b0;
+      // Initialize working registers to prevent X propagation
+      quotient <= {(MAN_WIDTH+4){1'b0}};
+      remainder <= {(MAN_WIDTH+6){1'b0}};
+      divisor_shifted <= {(MAN_WIDTH+6){1'b0}};
+      exp_diff <= {(EXP_WIDTH+2){1'b0}};
+      exp_result <= {EXP_WIDTH{1'b0}};
+      sign_a <= 1'b0;
+      sign_b <= 1'b0;
+      sign_result <= 1'b0;
+      exp_a <= {EXP_WIDTH{1'b0}};
+      exp_b <= {EXP_WIDTH{1'b0}};
+      man_a <= {(MAN_WIDTH+1){1'b0}};
+      man_b <= {(MAN_WIDTH+1){1'b0}};
+      is_nan_a <= 1'b0;
+      is_nan_b <= 1'b0;
+      is_inf_a <= 1'b0;
+      is_inf_b <= 1'b0;
+      is_zero_a <= 1'b0;
+      is_zero_b <= 1'b0;
+      guard <= 1'b0;
+      round <= 1'b0;
+      sticky <= 1'b0;
+      round_up <= 1'b0;
     end else begin
       case (state)
 
@@ -227,10 +302,12 @@ module fp_divider #(
               exp_diff <= exp_a - exp_b + BIAS;
 
               // Initialize remainder = dividend (shifted left for alignment)
-              remainder <= {man_a, 4'b0000};
+              // Now using 29-bit register, add extra 0 bit at MSB
+              remainder <= {1'b0, man_a, 4'b0000};
 
               // Initialize divisor (aligned)
-              divisor_shifted <= {man_b, 4'b0000};
+              // Now using 29-bit register, add extra 0 bit at MSB
+              divisor_shifted <= {1'b0, man_b, 4'b0000};
 
               // Initialize quotient
               quotient <= {(MAN_WIDTH+4){1'b0}};

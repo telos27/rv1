@@ -90,6 +90,25 @@ module fp_sqrt #(
     done = (state == DONE);
   end
 
+  `ifdef DEBUG_FPU_DIVIDER
+  always @(posedge clk) begin
+    // Always print when start is triggered
+    if (start) begin
+      $display("[SQRT_START] t=%0t operand=0x%h", $time, operand);
+    end
+
+    // Print state transitions
+    if (state != next_state) begin
+      $display("[SQRT_TRANSITION] t=%0t state=%d->%d", $time, state, next_state);
+    end
+
+    // Print when busy changes
+    if (busy) begin
+      $display("[SQRT_BUSY] t=%0t state=%d counter=%0d", $time, state, sqrt_counter);
+    end
+  end
+  `endif
+
   // Main datapath
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
@@ -97,6 +116,19 @@ module fp_sqrt #(
       flag_nv <= 1'b0;
       flag_nx <= 1'b0;
       sqrt_counter <= 6'd0;
+      // Initialize working registers to prevent X propagation
+      root <= {(MAN_WIDTH+4){1'b0}};
+      radicand <= {(MAN_WIDTH+5){1'b0}};
+      test_value <= {(MAN_WIDTH+5){1'b0}};
+      exp_result <= {EXP_WIDTH{1'b0}};
+      exp_is_odd <= 1'b0;
+      sign <= 1'b0;
+      exp <= {EXP_WIDTH{1'b0}};
+      mantissa <= {(MAN_WIDTH+1){1'b0}};
+      is_nan <= 1'b0;
+      is_inf <= 1'b0;
+      is_zero <= 1'b0;
+      is_negative <= 1'b0;
     end else begin
       case (state)
 

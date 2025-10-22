@@ -382,6 +382,31 @@ module fpu #(
                            fp_alu_op == FP_CMP || fp_alu_op == FP_CLASS ||
                            fp_alu_op == FP_MV_XW || fp_alu_op == FP_MV_WX));
 
+  `ifdef DEBUG_FPU_DIVIDER
+  reg prev_busy;
+  initial prev_busy = 0;
+
+  always @(posedge clk) begin
+    // Print when FPU receives start signal
+    if (start) begin
+      $display("[FPU_START] t=%0t op=%d", $time, fp_alu_op);
+    end
+
+    // Print when overall busy changes
+    if (busy != prev_busy) begin
+      $display("[FPU_BUSY_CHANGE] t=%0t busy: %b->%b [add=%b mul=%b div=%b sqrt=%b fma=%b cvt=%b]",
+               $time, prev_busy, busy, adder_busy, mul_busy, div_busy, sqrt_busy, fma_busy, cvt_busy);
+      prev_busy <= busy;
+    end
+
+    // Print busy status periodically when stuck
+    if (busy && ($time % 1000 == 0)) begin
+      $display("[FPU_STUCK?] t=%0t busy=1 for extended time [add=%b mul=%b div=%b sqrt=%b fma=%b cvt=%b]",
+               $time, adder_busy, mul_busy, div_busy, sqrt_busy, fma_busy, cvt_busy);
+    end
+  end
+  `endif
+
   // Result multiplexing
   always @(*) begin
     // Default values
