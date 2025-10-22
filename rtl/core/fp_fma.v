@@ -70,6 +70,14 @@ module fp_fma #(
   reg guard, round, sticky;
   reg round_up;
 
+  // Compute round_up combinationally for use in same cycle
+  // LSB of mantissa is at bit 28, so for tie-breaking we check sum[28]
+  wire round_up_comb;
+  assign round_up_comb = (rounding_mode == 3'b000) ? (guard && (round || sticky || sum[MAN_WIDTH+5])) :  // RNE (LSB is bit 28)
+                         (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :         // RDN
+                         (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :        // RUP
+                         (rounding_mode == 3'b100) ? guard : 1'b0;                                         // RMM or RTZ
+
   // FMA operation decode
   wire negate_product = fma_op[1];  // FNMSUB, FNMADD negate product
   wire subtract_addend = fma_op[0]; // FMSUB, FNMADD subtract addend
@@ -320,7 +328,7 @@ module fp_fma #(
             result <= {sign_result, {FLEN-1{1'b0}}};
             state <= DONE;
           end
-          // Check for overflow (carry out)
+          // Check for overflow (carry out to bit 52)
           else if (sum[(2*MAN_WIDTH+6)]) begin
             sum <= sum >> 1;
             exp_result <= exp_result + 1;
@@ -328,11 +336,22 @@ module fp_fma #(
             round <= 1'b0;
             sticky <= 1'b0;
           end
-          // Already normalized (assume leading 1 is in correct position)
+          // Check if leading 1 is at bit 51 (normalized)
+          else if (sum[(2*MAN_WIDTH+5)]) begin
+            // Already normalized - leading 1 at bit 51
+            // Mantissa is [50:28], so guard/round/sticky are:
+            // guard = bit 27 (0.5 ULP)
+            // round = bit 26 (0.25 ULP)
+            // sticky = OR of bits [25:0]
+            guard <= sum[MAN_WIDTH+4];   // bit 27
+            round <= sum[MAN_WIDTH+3];   // bit 26
+            sticky <= |sum[MAN_WIDTH+2:0]; // bits 25:0
+          end
+          // Leading 1 is below bit 51 - need to shift left (can happen after subtraction)
           else begin
-            guard <= sum[MAN_WIDTH+2];
-            round <= sum[MAN_WIDTH+1];
-            sticky <= |sum[MAN_WIDTH:0];
+            sum <= sum << 1;
+            exp_result <= exp_result - 1;
+            // Stay in NORMALIZE state to continue shifting if needed
           end
 
           // Check for overflow
@@ -348,36 +367,19 @@ module fp_fma #(
         // ROUND: Apply rounding mode (SINGLE ROUNDING - key advantage!)
         // ============================================================
         ROUND: begin
-          // Determine if we should round up
-          case (rounding_mode)
-            3'b000: begin  // RNE: Round to nearest, ties to even
-              round_up <= guard && (round || sticky || sum[MAN_WIDTH+3]);
-            end
-            3'b001: begin  // RTZ: Round toward zero
-              round_up <= 1'b0;
-            end
-            3'b010: begin  // RDN: Round down (toward -∞)
-              round_up <= sign_result && (guard || round || sticky);
-            end
-            3'b011: begin  // RUP: Round up (toward +∞)
-              round_up <= !sign_result && (guard || round || sticky);
-            end
-            3'b100: begin  // RMM: Round to nearest, ties to max magnitude
-              round_up <= guard;
-            end
-            default: begin
-              round_up <= 1'b0;
-            end
-          endcase
+          // Store round_up decision for debug (registered version)
+          round_up <= round_up_comb;
 
           `ifdef DEBUG_FPU
           $display("[FMA_ROUND] sign=%b exp_result=%d sum=%h mantissa_extract=%h (bits [50:28])",
                    sign_result, exp_result, sum, sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)]);
+          $display("[FMA_ROUND_BITS] guard=%b round=%b sticky=%b rounding_mode=%b round_up_comb=%b",
+                   guard, round, sticky, rounding_mode, round_up_comb);
           `endif
 
-          // Apply rounding
+          // Apply rounding using combinational value
           // Extract mantissa from sum[50:28] (23 bits), assuming sum[51] is the implicit 1
-          if (round_up) begin
+          if (round_up_comb) begin
             result <= {sign_result, exp_result[EXP_WIDTH-1:0],
                        sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)] + 1'b1};
           end else begin

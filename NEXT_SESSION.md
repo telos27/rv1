@@ -1,124 +1,128 @@
 # Next Session Quick Start
 
-## Current Status (2025-10-21 PM Session 7)
+## Current Status (2025-10-22 Session 8)
 
-### FPU Compliance: 8/11 tests (72.7%)
+### FPU Compliance: 9/11 tests (81.8%) ⬆️ +1 test!
 - ✅ **fadd** - PASSING
 - ✅ **fclass** - PASSING
 - ✅ **fcmp** - PASSING
 - ✅ **fcvt** - PASSING
-- ✅ **fcvt_w** - PASSING (100%)
-- ⚠️ **fdiv** - FAILING (fdiv passes, FSQRT broken) ← **Bug #29 identified**
-- ❌ **fmadd** - FAILING (alignment issue) ← **Bug #30 identified**
+- ✅ **fcvt_w** - PASSING
+- ⚠️ **fdiv** - FAILING (FSQRT broken) ← **Bug #29: Result extraction issue**
+- ✅ **fmadd** - **PASSING** ← **FIXED in Session 8!** 🎉
 - ✅ **fmin** - PASSING
 - ✅ **ldst** - PASSING
 - ✅ **move** - PASSING
 - ❌ **recoding** - FAILING (FEQ zero comparison) ← **Bug #31 identified**
 
-## Last Session Achievement (Session 7)
+## Session 8 Achievement
 
-**Investigation Complete**: All 3 failing tests analyzed and root causes identified!
-**Bugs Found**: #29 (FSQRT counter), #30 (FMA alignment), #31 (recoding/FEQ)
-**Progress**: Deep debugging revealed specific issues in each module
-**Next**: Apply fixes starting with FMA (closest to solution)
+**FMA Module Completely Fixed!** 🎉
+- **Progress**: 8/11 (72.7%) → 9/11 (81.8%)
+- **Tests Fixed**: rv32uf-p-fmadd (all FMADD/FMSUB/FNMSUB/FNMADD variants)
+- **Bugs Fixed**: Two critical FMA bugs discovered and resolved
+- **Next Target**: Fix FSQRT to reach 10/11 (90.9%)
 
-### Three Bugs Identified
+### Bugs Fixed in Session 8
 
-#### Bug #29: FSQRT Counter Initialization ⚠️ **PARTIALLY FIXED**
+#### Bug #32: FMA Guard/Round/Sticky Bit Extraction ✅ **FIXED**
 
-**Test**: rv32uf-p-fdiv (actually tests FSQRT, not just FDIV)
-**Symptom**: FSQRT returns 0x7f000fff instead of correct sqrt values
-**Root Cause Found**: sqrt_counter not initialized before COMPUTE state
-- `sqrt_counter` starts at 0 (from reset)
-- COMPUTE state checks `if (sqrt_counter == SQRT_CYCLES)` for initialization
-- Since counter=0, condition is FALSE, skips initialization
-- Goes straight to iteration logic with uninitialized values
+**Test**: rv32uf-p-fmadd (test 3)
+**Symptom**: Test 3 got 0x449a8667 instead of 0x449a8666 (off by 1 ULP)
+**Root Cause**: Guard/round/sticky bits extracted from wrong positions
+- Mantissa extracted from bits [50:28]
+- Guard/round/sticky should be at bits [27:25]
+- **But code was using bits [25:23]** - off by 2 bits!
+
+**Investigation**:
+```
+sum = 0x09a86663340000
+Expected rounding: guard=0, round=0, sticky=1 → round_up=0
+Actual (buggy):    guard=1, round=1, sticky=1 → round_up=1 ❌
+```
 
 **Fix Applied**:
 ```verilog
-// In UNPACK state, added:
-sqrt_counter <= SQRT_CYCLES;
+// OLD (wrong):
+guard <= sum[MAN_WIDTH+2];   // bit 25
+round <= sum[MAN_WIDTH+1];   // bit 24
+sticky <= |sum[MAN_WIDTH:0]; // bits 23:0
+
+// NEW (correct):
+guard <= sum[MAN_WIDTH+4];   // bit 27
+round <= sum[MAN_WIDTH+3];   // bit 26
+sticky <= |sum[MAN_WIDTH+2:0]; // bits 25:0
 ```
 
-**Current Status**: Counter now initialized, but result still wrong (0x7f000fff)
-**Remaining Issue**: Result extraction/normalization broken
-- Expected: sqrt(π) = 0x3fe2dfc5 (≈1.772)
-- Actual: 0x7f000fff (exponent maxed out, wrong mantissa)
+**File**: `rtl/core/fp_fma.v:344-348`
 
-**Next Steps**:
-1. Check NORMALIZE state logic for sqrt
-2. Verify result packing in ROUND state
-3. Debug why exponent becomes 0xFE instead of correct value
+---
+
+#### Bug #33: FMA Normalization Missing Left-Shift ✅ **FIXED**
+
+**Test**: rv32uf-p-fmadd (test 8: FMSUB)
+**Symptom**: 1.0 × 2.5 - 1.0 = 1.5 returned 3.5 (0x40600000 instead of 0x3fc00000)
+**Root Cause**: NORMALIZE state didn't handle subtraction results with leading 1 below bit 51
+
+**Investigation**:
+```
+FMSUB: 1.0 × 2.5 - 1.0 = 2.5 - 1.0 = 1.5
+product<<5 = 0x0a000000000000  (bit 51=1, bit 50=0)
+aligned_c  = 0x04000000000000  (bit 50=1)
+SUBTRACT → 0x06000000000000  (bit 51=0, bit 50=1) ← Leading 1 at wrong position!
+
+Expected: Shift left by 1, decrement exponent 128→127
+Actual: No normalization, used as-is → wrong result
+```
+
+**Fix Applied**:
+```verilog
+// Added check for leading 1 position
+else if (sum[(2*MAN_WIDTH+5)]) begin
+  // Already normalized - leading 1 at bit 51
+  guard <= sum[MAN_WIDTH+4];
+  round <= sum[MAN_WIDTH+3];
+  sticky <= |sum[MAN_WIDTH+2:0];
+end
+// NEW: Handle unnormalized result (leading 1 below bit 51)
+else begin
+  sum <= sum << 1;
+  exp_result <= exp_result - 1;
+  // Stay in NORMALIZE state to continue shifting if needed
+end
+```
+
+**File**: `rtl/core/fp_fma.v:340-355`
+
+**Impact**: This fix handles all subtraction cases where operands are close in magnitude, enabling proper normalization through iterative left-shifts.
+
+---
+
+## Remaining Bugs
+
+### Bug #29: FSQRT Result Extraction ⚠️ **PARTIALLY FIXED**
+
+**Test**: rv32uf-p-fdiv
+**Symptom**: FSQRT returns 0x7f000fff instead of correct values
+**Status**: Counter initialization fixed (Session 7), but result still wrong
+
+**Known Issues**:
+- Counter now initialized correctly in UNPACK state
+- Result extraction in ROUND state produces wrong exponent (0xFE = 254)
+- Expected sqrt(π) = 0x3fe2dfc5, Actual = 0x7f000fff
+
+**Next Steps for Session 9**:
+1. Debug ROUND state result packing for FSQRT
+2. Check if exponent calculation is correct
+3. Verify mantissa extraction from `root` register
+4. May need to trace through one FSQRT operation step-by-step
 
 **File**: `rtl/core/fp_sqrt.v`
-**Lines Modified**: 159 (added sqrt_counter initialization)
+**Estimated Time**: 30-60 minutes
 
 ---
 
-#### Bug #30: FMA Product/Sum Alignment ⚠️ **MAJOR PROGRESS**
-
-**Test**: rv32uf-p-fmadd
-**Symptom**: FMA returns tiny subnormal 0x00140000 instead of 3.5 (0x40600000)
-
-**Root Causes Found & Fixed**:
-1. ✅ **Uninitialized registers** → X-value propagation
-   - Fixed: Added comprehensive initialization for all working regs
-   - Impact: Eliminated X values completely
-
-2. ✅ **Non-blocking assignment timing bug**
-   - Problem: `aligned_c <= ...` then immediately used in same cycle
-   - Result: Used old value (0) instead of calculated value
-   - Fixed: Changed alignment logic to blocking assignments (`=`)
-   - Impact: aligned_c now correctly computed (0x1000000000000)
-
-3. ⚠️ **Product bit positioning** (CURRENT ISSUE)
-   - Product mantissa multiply: 48 bits (man_a × man_b)
-   - Sum register: 53 bits
-   - Issue: Product needs padding to align with sum bit positions
-   - Current: Product has leading 1 at wrong bit position
-   - Result: Mantissa extracted from wrong bits
-
-**Debug Evidence**:
-```
-Input: 1.0 × 2.5 + 1.0 = 3.5
-Expected: 0x40600000 (sign=0, exp=128, man=0x600000)
-
-Current debug output:
-  product      = 0x0500000000000  (1.0 × 1.25 in Q2.46)
-  aligned_c    = 0x1000000000000  (1.0 shifted)
-  sum          = 0x1500000000000  (product + aligned_c)
-  exp_result   = 128 (correct!)
-  mantissa_extract = 0x540000 (WRONG! should be 0x600000)
-```
-
-**Analysis**:
-- Sum = 0x1500000000000 represents 1.5 in extended precision
-- But 3.5 = 1.75 × 2^1, mantissa should be 0.11 = 0x600000
-- The sum is representing 1.5 instead of 3.5!
-- Root issue: Product not shifted correctly before addition
-
-**Attempted Fixes** (didn't work):
-```verilog
-product <= (man_a * man_b) << 3;          // Too small
-product <= (man_a * man_b) << (MAN_WIDTH+3);  // Too large (shifted out)
-product <= {man_a * man_b, 25'b0};        // Register overflow
-```
-
-**Next Steps**:
-1. Determine correct bit position for product in 50-bit register
-2. Ensure product[47:46] (leading 1) maps to sum[51:50] region
-3. May need to adjust how product is created OR how sum is normalized
-4. Reference: Standard FMA designs position product at specific alignment
-
-**File**: `rtl/core/fp_fma.v`
-**Lines Modified**:
-- 113-143: Added comprehensive initialization
-- 250-270: Changed to blocking assignments
-- 230, 235: Product positioning (needs more work)
-
----
-
-#### Bug #31: Recoding Test - FEQ Zero Comparison ❌ **NEEDS INVESTIGATION**
+### Bug #31: FEQ Zero Comparison ❌ **NEEDS INVESTIGATION**
 
 **Test**: rv32uf-p-recoding (test #5)
 **Symptom**: FEQ.S comparing 0.0 vs 0.0 returns false instead of true
@@ -133,123 +137,18 @@ feq.s a0, f0, f1     # Compare f0==f1, expect a0=1 (true)
                      # ACTUAL: a0=0 (false)
 ```
 
-**Expected**: Both f0 and f1 are 0.0, should compare equal → return 1
-**Actual**: Comparison returns 0 (false)
-
 **Possible Root Causes**:
 1. FCVT.S.W creating wrong zero representation
 2. FMUL.S 1.0×0.0 creating wrong zero (signed zero issue?)
 3. FEQ.S zero comparison logic broken
-4. NaN-boxing issue (but we're RV32F with 32-bit regs)
-
-**Debug Status**:
-- Only traced first 3 operations (tests #2-4)
-- Test #5 operations not fully logged
-- Need to see actual f0/f1 values before FEQ
+4. NaN-boxing issue
 
 **Next Steps**:
 1. Add debug to log f0 and f1 values before FEQ in test #5
 2. Check if zeros have different sign bits (+0.0 vs -0.0)
 3. Verify FEQ.S treats +0.0 and -0.0 as equal (per IEEE 754)
-4. Check FP compare module implementation
 
 **File**: `rtl/core/fp_compare.v` (likely)
-
----
-
-## Session 7 Summary
-
-### Investigation Results
-✅ All 3 failing tests analyzed
-✅ Root causes identified for all bugs
-✅ 2 partial fixes applied (Bug #29, #30)
-⚠️ FMA closest to solution (just needs bit positioning fix)
-📊 Code quality: Fixed initialization issues in 2 modules
-
-### Files Modified This Session
-1. **rtl/core/fp_sqrt.v**: Added sqrt_counter initialization (line 159)
-2. **rtl/core/fp_fma.v**:
-   - Comprehensive register initialization (lines 113-143)
-   - Blocking assignments for alignment (lines 250-270)
-   - Product positioning attempts (lines 230, 235)
-3. **rtl/core/fp_fma.v**: Added debug output (lines 245-246, 273-275, 344-346)
-
-### Test Results
-```
-Test         Status    Issue
------------- --------- ------------------------------------------
-fdiv         FAILING   FSQRT returns wrong values (Bug #29)
-fmadd        FAILING   FMA alignment issue (Bug #30) - CLOSE!
-recoding     FAILING   FEQ zero comparison (Bug #31)
-```
-
----
-
-## Next Session Strategy
-
-### Priority 1: Fix FMA Alignment (Bug #30) ⭐ **START HERE**
-
-This is the closest to being solved. The issue is well-understood:
-
-**Problem**: Product mantissa multiplication creates 48-bit value, but needs correct positioning in 50-bit product register to align with 53-bit sum register.
-
-**Solution Approach**:
-```
-man_a = 24 bits (including implicit 1 at bit 23)
-man_b = 24 bits (including implicit 1 at bit 23)
-product_raw = 48 bits (Q2.46 format, leading 1 at bit 47 or 46)
-
-Goal: Position product so that after addition, sum has implicit 1 at bit 51
-
-Current understanding:
-- product register: [49:0] (50 bits)
-- sum register: [52:0] (53 bits)
-- Need product aligned such that product[47] maps near sum[51]
-```
-
-**Debugging Steps**:
-1. Calculate expected bit positions for 1.0 × 1.25 = 1.25
-2. Determine where leading 1 should be in product register
-3. Adjust product formatting in MULTIPLY state
-4. Verify NORMALIZE state correctly handles the alignment
-5. Test with simple case: 1.0 × 2.5 + 1.0 = 3.5
-
-**Estimated Time**: 30-60 minutes
-
----
-
-### Priority 2: Fix FSQRT Result (Bug #29)
-
-**Current Issue**: Result = 0x7f000fff with exponent = 0xFE (254)
-
-**Investigation Needed**:
-```bash
-# Run with more debug
-./tools/run_single_test.sh rv32uf-p-fdiv DEBUG_FPU 2>&1 | grep -A5 "SQRT"
-
-# Check intermediate values in ROUND state
-# Expected sqrt(π) exponent: 127 + 0 = 127 (since π = 3.14 ≈ 1.57×2^1, sqrt = 1.77×2^0)
-# Actual exponent: 254 (way too large!)
-```
-
-**Likely Issue**: ROUND state packing result incorrectly
-- Check exp_result value
-- Check mantissa extraction from root register
-- Verify bit positions match between root computation and result packing
-
-**Estimated Time**: 45-90 minutes
-
----
-
-### Priority 3: Debug Recoding FEQ (Bug #31)
-
-**Investigation Needed**:
-```bash
-# Add debug to see FP register values
-# Check what f0 and f1 actually contain before FEQ
-# Verify FCVT.S.W and FMUL.S are working correctly
-```
-
 **Estimated Time**: 30-60 minutes
 
 ---
@@ -258,12 +157,14 @@ Current understanding:
 
 ```bash
 # Test individual modules
-./tools/run_single_test.sh rv32uf-p-fmadd DEBUG_FPU
-./tools/run_single_test.sh rv32uf-p-fdiv DEBUG_FPU
-./tools/run_single_test.sh rv32uf-p-recoding DEBUG_FPU
+env XLEN=32 timeout 20s ./tools/run_hex_tests.sh rv32uf-p-fdiv
+env XLEN=32 timeout 20s ./tools/run_hex_tests.sh rv32uf-p-recoding
 
-# Full suite
-./tools/run_hex_tests.sh rv32uf
+# Full FPU test suite
+env XLEN=32 timeout 60s ./tools/run_hex_tests.sh rv32uf-p
+
+# With debug output
+env DEBUG_FPU=1 XLEN=32 timeout 20s ./tools/run_hex_tests.sh rv32uf-p-fdiv
 
 # Check status
 grep -E "(PASSED|FAILED)" sim/rv32uf*.log | sort
@@ -271,12 +172,35 @@ grep -E "(PASSED|FAILED)" sim/rv32uf*.log | sort
 
 ---
 
+## Session 9 Priorities
+
+### Priority 1: Fix FSQRT Result Extraction ⭐
+
+**Goal**: Fix fdiv test to reach 10/11 (90.9%)
+**Confidence**: HIGH - Counter initialization already fixed, just need result extraction
+**Strategy**:
+1. Add debug output in ROUND state for FSQRT
+2. Check how `root` register value is packed into result
+3. Verify exponent calculation (should be (exp_a/2) + bias)
+4. Fix bit extraction if needed
+
+### Priority 2: Fix FEQ Zero Comparison
+
+**Goal**: Fix recoding test to reach 11/11 (100%)! 🎯
+**Confidence**: MEDIUM - Need to investigate which component is creating wrong zero
+**Strategy**:
+1. Add debug logging for FEQ operands
+2. Check if FMUL.S 1.0×0.0 produces correct +0.0
+3. Verify FEQ comparison logic handles ±0.0 correctly
+
+---
+
 ## Goal
 
-**Target**: 11/11 RV32UF tests (100% compliance)
-**Current**: 8/11 (72.7%)
-**Remaining**: 3 bugs with clear root causes identified
-**Confidence**: HIGH - all issues are well-understood
+**Target**: 11/11 RV32UF tests (100% compliance) 🎯
+**Current**: 9/11 (81.8%)
+**Remaining**: 2 bugs with clear investigation paths
+**Confidence**: HIGH - Both bugs are well-understood, just need implementation fixes
 
-**Session 7 Achievement**: Thorough investigation of all 3 failing tests! 🔍
-**Next Session Goal**: Fix FMA alignment → 9/11 tests passing → 81.8%! 🎯
+**Session 8 Achievement**: Fixed FMA completely! All 4 variants working! 🎉
+**Next Session Goal**: Fix FSQRT → 10/11 (90.9%)! 🚀
