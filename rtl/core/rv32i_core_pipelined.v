@@ -206,7 +206,8 @@ module rv_core_pipelined #(
   wire            idex_is_sret;
   wire            idex_is_sfence_vma;
   wire            idex_illegal_inst;
-  wire [31:0]     idex_instruction;  // Instructions always 32-bit
+  wire [31:0]     idex_instruction;
+  wire            idex_is_compressed;  // Bug #42: Track if instruction was compressed  // Instructions always 32-bit
 
   //==========================================================================
   // EX Stage Signals
@@ -940,6 +941,8 @@ module rv_core_pipelined #(
     .is_sfence_vma_in(id_is_sfence_vma),
     .illegal_inst_in(id_illegal_inst),
     .instruction_in(ifid_instruction),
+    // C extension input
+    .is_compressed_in(ifid_is_compressed),
     // Data outputs
     .pc_out(idex_pc),
     .rs1_data_out(idex_rs1_data),
@@ -998,14 +1001,18 @@ module rv_core_pipelined #(
     .is_sret_out(idex_is_sret),
     .is_sfence_vma_out(idex_is_sfence_vma),
     .illegal_inst_out(idex_illegal_inst),
-    .instruction_out(idex_instruction)
+    .instruction_out(idex_instruction),
+    // C extension output
+    .is_compressed_out(idex_is_compressed)
   );
 
   //==========================================================================
   // EX STAGE: Execute
   //==========================================================================
 
-  assign ex_pc_plus_4 = idex_pc + {{(XLEN-3){1'b0}}, 3'b100};  // PC + 4
+  // Bug #42: C.JAL and C.JALR must save PC+2, not PC+4
+  assign ex_pc_plus_4 = idex_is_compressed ? (idex_pc + {{(XLEN-2){1'b0}}, 2'b10}) :
+                                              (idex_pc + {{(XLEN-3){1'b0}}, 3'b100});
 
   // Forwarding Unit (centralized forwarding logic for all stages)
   forwarding_unit forward_unit (
@@ -1867,5 +1874,61 @@ module rv_core_pipelined #(
   // - FP classify (FCLASS): wb_sel = 3'b110
   // - FP move to int (FMV.X.W): wb_sel = 3'b110
   // - FP to int convert (FCVT.W.S, FCVT.WU.S): wb_sel = 3'b110
+
+  //==========================================================================
+  // DEBUG: PC Trace for MRET/SRET to Compressed Instructions (Bug #41)
+  //==========================================================================
+  `ifdef DEBUG_MRET_RVC
+  reg [31:0] cycle_count;
+  reg prev_mret_flush, prev_sret_flush;
+  reg [31:0] prev_pc;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      cycle_count <= 0;
+      prev_mret_flush <= 0;
+      prev_sret_flush <= 0;
+      prev_pc <= 0;
+    end else begin
+      cycle_count <= cycle_count + 1;
+
+      // Display PC trace every cycle
+      $display("[CYC %0d] PC=%h PC_next=%h PC_inc=%h | instr_raw=%h is_comp=%b | mret_fl=%b sret_fl=%b trap_fl=%b exc_code=%h | stall=%b flush_if=%b",
+               cycle_count, pc_current, pc_next, pc_increment,
+               if_instruction_raw, if_is_compressed,
+               mret_flush, sret_flush, trap_flush, exception_code,
+               stall_pc, flush_ifid);
+
+      // Detailed trace when exception occurs
+      if (trap_flush) begin
+        $display("  [TRAP] exc_pc=%h exc_val=%h exc_code=%h vector=%h",
+                 exception_pc, exception_val, exception_code, trap_vector);
+      end
+
+      // Detailed trace when MRET/SRET occurs
+      if (mret_flush || sret_flush) begin
+        $display("  [%s_FLUSH] Target PC=%h (from %s)",
+                 mret_flush ? "MRET" : "SRET",
+                 mret_flush ? mepc : sepc,
+                 mret_flush ? "MEPC" : "SEPC");
+      end
+
+      // Track instruction fetch after xRET
+      if (cycle_count > 0 && (prev_mret_flush || prev_sret_flush)) begin
+        $display("  [POST_xRET] Fetched instr_raw=%h at PC=%h | is_compressed=%b pc_inc=%h",
+                 if_instruction_raw, pc_current, if_is_compressed, pc_increment);
+      end
+
+      // Detect potential infinite loop (PC not changing)
+      if (cycle_count > 2 && pc_current == prev_pc && !stall_pc) begin
+        $display("  [WARNING] PC stuck at %h (not stalling!)", pc_current);
+      end
+
+      // Update previous values
+      prev_mret_flush <= mret_flush;
+      prev_sret_flush <= sret_flush;
+      prev_pc <= pc_current;
+    end
+  end
+  `endif
 
 endmodule

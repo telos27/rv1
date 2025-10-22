@@ -79,6 +79,9 @@ module idex_register #(
   input  wire        illegal_inst_in,
   input  wire [31:0] instruction_in,  // For exception value
 
+  // C extension signal from ID stage
+  input  wire        is_compressed_in, // Was instruction originally compressed?
+
   // Outputs to EX stage
   output reg  [XLEN-1:0]  pc_out,
   output reg  [XLEN-1:0]  rs1_data_out,
@@ -143,7 +146,10 @@ module idex_register #(
   output reg         is_sret_out,
   output reg         is_sfence_vma_out,
   output reg         illegal_inst_out,
-  output reg  [31:0] instruction_out
+  output reg  [31:0] instruction_out,
+
+  // C extension signal to EX stage
+  output reg         is_compressed_out // Was instruction originally compressed?
 );
 
   `ifdef DEBUG_IDEX
@@ -223,6 +229,8 @@ module idex_register #(
       is_sfence_vma_out <= 1'b0;
       illegal_inst_out <= 1'b0;
       instruction_out <= 32'h0;
+
+      is_compressed_out <= 1'b0;
     end else if (flush && !hold) begin
       // Flush: insert NOP bubble (clear control signals, keep data)
       // Note: hold takes priority over flush (M instructions must stay in place)
@@ -285,6 +293,8 @@ module idex_register #(
       is_sfence_vma_out <= 1'b0;
       illegal_inst_out <= 1'b0;
       instruction_out <= 32'h0;
+
+      is_compressed_out <= 1'b0;
     end else if (!hold) begin
       // Normal operation: latch all values (only if not held)
       pc_out          <= pc_in;
@@ -345,6 +355,8 @@ module idex_register #(
       is_sfence_vma_out <= is_sfence_vma_in;
       illegal_inst_out <= illegal_inst_in;
       instruction_out <= instruction_in;
+
+      is_compressed_out <= is_compressed_in;
     end
     // If hold is asserted, keep previous values (register holds in place)
   end

@@ -179,6 +179,17 @@
   `define ENABLE_C_EXT 0
 `endif
 
+`ifdef CONFIG_RV32IMA
+  `undef XLEN
+  `define XLEN 32
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 1
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 1
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 0
+`endif
+
 `ifdef CONFIG_RV32IMC
   `undef XLEN
   `define XLEN 32
@@ -188,6 +199,19 @@
   `define ENABLE_A_EXT 0
   `undef ENABLE_C_EXT
   `define ENABLE_C_EXT 1
+`endif
+
+`ifdef CONFIG_RV32IMAF
+  `undef XLEN
+  `define XLEN 32
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 1
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 1
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 0
+  `undef ENABLE_F_EXT
+  `define ENABLE_F_EXT 1
 `endif
 
 `ifdef CONFIG_RV64I

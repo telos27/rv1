@@ -512,7 +512,7 @@ module csr_file #(
           CSR_MIE:      mie_r      <= csr_write_value;
           CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
           CSR_MSCRATCH: mscratch_r <= csr_write_value;
-          CSR_MEPC:     mepc_r     <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          CSR_MEPC:     mepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C extension)
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
           CSR_MIP:      mip_r      <= csr_write_value;
@@ -537,7 +537,7 @@ module csr_file #(
           end
           CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
           CSR_SSCRATCH: sscratch_r <= csr_write_value;
-          CSR_SEPC:     sepc_r     <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          CSR_SEPC:     sepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C extension)
           CSR_SCAUSE:   scause_r   <= csr_write_value;
           CSR_STVAL:    stval_r    <= csr_write_value;
           CSR_SIP: begin

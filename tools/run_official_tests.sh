@@ -92,9 +92,49 @@ run_test() {
     elf_to_hex "$test_path" "$hex_file"
   fi
 
+  # Determine configuration based on test name
+  local config_flag=""
+  if [[ "$test_name" == rv32uc* ]] || [[ "$test_name" == rv64uc* ]]; then
+    # C extension test - needs M+C (official tests use both)
+    if [[ "$test_name" == rv32* ]]; then
+      config_flag="-DCONFIG_RV32IMC"
+    else
+      config_flag="-DCONFIG_RV64GC"
+    fi
+  elif [[ "$test_name" == rv32um* ]] || [[ "$test_name" == rv64um* ]]; then
+    # M extension test
+    if [[ "$test_name" == rv32* ]]; then
+      config_flag="-DCONFIG_RV32IM"
+    else
+      config_flag="-DCONFIG_RV64IM"
+    fi
+  elif [[ "$test_name" == rv32ua* ]] || [[ "$test_name" == rv64ua* ]]; then
+    # A extension test - needs M+A
+    if [[ "$test_name" == rv32* ]]; then
+      config_flag="-DCONFIG_RV32IMA"
+    else
+      config_flag="-DCONFIG_RV64IMA"
+    fi
+  elif [[ "$test_name" == rv32uf* ]] || [[ "$test_name" == rv64uf* ]]; then
+    # F extension test - needs M+A+F
+    if [[ "$test_name" == rv32* ]]; then
+      config_flag="-DCONFIG_RV32IMAF"
+    else
+      config_flag="-DCONFIG_RV64IMAF"
+    fi
+  elif [[ "$test_name" == rv32ui* ]] || [[ "$test_name" == rv64ui* ]]; then
+    # Base I test
+    if [[ "$test_name" == rv32* ]]; then
+      config_flag="-DCONFIG_RV32I"
+    else
+      config_flag="-DCONFIG_RV64I"
+    fi
+  fi
+
   # Compile testbench
   iverilog -g2012 \
     -I"$RTL_DIR" \
+    $config_flag \
     -DCOMPLIANCE_TEST \
     -DMEM_FILE="\"$hex_file\"" \
     -o "$SIM_DIR/${test_name}.vvp" \
