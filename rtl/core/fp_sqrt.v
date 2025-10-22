@@ -53,11 +53,19 @@ module fp_sqrt #(
 
   // Square root computation (digit recurrence)
   reg [MAN_WIDTH+3:0] root;          // Square root result
-  reg [MAN_WIDTH+4:0] radicand;      // Current radicand (remaining value)
-  reg [MAN_WIDTH+4:0] test_value;    // Test value for subtraction
+  reg [MAN_WIDTH+4:0] remainder;     // Current remainder (A register in algorithm)
+  wire [MAN_WIDTH+4:0] ac;           // Accumulator for next 2 bits from radicand (combinational)
+  wire [MAN_WIDTH+4:0] test_val;     // Test value: ac - (root<<1 | 1) (combinational)
+  wire test_positive;                // True if test_val >= 0
   reg [5:0] sqrt_counter;            // Iteration counter
   reg [EXP_WIDTH-1:0] exp_result;
   reg exp_is_odd;                    // True if exponent is odd
+  reg [(MAN_WIDTH+4)*2-1:0] radicand_shift;  // Full radicand for bit extraction
+
+  // Combinational logic for sqrt iteration (bit-by-bit)
+  assign ac = (remainder << 1) | radicand_shift[(MAN_WIDTH+4)*2-1];  // Shift in 1 bit
+  assign test_val = ac - ({root, 1'b1});  // ac - (2*root + 1)
+  assign test_positive = (test_val[MAN_WIDTH+4] == 1'b0);  // Check sign bit
 
   // Rounding
   reg guard, round, sticky;
@@ -118,8 +126,8 @@ module fp_sqrt #(
       sqrt_counter <= 6'd0;
       // Initialize working registers to prevent X propagation
       root <= {(MAN_WIDTH+4){1'b0}};
-      radicand <= {(MAN_WIDTH+5){1'b0}};
-      test_value <= {(MAN_WIDTH+5){1'b0}};
+      remainder <= {(MAN_WIDTH+5){1'b0}};
+      radicand_shift <= {((MAN_WIDTH+4)*2){1'b0}};
       exp_result <= {EXP_WIDTH{1'b0}};
       exp_is_odd <= 1'b0;
       sign <= 1'b0;
@@ -163,8 +171,8 @@ module fp_sqrt #(
         // COMPUTE: Iterative square root computation
         // ============================================================
         COMPUTE: begin
-          if (sqrt_counter == SQRT_CYCLES) begin
-            // Special case handling
+          if (sqrt_counter == (MAN_WIDTH+4)-1) begin
+            // First iteration: special case handling
             if (is_nan) begin
               // sqrt(NaN) = NaN
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
@@ -183,37 +191,44 @@ module fp_sqrt #(
               result <= operand;
               state <= DONE;
             end else begin
-              // Initialize square root computation
+              // Initialize square root computation using digit-by-digit algorithm
               // Result exponent: (exp - BIAS) / 2 + BIAS
               exp_is_odd <= exp[0];  // Check if exponent is odd
 
               if (exp[0]) begin
-                // Odd exponent: adjust by shifting mantissa
+                // Odd exponent: adjust by shifting mantissa left by 1
                 exp_result <= (exp - BIAS) / 2 + BIAS;
-                radicand <= {mantissa, 4'b0000} << 1;  // Shift mantissa left by 1
+                radicand_shift <= {mantissa, 4'b0000, {(MAN_WIDTH+3){1'b0}}} << 1;
               end else begin
-                // Even exponent
+                // Even exponent: no adjustment needed
                 exp_result <= (exp - BIAS) / 2 + BIAS;
-                radicand <= {mantissa, 4'b0000};
+                radicand_shift <= {mantissa, 4'b0000, {(MAN_WIDTH+3){1'b0}}};
               end
 
-              // Initialize root
-              root <= {(MAN_WIDTH+4){1'b0}};
+              // Initialize registers for digit-by-digit algorithm
+              root <= {(MAN_WIDTH+4){1'b0}};      // Q = 0
+              remainder <= {(MAN_WIDTH+5){1'b0}}; // A = 0
 
-              // Start iteration
-              sqrt_counter <= SQRT_CYCLES - 1;
+              // Start iteration (process 1 bit per cycle)
+              // Need MAN_WIDTH+4 iterations to compute all bits including GRS
+              sqrt_counter <= (MAN_WIDTH + 4) - 1;
             end
           end else begin
-            // Digit recurrence iteration (non-restoring algorithm)
-            // Test if (root << 1 + 1)^2 <= radicand
-            test_value <= ((root << 1) + 1'b1) * ((root << 1) + 1'b1);
+            // Digit-by-digit sqrt iteration (1 bit per cycle)
+            // Algorithm: At each step, shift in 1 bit from radicand into remainder,
+            // then test if remainder - (2*root + 1) >= 0
+            // ac, test_val, and test_positive are computed combinationally
 
-            if (test_value <= radicand) begin
-              // Accept the bit
+            // Shift radicand to prepare next bit
+            radicand_shift <= radicand_shift << 1;
+
+            if (test_positive) begin
+              // test_val >= 0: accept the bit
+              remainder <= test_val;
               root <= (root << 1) | 1'b1;
-              radicand <= radicand - test_value;
             end else begin
-              // Reject the bit
+              // test_val < 0: reject the bit
+              remainder <= ac;
               root <= root << 1;
             end
 
@@ -226,10 +241,10 @@ module fp_sqrt #(
         // NORMALIZE: Result should already be normalized
         // ============================================================
         NORMALIZE: begin
-          // Extract GRS bits
+          // Extract GRS bits from root
           guard <= root[2];
           round <= root[1];
-          sticky <= root[0] || (radicand != 0);
+          sticky <= root[0] || (remainder != 0);  // Any remaining bits in remainder
         end
 
         // ============================================================
@@ -259,10 +274,11 @@ module fp_sqrt #(
           endcase
 
           // Apply rounding (result is always positive)
+          // Extract MAN_WIDTH bits (23 for SP, 52 for DP) - NOT including implicit leading 1
           if (round_up) begin
-            result <= {1'b0, exp_result, root[MAN_WIDTH+3:3] + 1'b1};
+            result <= {1'b0, exp_result, root[MAN_WIDTH+2:3] + 1'b1};
           end else begin
-            result <= {1'b0, exp_result, root[MAN_WIDTH+3:3]};
+            result <= {1'b0, exp_result, root[MAN_WIDTH+2:3]};
           end
 
           // Set inexact flag
