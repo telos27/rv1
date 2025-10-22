@@ -189,7 +189,7 @@ This document tracks the development progress of the RV1 RISC-V processor throug
 - Single-cycle: FADD, FSUB, FMUL, FMIN/FMAX, compare, classify, sign
 - Multi-cycle: FDIV (16-32 cycles), FSQRT (16-32 cycles), FMA (4-5 cycles)
 
-**Critical Bugs Fixed** (7 total):
+**Critical Bugs Fixed** (10 total):
 1. FPU restart condition (blocking after first operation)
 2. FSW operand selection (integer rs2 vs FP rs2)
 3. FLW write-back select signal
@@ -197,11 +197,16 @@ This document tracks the development progress of the RV1 RISC-V processor throug
 5. FP load-use forwarding (using wrong signal)
 6. FP-to-INT write-back path (FEQ/FLT/FLE/FCLASS/FMV.X.W/FCVT.W.S)
 7. Cross-file forwarding (INT↔FP register forwarding)
+8. **FSQRT Iteration Counter** (Bug #40): Off-by-one, only 26 of 27 iterations executed
+9. **FSQRT Rounding Logic** (Bug #40): Non-blocking assignment prevented same-cycle rounding
+10. **FSQRT Flag Persistence** (Bug #40): Exception flags not cleared between operations
 
 **Verification**:
+- Official compliance: rv32uf-p-fdiv PASSING (includes FDIV + FSQRT tests) ✅
 - Custom test suite: 13/13 tests passing (100%) ✅
-- Test coverage: arithmetic, load/store, compare, classify, conversion, FMA
+- Test coverage: arithmetic, load/store, compare, classify, conversion, FMA, FDIV, FSQRT
 - Hazard scenarios: FP load-use, cross-file dependencies
+- Special cases: sqrt(π), sqrt(-1.0)→NaN, perfect squares
 
 ---
 
