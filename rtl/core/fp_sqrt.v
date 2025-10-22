@@ -31,7 +31,7 @@ module fp_sqrt #(
   localparam MAN_WIDTH = (FLEN == 32) ? 23 : 52;
   localparam BIAS = (FLEN == 32) ? 127 : 1023;
   localparam MAX_EXP = (FLEN == 32) ? 255 : 2047;
-  localparam SQRT_CYCLES = (MAN_WIDTH / 2) + 4;  // Iterations needed (2 bits per cycle)
+  localparam SQRT_CYCLES = (MAN_WIDTH + 4);  // Iterations needed: need MAN_WIDTH+4 bits of root (1 root bit per iteration)
 
   // State machine
   localparam IDLE      = 3'b000;
@@ -52,20 +52,21 @@ module fp_sqrt #(
   reg is_nan, is_inf, is_zero, is_negative;
 
   // Square root computation (digit recurrence)
-  reg [MAN_WIDTH+3:0] root;          // Square root result
-  reg [MAN_WIDTH+4:0] remainder;     // Current remainder (A register in algorithm)
-  wire [MAN_WIDTH+4:0] ac;           // Accumulator for next 2 bits from radicand (combinational)
-  wire [MAN_WIDTH+4:0] test_val;     // Test value: ac - (root<<1 | 1) (combinational)
+  reg [MAN_WIDTH+3:0] root;          // Square root result (27 bits for SP)
+  reg [MAN_WIDTH+5:0] remainder;     // Current remainder (A register in algorithm) - needs root_width + 2 bits
+  wire [MAN_WIDTH+5:0] ac;           // Accumulator for next 2 bits from radicand (combinational)
+  wire [MAN_WIDTH+5:0] test_val;     // Test value: ac - (root<<2 | 1) (combinational)
   wire test_positive;                // True if test_val >= 0
   reg [5:0] sqrt_counter;            // Iteration counter
   reg [EXP_WIDTH-1:0] exp_result;
   reg exp_is_odd;                    // True if exponent is odd
   reg [(MAN_WIDTH+4)*2-1:0] radicand_shift;  // Full radicand for bit extraction
 
-  // Combinational logic for sqrt iteration (bit-by-bit)
-  assign ac = (remainder << 1) | radicand_shift[(MAN_WIDTH+4)*2-1];  // Shift in 1 bit
-  assign test_val = ac - ({root, 1'b1});  // ac - (2*root + 1)
-  assign test_positive = (test_val[MAN_WIDTH+4] == 1'b0);  // Check sign bit
+  // Combinational logic for sqrt iteration (2-bits-per-cycle, radix-4)
+  // Following Project F algorithm: process 2 bits per iteration
+  assign ac = (remainder << 2) | radicand_shift[(MAN_WIDTH+4)*2-1:(MAN_WIDTH+4)*2-2];  // Shift in 2 bits
+  assign test_val = ac - {root, 2'b01};  // ac - (root << 2 | 1)
+  assign test_positive = (test_val[MAN_WIDTH+5] == 1'b0);  // Check sign bit
 
   // Rounding
   reg guard, round, sticky;
@@ -163,7 +164,7 @@ module fp_sqrt #(
       sqrt_counter <= 6'd0;
       // Initialize working registers to prevent X propagation
       root <= {(MAN_WIDTH+4){1'b0}};
-      remainder <= {(MAN_WIDTH+5){1'b0}};
+      remainder <= {(MAN_WIDTH+6){1'b0}};
       radicand_shift <= {((MAN_WIDTH+4)*2){1'b0}};
       exp_result <= {EXP_WIDTH{1'b0}};
       exp_is_odd <= 1'b0;
@@ -201,16 +202,16 @@ module fp_sqrt #(
           is_negative <= operand[FLEN-1] && !((operand[FLEN-2:0] == 0));  // -0 is OK
 
           // Initialize counter for COMPUTE state
-          // Need MAN_WIDTH+4 bits for mantissa (24) + GRS (3) + 1 extra = 28 bits
-          sqrt_counter <= (MAN_WIDTH + 4) - 1;  // Start at 26 for first iteration check
+          // Process 2 bits per iteration: need (MAN_WIDTH+4)/2 iterations
+          sqrt_counter <= SQRT_CYCLES - 1;  // Start at SQRT_CYCLES-1 for first iteration check
         end
 
         // ============================================================
         // COMPUTE: Iterative square root computation
         // ============================================================
         COMPUTE: begin
-          if (sqrt_counter == (MAN_WIDTH+4)-1) begin
-            // First iteration: special case handling
+          if (sqrt_counter == SQRT_CYCLES-1) begin
+            // First iteration: special case handling and initialization
             if (is_nan) begin
               // sqrt(NaN) = NaN
               result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
@@ -245,30 +246,29 @@ module fp_sqrt #(
 
               // Initialize registers for digit-by-digit algorithm
               root <= {(MAN_WIDTH+4){1'b0}};      // Q = 0
-              remainder <= {(MAN_WIDTH+5){1'b0}}; // A = 0
+              remainder <= {(MAN_WIDTH+6){1'b0}}; // A = 0
 
-              // Start iteration (process 1 bit per cycle)
-              // Need MAN_WIDTH+4 iterations to compute all bits including GRS
-              // Decrement counter to start iterations (move from 26 to 25)
-              sqrt_counter <= (MAN_WIDTH + 4) - 2;
+              // Start iteration (process 2 bits per cycle, radix-4)
+              // Need SQRT_CYCLES iterations to compute all bits including GRS
+              // Decrement counter to start iterations
+              sqrt_counter <= SQRT_CYCLES - 2;
             end
           end else begin
-            // Digit-by-digit sqrt iteration (1 bit per cycle)
-            // Algorithm: At each step, shift in 1 bit from radicand into remainder,
-            // then test if remainder - (2*root + 1) >= 0
+            // Digit-by-digit sqrt iteration (2 bits per cycle, radix-4)
+            // Following Project F algorithm: process 2 bits of radicand per iteration
             // ac, test_val, and test_positive are computed combinationally
 
-            // Shift radicand to prepare next bit
-            radicand_shift <= radicand_shift << 1;
+            // Shift radicand to prepare next 2 bits
+            radicand_shift <= radicand_shift << 2;
 
             if (test_positive) begin
-              // test_val >= 0: accept the bit
+              // test_val >= 0: accept the bit (set LSB of root to 1)
               remainder <= test_val;
-              root <= (root << 1) | 1'b1;  // Shift by 1, set LSB
+              root <= (root << 1) | 1'b1;  // Shift by 1, set LSB to 1
             end else begin
-              // test_val < 0: reject the bit
+              // test_val < 0: reject the bit (set LSB of root to 0)
               remainder <= ac;
-              root <= root << 1;  // Shift by 1, no bit set
+              root <= root << 1;  // Shift by 1, LSB stays 0
             end
 
             // Decrement counter
@@ -328,7 +328,8 @@ module fp_sqrt #(
         // DONE: Hold result for 1 cycle
         // ============================================================
         DONE: begin
-          sqrt_counter <= SQRT_CYCLES;  // Reset for next operation
+          // Reset counter for next operation (will be set to SQRT_CYCLES-1 in UNPACK)
+          sqrt_counter <= 6'd0;
         end
 
       endcase
