@@ -184,17 +184,23 @@ module fp_converter #(
               $display("[CONVERTER] FP→INT: fp_operand=%h, sign=%b, exp=%d, man=%h",
                        fp_operand, sign_fp, exp_fp, man_fp);
               $display("[CONVERTER]   is_nan=%b, is_inf=%b, is_zero=%b", is_nan, is_inf, is_zero);
+              $display("[CONVERTER]   operation_latched=%b (%d)", operation_latched, operation_latched);
               `endif
 
               if (is_nan || is_inf) begin
                 // NaN or Inf: return max/min integer, set invalid flag
-                case (operation)
+                // Bug #24 fix: Use operation_latched not operation
+                case (operation_latched)
                   FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
                   FCVT_WU_S: int_result <= sign_fp ? 32'h00000000 : 32'hFFFFFFFF;
                   FCVT_L_S:  int_result <= sign_fp ? 64'h8000000000000000 : 64'h7FFFFFFFFFFFFFFF;
                   FCVT_LU_S: int_result <= sign_fp ? 64'h0000000000000000 : 64'hFFFFFFFFFFFFFFFF;
                 endcase
                 flag_nv <= 1'b1;
+
+                `ifdef DEBUG_FPU_CONVERTER
+                $display("[CONVERTER]   NaN/Inf path: sign_fp=%b, result will be set based on operation", sign_fp);
+                `endif
               end else if (is_zero) begin
                 // Zero: return 0
                 int_result <= {XLEN{1'b0}};
@@ -204,15 +210,15 @@ module fp_converter #(
                 int_exp = exp_fp - BIAS;
 
                 // Bug #20 fix: Check if exponent is too large (overflow)
-                // For 32-bit conversions: int_exp > 31 always overflows
-                // For int_exp == 31: need to check mantissa
-                //   - Signed: -2^31 is representable (0x80000000), but values > 2^31-1 or < -2^31 overflow
-                //   - Unsigned: any value >= 2^32 overflows
+                // Bug #25 fix: Corrected unsigned word overflow detection
+                // For 32-bit conversions:
+                //   - Signed word (W): overflow when int_exp > 31, OR int_exp==31 with value != -2^31
+                //   - Unsigned word (WU): overflow when int_exp >= 32 (int_exp > 31)
 
                 // Check for 32-bit overflow
-                if ((int_exp > 31) ||
-                    (int_exp == 31 && operation_latched[1:0] != 2'b00) ||  // Unsigned word at 2^31 always overflows
-                    (int_exp == 31 && operation_latched[1:0] == 2'b00 && (man_fp != 0 || !sign_fp)) || // Signed word: overflow except for exactly -2^31
+                if ((int_exp > 31) ||  // Both signed and unsigned overflow above 2^31
+                    // Signed word special case: int_exp==31 overflows unless exactly -2^31
+                    (int_exp == 31 && operation_latched[1:0] == 2'b00 && (man_fp != 0 || !sign_fp)) ||
                     // Check for 64-bit overflow (both signed and unsigned long)
                     // Bug #23b fix: Handle both FCVT.L.S and FCVT.LU.S
                     (operation_latched[1] == 1'b1 && int_exp > 63) ||
@@ -220,7 +226,8 @@ module fp_converter #(
                     (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp))) begin  // Signed long: overflow except exactly -2^63
                   // Overflow: return max/min
                   // Bug #23 fix: Unsigned conversions with negative values should saturate to 0
-                  case (operation)
+                  // Bug #24 fix: Use operation_latched not operation
+                  case (operation_latched)
                     FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
                     FCVT_WU_S: int_result <= sign_fp ? 32'h00000000 : 32'hFFFFFFFF;
                     FCVT_L_S:  int_result <= sign_fp ? 64'h8000000000000000 : 64'h7FFFFFFFFFFFFFFF;

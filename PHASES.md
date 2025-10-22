@@ -522,6 +522,32 @@ Before adding new features, consider fixing these existing issues:
    - **Improved**: fcvt_w from test #17 → test #37 (11 ops → 15 ops)
    - See: docs/SESSION_2025-10-21_BUGS20-22_FP_TO_INT_OVERFLOW.md
 
+   **Fixed bugs** (2025-10-21 PM Session 3): Operation Signal & Overflow Logic - Bugs #24-#25 ✅
+     24. **Bug #24**: Operation signal inconsistency in saturation logic ✅
+         - Root cause: Used `operation` instead of `operation_latched` in case statements
+         - Impact: NaN/Inf and overflow saturation could use stale/incorrect operation codes
+         - Fix: Changed both instances (lines 192, 224) to use `operation_latched`
+         - Location: rtl/core/fp_converter.v:192, 224
+         - This bug alone didn't fix test failures but was necessary for correctness
+     25. **Bug #25**: Incorrect unsigned word overflow detection ✅ **CRITICAL FIX**
+         - Root cause: Line 220 flagged int_exp==31 as overflow for unsigned word conversions
+         - Impact: FCVT.WU.S values in [2^31, 2^32) incorrectly overflowed
+         - Test case: fcvt.wu.s 3e9 → expected 0xB2D05E00, got 0xFFFFFFFF (overflow)
+         - Analysis:
+           - For unsigned 32-bit: valid range is [0, 2^32-1]
+           - int_exp==31 covers [2^31, 2^32), which is VALID for unsigned
+           - Only int_exp >= 32 should trigger overflow for unsigned word
+         - Fix: Removed blanket `int_exp==31 && unsigned` overflow check
+           - Now only signed word gets special handling at int_exp==31
+         - Location: rtl/core/fp_converter.v:212-221
+         - Impact: fcvt_w test progressed from #39 → #85 (+46 tests = +54.1%)
+         - **This was a critical bug affecting all large unsigned conversions**
+
+   - **Status** (2025-10-21 PM): RV32UF 6/11 (54%), fcvt_w at **98.8%** (test #85/85)
+   - **Massive Progress**: fcvt_w from test #39 → test #85 (+46 tests in one fix!)
+   - **New Tool**: Created `tools/run_single_test.sh` for streamlined debugging
+   - See: docs/SESSION_2025-10-21_BUGS24-25_FCVT_W_OVERFLOW.md
+
    **Fixed bugs** (2025-10-21 PM):
      23. **Bug #23**: Unsigned long negative saturation ✅ **CRITICAL FIX**
          - Root cause: FCVT.WU.S/FCVT.LU.S saturated negative values to 0xFFFF... instead of 0
@@ -555,7 +581,8 @@ Before adding new features, consider fixing these existing issues:
 - [x] **Fix FPU pipeline hazards (Bugs #6, #7, #7b)** ✓ *Fixed 2025-10-14: Flag contamination resolved*
 - [x] **Fix FPU converter overflow & flags (Bugs #20, #21, #22)** ✓ *Fixed 2025-10-21 AM: fcvt passing, fcvt_w 94%*
 - [x] **Fix unsigned long saturation (Bug #23)** ✓ *Fixed 2025-10-21 PM: fcvt_w test #37 → #39*
-- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fcvt_w test #39, fdiv/fmadd/fmin/recoding*
+- [x] **Fix unsigned word overflow detection (Bugs #24, #25)** ✓ *Fixed 2025-10-21 PM: fcvt_w test #39 → #85 (98.8%!)*
+- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fcvt_w test #85 (1 test left!), fdiv/fmadd/fmin/recoding*
 - [ ] **Debug mixed compressed/normal instructions** 🔀
 - [ ] Performance benchmarking (Dhrystone, CoreMark)
 - [ ] Formal verification for critical paths
@@ -624,6 +651,7 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-21 (PM session 3)**: FPU unsigned word overflow - Fixed Bugs #24-#25 (operation signal, overflow logic) - fcvt_w test #39 → #85 (98.8%!)
 **2025-10-21 (PM session 2)**: FPU unsigned long saturation - Fixed Bug #23 (negative→unsigned overflow) - fcvt_w test #37 → #39!
 **2025-10-21 (PM session 1)**: FPU FP→INT overflow & flags - Fixed Bugs #20-#22 (overflow detection, invalid flags) - fcvt passing, fcvt_w 94%!
 **2025-10-21 (AM)**: FPU writeback path - Fixed Bug #19 (control unit FCVT direction bit) - Converter results now reach FP register file!
