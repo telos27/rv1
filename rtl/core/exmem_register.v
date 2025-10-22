@@ -15,10 +15,11 @@ module exmem_register #(
 
   // Inputs from EX stage
   input  wire [XLEN-1:0]  alu_result_in,
-  input  wire [XLEN-1:0]  mem_write_data_in,  // Potentially forwarded rs2
+  input  wire [XLEN-1:0]  mem_write_data_in,      // Integer store data (forwarded rs2)
+  input  wire [FLEN-1:0]  fp_mem_write_data_in,   // FP store data (for FSD)
   input  wire [4:0]       rd_addr_in,
-  input  wire [XLEN-1:0]  pc_plus_4_in,       // For JAL/JALR write-back
-  input  wire [2:0]       funct3_in,          // For memory access size/signedness
+  input  wire [XLEN-1:0]  pc_plus_4_in,           // For JAL/JALR write-back
+  input  wire [2:0]       funct3_in,              // For memory access size/signedness
 
   // Control signals from EX stage
   input  wire        mem_read_in,
@@ -40,6 +41,7 @@ module exmem_register #(
   input  wire [4:0]       fp_rd_addr_in,         // FP destination register
   input  wire             fp_reg_write_in,       // FP register write enable
   input  wire             int_reg_write_fp_in,   // Integer register write (from FP op)
+  input  wire             fp_mem_op_in,          // FP load/store operation flag
   input  wire             fp_flag_nv_in,         // FP exception flags
   input  wire             fp_flag_dz_in,
   input  wire             fp_flag_of_in,
@@ -64,7 +66,8 @@ module exmem_register #(
 
   // Outputs to MEM stage
   output reg  [XLEN-1:0]  alu_result_out,
-  output reg  [XLEN-1:0]  mem_write_data_out,
+  output reg  [XLEN-1:0]  mem_write_data_out,      // Integer store data
+  output reg  [FLEN-1:0]  fp_mem_write_data_out,   // FP store data
   output reg  [4:0]       rd_addr_out,
   output reg  [XLEN-1:0]  pc_plus_4_out,
   output reg  [2:0]       funct3_out,
@@ -89,6 +92,7 @@ module exmem_register #(
   output reg  [4:0]       fp_rd_addr_out,
   output reg              fp_reg_write_out,
   output reg              int_reg_write_fp_out,
+  output reg              fp_mem_op_out,         // FP load/store operation flag
   output reg              fp_flag_nv_out,
   output reg              fp_flag_dz_out,
   output reg              fp_flag_of_out,
@@ -115,11 +119,12 @@ module exmem_register #(
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       // Reset: clear all outputs
-      alu_result_out     <= {XLEN{1'b0}};
-      mem_write_data_out <= {XLEN{1'b0}};
-      rd_addr_out        <= 5'h0;
-      pc_plus_4_out      <= {XLEN{1'b0}};
-      funct3_out         <= 3'h0;
+      alu_result_out        <= {XLEN{1'b0}};
+      mem_write_data_out    <= {XLEN{1'b0}};
+      fp_mem_write_data_out <= {FLEN{1'b0}};
+      rd_addr_out           <= 5'h0;
+      pc_plus_4_out         <= {XLEN{1'b0}};
+      funct3_out            <= 3'h0;
 
       mem_read_out       <= 1'b0;
       mem_write_out      <= 1'b0;
@@ -137,6 +142,7 @@ module exmem_register #(
       fp_rd_addr_out     <= 5'h0;
       fp_reg_write_out   <= 1'b0;
       int_reg_write_fp_out <= 1'b0;
+      fp_mem_op_out      <= 1'b0;
       fp_flag_nv_out     <= 1'b0;
       fp_flag_dz_out     <= 1'b0;
       fp_flag_of_out     <= 1'b0;
@@ -158,11 +164,12 @@ module exmem_register #(
       pc_out             <= {XLEN{1'b0}};
     end else if (!hold) begin
       // Only update if not held (M extension may need to hold instruction in EX)
-      alu_result_out     <= alu_result_in;
-      mem_write_data_out <= mem_write_data_in;
-      rd_addr_out        <= rd_addr_in;
-      pc_plus_4_out      <= pc_plus_4_in;
-      funct3_out         <= funct3_in;
+      alu_result_out        <= alu_result_in;
+      mem_write_data_out    <= mem_write_data_in;
+      fp_mem_write_data_out <= fp_mem_write_data_in;
+      rd_addr_out           <= rd_addr_in;
+      pc_plus_4_out         <= pc_plus_4_in;
+      funct3_out            <= funct3_in;
 
       mem_read_out       <= mem_read_in;
       mem_write_out      <= mem_write_in;
@@ -180,6 +187,7 @@ module exmem_register #(
       fp_rd_addr_out     <= fp_rd_addr_in;
       fp_reg_write_out   <= fp_reg_write_in;
       int_reg_write_fp_out <= int_reg_write_fp_in;
+      fp_mem_op_out      <= fp_mem_op_in;
       fp_flag_nv_out     <= fp_flag_nv_in;
       fp_flag_dz_out     <= fp_flag_dz_in;
       fp_flag_of_out     <= fp_flag_of_in;

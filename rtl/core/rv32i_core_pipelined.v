@@ -312,7 +312,8 @@ module rv_core_pipelined #(
   // EX/MEM Pipeline Register Outputs
   //==========================================================================
   wire [XLEN-1:0] exmem_alu_result;
-  wire [XLEN-1:0] exmem_mem_write_data;
+  wire [XLEN-1:0] exmem_mem_write_data;      // Integer store data
+  wire [`FLEN-1:0] exmem_fp_mem_write_data;  // FP store data
   wire [4:0]      exmem_rd_addr;
   wire [XLEN-1:0] exmem_pc_plus_4;
   wire [2:0]      exmem_funct3;
@@ -329,6 +330,7 @@ module rv_core_pipelined #(
   wire [4:0]      exmem_fp_rd_addr;
   wire            exmem_fp_reg_write;
   wire            exmem_int_reg_write_fp;
+  wire            exmem_fp_mem_op;
   wire            exmem_fp_fmt;
   wire            exmem_fp_flag_nv;
   wire            exmem_fp_flag_dz;
@@ -350,7 +352,8 @@ module rv_core_pipelined #(
   //==========================================================================
   // MEM Stage Signals
   //==========================================================================
-  wire [XLEN-1:0] mem_read_data;
+  wire [XLEN-1:0] mem_read_data;      // Integer load data (lower bits)
+  wire [`FLEN-1:0] fp_mem_read_data;  // FP load data (full 64-bit for RV32D)
 
   //==========================================================================
   // MMU Signals (Phase 3)
@@ -383,7 +386,8 @@ module rv_core_pipelined #(
   // MEM/WB Pipeline Register Outputs
   //==========================================================================
   wire [XLEN-1:0] memwb_alu_result;
-  wire [XLEN-1:0] memwb_mem_read_data;
+  wire [XLEN-1:0] memwb_mem_read_data;       // Integer load data
+  wire [`FLEN-1:0] memwb_fp_mem_read_data;   // FP load data
   wire [4:0]      memwb_rd_addr;
   wire [XLEN-1:0] memwb_pc_plus_4;
   wire            memwb_reg_write;
@@ -1507,9 +1511,14 @@ module rv_core_pipelined #(
   end
   `endif
 
-  // FSW data path: Use FP register data for FP stores, integer register data for integer stores
-  wire [XLEN-1:0] ex_mem_write_data_mux;
-  assign ex_mem_write_data_mux = (idex_mem_write && idex_fp_mem_op) ? ex_fp_operand_b : ex_rs2_data_forwarded;
+  // Store data paths: Separate integer and FP paths for RV32D support
+  // Integer stores (SB, SH, SW, SD on RV64): Use forwarded integer rs2
+  // FP stores (FSW, FSD): Use FP register data
+  wire [XLEN-1:0] ex_mem_write_data_mux;       // Integer store data
+  wire [`FLEN-1:0] ex_fp_mem_write_data_mux;   // FP store data
+
+  assign ex_mem_write_data_mux    = ex_rs2_data_forwarded;  // Integer stores always use integer rs2
+  assign ex_fp_mem_write_data_mux = ex_fp_operand_b;        // FP stores use FP rs2
 
   //==========================================================================
   // EX/MEM Pipeline Register
@@ -1522,8 +1531,8 @@ module rv_core_pipelined #(
     .reset_n(reset_n),
     .hold(hold_exmem),
     .alu_result_in(ex_alu_result),
-    // For FP stores, use FP register data; for integer stores, use integer register data
-    .mem_write_data_in(ex_mem_write_data_mux),
+    .mem_write_data_in(ex_mem_write_data_mux),          // Integer store data
+    .fp_mem_write_data_in(ex_fp_mem_write_data_mux),    // FP store data
     .rd_addr_in(idex_rd_addr),
     .pc_plus_4_in(ex_pc_plus_4),
     .funct3_in(idex_funct3),
@@ -1550,7 +1559,8 @@ module rv_core_pipelined #(
     .pc_in(idex_pc),
     // Outputs
     .alu_result_out(exmem_alu_result),
-    .mem_write_data_out(exmem_mem_write_data),
+    .mem_write_data_out(exmem_mem_write_data),          // Integer store data
+    .fp_mem_write_data_out(exmem_fp_mem_write_data),    // FP store data
     .rd_addr_out(exmem_rd_addr),
     .pc_plus_4_out(exmem_pc_plus_4),
     .funct3_out(exmem_funct3),
@@ -1568,6 +1578,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_in(idex_fp_rd_addr),
     .fp_reg_write_in(idex_fp_reg_write),
     .int_reg_write_fp_in(idex_int_reg_write_fp),
+    .fp_mem_op_in(idex_fp_mem_op),
     .fp_fmt_in(idex_fp_fmt),
     .fp_flag_nv_in(ex_fp_flag_nv),
     .fp_flag_dz_in(ex_fp_flag_dz),
@@ -1580,6 +1591,7 @@ module rv_core_pipelined #(
     .fp_rd_addr_out(exmem_fp_rd_addr),
     .fp_reg_write_out(exmem_fp_reg_write),
     .int_reg_write_fp_out(exmem_int_reg_write_fp),
+    .fp_mem_op_out(exmem_fp_mem_op),
     .fp_fmt_out(exmem_fp_fmt),
     .fp_flag_nv_out(exmem_fp_flag_nv),
     .fp_flag_dz_out(exmem_fp_flag_dz),
@@ -1633,14 +1645,21 @@ module rv_core_pipelined #(
   // When atomic operation is executing, atomic unit controls memory
   // Otherwise, normal load/store path from MEM stage controls memory
   wire [XLEN-1:0] dmem_addr;
-  wire [XLEN-1:0] dmem_write_data;
+  wire [63:0]     dmem_write_data;  // 64-bit for RV32D/RV64D support
   wire            dmem_mem_read;
   wire            dmem_mem_write;
   wire [2:0]      dmem_funct3;
 
+  // Determine if this is an FP store operation (FSW or FSD)
+  // FP stores are memory write operations with fp_mem_op active
+  wire is_fp_store = exmem_mem_write && exmem_fp_mem_op;
+
   // Use atomic unit's memory interface when atomic unit is busy
+  // Otherwise, choose between integer and FP write data for stores
   assign dmem_addr       = ex_atomic_busy ? ex_atomic_mem_addr : exmem_alu_result;
-  assign dmem_write_data = ex_atomic_busy ? ex_atomic_mem_wdata : exmem_mem_write_data;
+  assign dmem_write_data = ex_atomic_busy ? {{(64-XLEN){1'b0}}, ex_atomic_mem_wdata} :  // Zero-extend atomic data
+                           is_fp_store    ? exmem_fp_mem_write_data :                    // FP store: use full FLEN bits
+                                            {{(64-XLEN){1'b0}}, exmem_mem_write_data};   // INT store: zero-extend to 64 bits
   assign dmem_mem_read   = ex_atomic_busy ? ex_atomic_mem_req && !ex_atomic_mem_we : exmem_mem_read;
   assign dmem_mem_write  = ex_atomic_busy ? ex_atomic_mem_req && ex_atomic_mem_we : mem_write_gated;
   assign dmem_funct3     = ex_atomic_busy ? ex_atomic_mem_size : exmem_funct3;
@@ -1713,11 +1732,11 @@ module rv_core_pipelined #(
   // Priority: PTW gets priority when active (MMU needs memory for page table walk)
   // Otherwise, normal data memory access
   wire [XLEN-1:0] arb_mem_addr;
-  wire [XLEN-1:0] arb_mem_write_data;
+  wire [63:0]     arb_mem_write_data;  // 64-bit for RV32D/RV64D support
   wire            arb_mem_read;
   wire            arb_mem_write;
   wire [2:0]      arb_mem_funct3;
-  wire [XLEN-1:0] arb_mem_read_data;
+  wire [63:0]     arb_mem_read_data;   // 64-bit for RV32D/RV64D support
 
   // When PTW is active, it gets priority
   // When PTW is not active, use translated address from MMU (or bypass if no MMU)
@@ -1749,6 +1768,7 @@ module rv_core_pipelined #(
   // Data Memory (connected via arbiter for MMU PTW access)
   data_memory #(
     .XLEN(XLEN),
+    .FLEN(`FLEN),
     .MEM_SIZE(DMEM_SIZE),
     .MEM_FILE(MEM_FILE)  // Load same file as instruction memory (for compliance tests)
   ) dmem (
@@ -1761,8 +1781,11 @@ module rv_core_pipelined #(
     .read_data(arb_mem_read_data)
   );
 
-  // Connect arbiter read data to both CPU and PTW
-  assign mem_read_data = arb_mem_read_data;
+  // Connect arbiter read data to both integer and FP paths
+  // For integer loads, use lower XLEN bits (with sign/zero extension handled in data_memory)
+  // For FP loads, use full FLEN bits
+  assign mem_read_data    = arb_mem_read_data[XLEN-1:0];  // Integer loads: lower bits
+  assign fp_mem_read_data = arb_mem_read_data;             // FP loads: full 64 bits
 
   // MEM/WB Pipeline Register
   memwb_register #(
@@ -1772,7 +1795,8 @@ module rv_core_pipelined #(
     .clk(clk),
     .reset_n(reset_n),
     .alu_result_in(exmem_alu_result),
-    .mem_read_data_in(mem_read_data),
+    .mem_read_data_in(mem_read_data),       // Integer load data
+    .fp_mem_read_data_in(fp_mem_read_data), // FP load data
     .rd_addr_in(exmem_rd_addr),
     .pc_plus_4_in(exmem_pc_plus_4),
     .reg_write_in(reg_write_gated),     // Gated to prevent write on exception
@@ -1796,7 +1820,8 @@ module rv_core_pipelined #(
     .csr_rdata_in(exmem_csr_rdata),
     // Outputs
     .alu_result_out(memwb_alu_result),
-    .mem_read_data_out(memwb_mem_read_data),
+    .mem_read_data_out(memwb_mem_read_data),       // Integer load data
+    .fp_mem_read_data_out(memwb_fp_mem_read_data), // FP load data
     .rd_addr_out(memwb_rd_addr),
     .pc_plus_4_out(memwb_pc_plus_4),
     .reg_write_out(memwb_reg_write),
@@ -1867,10 +1892,10 @@ module rv_core_pipelined #(
 
   // F/D Extension: FP Write-Back Data Selection
   // FP results go to FP register file, INT-to-FP conversions also go to FP register file
-  // FP loads (FLW/FLD) also write to FP register file through mem_read_data
+  // FP loads (FLW/FLD) also write to FP register file through fp_mem_read_data
   // Detect FP load by checking wb_sel == 001 (memory data) and fp_reg_write is set
-  assign wb_fp_data = (memwb_wb_sel == 3'b001) ? memwb_mem_read_data :  // FP load
-                      memwb_fp_result;                                    // FP ALU result
+  assign wb_fp_data = (memwb_wb_sel == 3'b001) ? memwb_fp_mem_read_data :  // FP load (uses separate FLEN-wide path)
+                      memwb_fp_result;                                       // FP ALU result
 
   // FP-to-INT operations write to integer register file via memwb_int_result_fp:
   // - FP compare (FEQ, FLT, FLE): wb_sel = 3'b110

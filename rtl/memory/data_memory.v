@@ -3,21 +3,23 @@
 // Author: RV1 Project
 // Date: 2025-10-09
 // Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit support)
+// Updated: 2025-10-22 - Added FLEN parameter for RV32D support (64-bit FP on 32-bit CPU)
 
 `include "config/rv_config.vh"
 
 module data_memory #(
-  parameter XLEN     = `XLEN,     // Data width: 32 or 64 bits
+  parameter XLEN     = `XLEN,     // Integer data width: 32 or 64 bits
+  parameter FLEN     = `FLEN,     // FP data width: 0 (no FPU), 32 (F-only), or 64 (F+D)
   parameter MEM_SIZE = 65536,     // Memory size in bytes (64KB default)
   parameter MEM_FILE = ""         // Hex file to initialize memory (for compliance tests)
 ) (
   input  wire             clk,         // Clock
   input  wire [XLEN-1:0]  addr,        // Byte address
-  input  wire [XLEN-1:0]  write_data,  // Data to write
+  input  wire [63:0]      write_data,  // Data to write (max 64-bit for RV32D/RV64D)
   input  wire             mem_read,    // Read enable
   input  wire             mem_write,   // Write enable
   input  wire [2:0]       funct3,      // Function3 for size/sign
-  output reg  [XLEN-1:0]  read_data    // Data read from memory
+  output reg  [63:0]      read_data    // Data read from memory (max 64-bit for RV32D/RV64D)
 );
 
   // Memory array (byte-addressable)
@@ -74,25 +76,15 @@ module data_memory #(
           mem[masked_addr + 3] <= write_data[31:24];
         end
         3'b011: begin  // SD/FSD (store doubleword) - supports RV64 and RV32D (FSD)
-          // For RV32D, write_data will be 32 bits, so we only write lower 32 bits here.
-          // Upper 32 bits for FSD in RV32D requires separate handling in the pipeline.
-          if (XLEN == 64) begin
-            mem[masked_addr]     <= write_data[7:0];
-            mem[masked_addr + 1] <= write_data[15:8];
-            mem[masked_addr + 2] <= write_data[23:16];
-            mem[masked_addr + 3] <= write_data[31:24];
-            mem[masked_addr + 4] <= write_data[39:32];
-            mem[masked_addr + 5] <= write_data[47:40];
-            mem[masked_addr + 6] <= write_data[55:48];
-            mem[masked_addr + 7] <= write_data[63:56];
-          end else begin
-            // RV32D: For now, just write lower 32 bits
-            // TODO: This is incorrect for FSD - need 64-bit write path
-            mem[masked_addr]     <= write_data[7:0];
-            mem[masked_addr + 1] <= write_data[15:8];
-            mem[masked_addr + 2] <= write_data[23:16];
-            mem[masked_addr + 3] <= write_data[31:24];
-          end
+          // Write full 64 bits - supports both RV64 SD and RV32D FSD
+          mem[masked_addr]     <= write_data[7:0];
+          mem[masked_addr + 1] <= write_data[15:8];
+          mem[masked_addr + 2] <= write_data[23:16];
+          mem[masked_addr + 3] <= write_data[31:24];
+          mem[masked_addr + 4] <= write_data[39:32];
+          mem[masked_addr + 5] <= write_data[47:40];
+          mem[masked_addr + 6] <= write_data[55:48];
+          mem[masked_addr + 7] <= write_data[63:56];
         end
       endcase
     end
@@ -103,41 +95,34 @@ module data_memory #(
     if (mem_read) begin
       case (funct3)
         3'b000: begin  // LB (load byte, sign-extended)
-          read_data = {{(XLEN-8){byte_data[7]}}, byte_data};
+          read_data = {{56{byte_data[7]}}, byte_data};
         end
         3'b001: begin  // LH (load halfword, sign-extended)
-          read_data = {{(XLEN-16){halfword_data[15]}}, halfword_data};
+          read_data = {{48{halfword_data[15]}}, halfword_data};
         end
-        3'b010: begin  // LW (load word, sign-extended for RV64)
-          if (XLEN == 64)
-            read_data = {{32{word_data[31]}}, word_data};  // Sign-extend for RV64
-          else
-            read_data = word_data;
+        3'b010: begin  // LW (load word, sign-extended for RV64, zero-extended for FLW)
+          // Sign-extend for RV64 LD, but upper bits will be ignored for FLW
+          read_data = {{32{word_data[31]}}, word_data};
         end
-        3'b011: begin  // LD (load doubleword - RV64 only)
-          if (XLEN == 64)
-            read_data = dword_data;
-          else
-            read_data = {XLEN{1'b0}};
+        3'b011: begin  // LD/FLD (load doubleword) - supports RV64 and RV32D
+          // Return full 64 bits - works for both RV64 LD and RV32D FLD
+          read_data = dword_data;
         end
         3'b100: begin  // LBU (load byte unsigned)
-          read_data = {{(XLEN-8){1'b0}}, byte_data};
+          read_data = {56'h0, byte_data};
         end
         3'b101: begin  // LHU (load halfword unsigned)
-          read_data = {{(XLEN-16){1'b0}}, halfword_data};
+          read_data = {48'h0, halfword_data};
         end
         3'b110: begin  // LWU (load word unsigned - RV64 only)
-          if (XLEN == 64)
-            read_data = {32'h0, word_data};  // Zero-extend for RV64
-          else
-            read_data = {XLEN{1'b0}};
+          read_data = {32'h0, word_data};
         end
         default: begin
-          read_data = {XLEN{1'b0}};
+          read_data = 64'h0;
         end
       endcase
     end else begin
-      read_data = {XLEN{1'b0}};
+      read_data = 64'h0;
     end
   end
 
