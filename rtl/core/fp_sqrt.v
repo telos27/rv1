@@ -123,7 +123,7 @@ module fp_sqrt #(
     end
 
     // Print COMPUTE initialization
-    if (state == COMPUTE && sqrt_counter == (MAN_WIDTH+4)-1) begin
+    if (state == COMPUTE && sqrt_counter == SQRT_CYCLES) begin
       $display("[SQRT_INIT] exp=%d exp_odd=%b exp_result=%d radicand_shift=0x%h",
                exp, exp[0],
                exp[0] ? (exp - BIAS) / 2 + BIAS : (exp - BIAS) / 2 + BIAS,
@@ -131,7 +131,7 @@ module fp_sqrt #(
     end
 
     // Print ALL iterations to debug
-    if (state == COMPUTE && sqrt_counter != (MAN_WIDTH+4)-1) begin
+    if (state == COMPUTE && sqrt_counter != SQRT_CYCLES) begin
       $display("[SQRT_ITER] counter=%0d root=0x%h rem=0x%h radicand=0x%h ac=0x%h test_val=0x%h accept=%b",
                sqrt_counter, root, remainder, radicand_shift, ac, test_val, test_positive);
     end
@@ -182,6 +182,10 @@ module fp_sqrt #(
         // UNPACK: Extract sign, exponent, mantissa
         // ============================================================
         UNPACK: begin
+          // Clear flags for new operation
+          flag_nv <= 1'b0;
+          flag_nx <= 1'b0;
+
           // Extract sign
           sign <= operand[FLEN-1];
 
@@ -202,15 +206,15 @@ module fp_sqrt #(
           is_negative <= operand[FLEN-1] && !((operand[FLEN-2:0] == 0));  // -0 is OK
 
           // Initialize counter for COMPUTE state
-          // Process 2 bits per iteration: need (MAN_WIDTH+4)/2 iterations
-          sqrt_counter <= SQRT_CYCLES - 1;  // Start at SQRT_CYCLES-1 for first iteration check
+          // Need SQRT_CYCLES iterations to get all mantissa bits + GRS
+          sqrt_counter <= SQRT_CYCLES;  // Start at SQRT_CYCLES for first iteration check
         end
 
         // ============================================================
         // COMPUTE: Iterative square root computation
         // ============================================================
         COMPUTE: begin
-          if (sqrt_counter == SQRT_CYCLES-1) begin
+          if (sqrt_counter == SQRT_CYCLES) begin
             // First iteration: special case handling and initialization
             if (is_nan) begin
               // sqrt(NaN) = NaN
@@ -251,7 +255,7 @@ module fp_sqrt #(
               // Start iteration (process 2 bits per cycle, radix-4)
               // Need SQRT_CYCLES iterations to compute all bits including GRS
               // Decrement counter to start iterations
-              sqrt_counter <= SQRT_CYCLES - 2;
+              sqrt_counter <= SQRT_CYCLES - 1;
             end
           end else begin
             // Digit-by-digit sqrt iteration (2 bits per cycle, radix-4)
@@ -290,25 +294,26 @@ module fp_sqrt #(
         // ROUND: Apply rounding mode
         // ============================================================
         ROUND: begin
-          // Determine if we should round up
+          // Determine if we should round up (computed combinationally)
+          // Must be computed here to use in same cycle
           case (rounding_mode)
             3'b000: begin  // RNE: Round to nearest, ties to even
-              round_up <= guard && (round || sticky || root[3]);
+              round_up = guard && (round || sticky || root[3]);
             end
             3'b001: begin  // RTZ: Round toward zero
-              round_up <= 1'b0;
+              round_up = 1'b0;
             end
             3'b010: begin  // RDN: Round down (toward -∞)
-              round_up <= 1'b0;  // sqrt is always positive
+              round_up = 1'b0;  // sqrt is always positive
             end
             3'b011: begin  // RUP: Round up (toward +∞)
-              round_up <= guard || round || sticky;
+              round_up = guard || round || sticky;
             end
             3'b100: begin  // RMM: Round to nearest, ties to max magnitude
-              round_up <= guard;
+              round_up = guard;
             end
             default: begin
-              round_up <= 1'b0;
+              round_up = 1'b0;
             end
           endcase
 
