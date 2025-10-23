@@ -1,9 +1,9 @@
 # Bug #43: F+D Mixed Precision Support Incomplete
 
-**Status**: 🚧 ROOT CAUSE IDENTIFIED - Multi-session fix required
-**Severity**: HIGH (blocks all RV32F tests)
+**Status**: 🚧 PHASE 1 COMPLETE - Phase 2 in progress (4/10 modules fixed)
+**Severity**: HIGH (blocks most RV32F tests)
 **Discovered**: 2025-10-22
-**Progress**: Analysis complete, 1/10 modules fixed
+**Progress**: Phase 1 complete (3/3 simple modules) + Phase 2 partial (1/7 complex modules)
 
 ---
 
@@ -14,6 +14,7 @@ The RV32D refactoring (Bugs #27 & #28) successfully widened the FP register file
 **Impact**:
 - **Before RV32D refactoring** (commit 7dc1afd): RV32UF 11/11 (100%) ✅
 - **After RV32D refactoring** (commit 747a716): RV32UF 1/11 (9%) ❌ - only ldst passes
+- **After Phase 1 fixes** (2025-10-23): RV32UF 4/11 (36%) 🚧 - ldst, fclass, fcmp, fmin passing
 
 ---
 
@@ -69,54 +70,65 @@ Some tests timeout with 99.8% pipeline flush rate, indicating undefined (X) valu
 
 ## Affected Modules
 
-### Critical (Must Fix)
+### Phase 1: Simple Modules (Combinational) ✅ COMPLETE
 
-1. **fp_sign.v** ✅ **FIXED**
+1. **fp_sign.v** ✅ **FIXED** (2025-10-22)
    - **Issue**: Sign bit extracted from [FLEN-1] instead of [31] for single-precision
    - **Fix**: Added `fmt` input, use generate block for FLEN=64/32 cases
-   - **Status**: Complete
+   - **Impact**: FSGNJ.S, FSGNJN.S, FSGNJX.S now working
 
-2. **fp_compare.v** ❌ **TODO**
+2. **fp_compare.v** ✅ **FIXED** (2025-10-23)
    - **Issue**: Compares using wrong exponent/mantissa bit positions
-   - **Impact**: FEQ.S, FLT.S, FLE.S all broken
-   - **Lines**: 24-33 (field extraction)
+   - **Fix**: Format-aware field extraction with generate blocks
+   - **Impact**: FEQ.S, FLT.S, FLE.S now working → **fcmp test PASSING** ✅
 
-3. **fp_classify.v** ❌ **TODO**
+3. **fp_classify.v** ✅ **FIXED** (2025-10-23)
    - **Issue**: Classifies using wrong bit positions
-   - **Impact**: FCLASS.S returns incorrect class
-   - **Lines**: 21-23 (field extraction)
+   - **Fix**: Format-aware field extraction and special value detection
+   - **Impact**: FCLASS.S now working → **fclass test PASSING** ✅
 
-4. **fp_minmax.v** ❌ **TODO**
+4. **fp_minmax.v** ✅ **FIXED** (2025-10-23)
    - **Issue**: Min/max comparison uses wrong fields
-   - **Impact**: FMIN.S, FMAX.S incorrect results
-   - **Need to check**: Likely extracts sign or does direct comparison
+   - **Fix**: Format-aware field extraction and canonical NaN handling
+   - **Impact**: FMIN.S, FMAX.S now working → **fmin test PASSING** ✅
 
-### Medium Priority (Arithmetic Units)
+### Phase 2: Complex Modules (Multi-cycle State Machines) 🚧 IN PROGRESS
 
-5. **fp_adder.v** ❌ **TODO**
-   - **Issue**: Exponent/mantissa extraction for alignment
-   - **Impact**: FADD.S, FSUB.S incorrect results
-   - **Need to check**: Internal field extraction logic
+5. **fp_adder.v** ✅ **FIXED** (2025-10-23)
+   - **Issue**: UNPACK/ALIGN/NORMALIZE/ROUND stages use FLEN-relative positions
+   - **Fix**: Complete refactoring with fmt_latched, format-aware extraction/assembly
+   - **Changes**:
+     - Added fmt input and fmt_latched register
+     - UNPACK: Format-aware field extraction from [31:0] vs [63:0]
+     - ALIGN: Format-aware special case handling (NaN, Inf, Zero)
+     - NORMALIZE: Format-aware overflow detection
+     - ROUND: Format-aware result assembly with NaN-boxing
+   - **Status**: Code complete, needs debugging (fadd test still failing)
 
 6. **fp_multiplier.v** ❌ **TODO**
-   - **Issue**: Similar field extraction issues
-   - **Impact**: FMUL.S incorrect results
+   - **Issue**: Similar field extraction issues in UNPACK/NORMALIZE/ROUND
+   - **Impact**: FMUL.S incorrect results, affects fmadd/recoding tests
+   - **Estimate**: 1-2 hours (similar pattern to fp_adder)
 
 7. **fp_divider.v** ❌ **TODO**
    - **Issue**: Similar field extraction issues
-   - **Impact**: FDIV.S incorrect results
+   - **Impact**: FDIV.S incorrect results → fdiv test failing
+   - **Estimate**: 1-2 hours
 
 8. **fp_sqrt.v** ❌ **TODO**
    - **Issue**: Similar field extraction issues
-   - **Impact**: FSQRT.S incorrect results
+   - **Impact**: FSQRT.S incorrect results (tested in fdiv test)
+   - **Estimate**: 1-2 hours
 
-9. **fp_fma.v** ❌ **TODO**
-   - **Issue**: Uses adder/multiplier internals, may inherit issues
+9. **fp_fma.v** ⚠️ **LOW PRIORITY**
+   - **Issue**: May inherit issues from adder/multiplier
    - **Impact**: FMADD.S, FMSUB.S, FNMADD.S, FNMSUB.S incorrect
+   - **Note**: Should work once adder and multiplier are fixed
 
-10. **fp_converter.v** ❌ **TODO**
+10. **fp_converter.v** ⚠️ **LOW PRIORITY**
     - **Issue**: INT↔FP conversion may have field extraction issues
     - **Impact**: FCVT.S.W, FCVT.W.S, etc. incorrect
+    - **Note**: Complex module, lower priority for initial F extension support
     - **Priority**: High (affects many tests)
 
 ---

@@ -9,6 +9,9 @@ module fp_classify #(
   // Operand
   input  wire [FLEN-1:0]   operand,
 
+  // Control
+  input  wire              fmt,          // 0: single-precision, 1: double-precision
+
   // Result (10-bit mask, written to integer register)
   output reg  [31:0]       result       // 10-bit mask zero-extended to 32 bits
 );
@@ -17,10 +20,27 @@ module fp_classify #(
   localparam EXP_WIDTH = (FLEN == 32) ? 8 : 11;
   localparam MAN_WIDTH = (FLEN == 32) ? 23 : 52;
 
-  // Extract components
-  wire sign = operand[FLEN-1];
-  wire [EXP_WIDTH-1:0] exp = operand[FLEN-2:MAN_WIDTH];
-  wire [MAN_WIDTH-1:0] man = operand[MAN_WIDTH-1:0];
+  // Extract components based on format
+  // For FLEN=64 with single-precision (fmt=0): use bits [31:0] (NaN-boxed in [63:32])
+  // For FLEN=64 with double-precision (fmt=1): use bits [63:0]
+  // For FLEN=32: always single-precision
+  wire sign;
+  wire [10:0] exp;  // Max exponent width (11 bits for double)
+  wire [51:0] man;  // Max mantissa width (52 bits for double)
+
+  generate
+    if (FLEN == 64) begin : g_flen64
+      // For FLEN=64, support both single and double precision
+      assign sign = fmt ? operand[63] : operand[31];
+      assign exp = fmt ? operand[62:52] : {3'b000, operand[30:23]};
+      assign man = fmt ? operand[51:0] : {29'b0, operand[22:0]};
+    end else begin : g_flen32
+      // For FLEN=32, only single-precision supported
+      assign sign = operand[31];
+      assign exp = {3'b000, operand[30:23]};
+      assign man = {29'b0, operand[22:0]};
+    end
+  endgenerate
 
   // Classification bits (one-hot encoding)
   // Bit 0: Negative infinity
@@ -34,13 +54,17 @@ module fp_classify #(
   // Bit 8: Signaling NaN
   // Bit 9: Quiet NaN
 
+  // Effective exponent all-ones pattern based on format
+  wire [10:0] exp_all_ones = fmt ? 11'h7FF : 11'h0FF;
+  wire man_msb = fmt ? man[51] : man[22];  // MSB for NaN detection
+
   wire is_zero = (exp == 0) && (man == 0);
   wire is_subnormal = (exp == 0) && (man != 0);
-  wire is_normal = (exp != 0) && (exp != {EXP_WIDTH{1'b1}});
-  wire is_inf = (exp == {EXP_WIDTH{1'b1}}) && (man == 0);
-  wire is_nan = (exp == {EXP_WIDTH{1'b1}}) && (man != 0);
-  wire is_snan = is_nan && !man[MAN_WIDTH-1];  // Signaling NaN: MSB of mantissa = 0
-  wire is_qnan = is_nan && man[MAN_WIDTH-1];   // Quiet NaN: MSB of mantissa = 1
+  wire is_normal = (exp != 0) && (exp != exp_all_ones);
+  wire is_inf = (exp == exp_all_ones) && (man == 0);
+  wire is_nan = (exp == exp_all_ones) && (man != 0);
+  wire is_snan = is_nan && !man_msb;  // Signaling NaN: MSB of mantissa = 0
+  wire is_qnan = is_nan && man_msb;   // Quiet NaN: MSB of mantissa = 1
 
   always @(*) begin
     result = 32'd0;  // Default: all zeros

@@ -12,6 +12,7 @@ module fp_compare #(
 
   // Control (operation select)
   input  wire [1:0]        operation,   // 00: FEQ, 01: FLT, 10: FLE
+  input  wire              fmt,          // 0: single-precision, 1: double-precision
 
   // Result (written to integer register)
   output reg  [31:0]       result,      // 0 or 1 (zero-extended to 32 bits)
@@ -24,25 +25,53 @@ module fp_compare #(
   localparam EXP_WIDTH = (FLEN == 32) ? 8 : 11;
   localparam MAN_WIDTH = (FLEN == 32) ? 23 : 52;
 
-  // Extract components
-  wire sign_a = operand_a[FLEN-1];
-  wire sign_b = operand_b[FLEN-1];
-  wire [EXP_WIDTH-1:0] exp_a = operand_a[FLEN-2:MAN_WIDTH];
-  wire [EXP_WIDTH-1:0] exp_b = operand_b[FLEN-2:MAN_WIDTH];
-  wire [MAN_WIDTH-1:0] man_a = operand_a[MAN_WIDTH-1:0];
-  wire [MAN_WIDTH-1:0] man_b = operand_b[MAN_WIDTH-1:0];
+  // Extract components based on format
+  // For FLEN=64 with single-precision (fmt=0): use bits [31:0] (NaN-boxed in [63:32])
+  // For FLEN=64 with double-precision (fmt=1): use bits [63:0]
+  // For FLEN=32: always single-precision
+  wire sign_a;
+  wire sign_b;
+  wire [10:0] exp_a;  // Max exponent width (11 bits for double)
+  wire [10:0] exp_b;
+  wire [51:0] man_a;  // Max mantissa width (52 bits for double)
+  wire [51:0] man_b;
+
+  generate
+    if (FLEN == 64) begin : g_flen64
+      // For FLEN=64, support both single and double precision
+      assign sign_a = fmt ? operand_a[63] : operand_a[31];
+      assign sign_b = fmt ? operand_b[63] : operand_b[31];
+      assign exp_a = fmt ? operand_a[62:52] : {3'b000, operand_a[30:23]};
+      assign exp_b = fmt ? operand_b[62:52] : {3'b000, operand_b[30:23]};
+      assign man_a = fmt ? operand_a[51:0] : {29'b0, operand_a[22:0]};
+      assign man_b = fmt ? operand_b[51:0] : {29'b0, operand_b[22:0]};
+    end else begin : g_flen32
+      // For FLEN=32, only single-precision supported
+      assign sign_a = operand_a[31];
+      assign sign_b = operand_b[31];
+      assign exp_a = {3'b000, operand_a[30:23]};
+      assign exp_b = {3'b000, operand_b[30:23]};
+      assign man_a = {29'b0, operand_a[22:0]};
+      assign man_b = {29'b0, operand_b[22:0]};
+    end
+  endgenerate
+
+  // Effective exponent/mantissa widths based on format
+  wire [10:0] exp_all_ones = fmt ? 11'h7FF : 11'h0FF;  // All 1s for current format
+  wire man_msb_a = fmt ? man_a[51] : man_a[22];         // MSB for NaN detection
+  wire man_msb_b = fmt ? man_b[51] : man_b[22];
 
   // Detect special values
-  wire is_nan_a = (exp_a == {EXP_WIDTH{1'b1}}) && (man_a != 0);
-  wire is_nan_b = (exp_b == {EXP_WIDTH{1'b1}}) && (man_b != 0);
-  wire is_snan_a = is_nan_a && !man_a[MAN_WIDTH-1];  // Signaling NaN has MSB=0
-  wire is_snan_b = is_nan_b && !man_b[MAN_WIDTH-1];
-  wire is_qnan_a = is_nan_a && man_a[MAN_WIDTH-1];   // Quiet NaN has MSB=1
-  wire is_qnan_b = is_nan_b && man_b[MAN_WIDTH-1];
+  wire is_nan_a = (exp_a == exp_all_ones) && (man_a != 0);
+  wire is_nan_b = (exp_b == exp_all_ones) && (man_b != 0);
+  wire is_snan_a = is_nan_a && !man_msb_a;  // Signaling NaN has MSB=0
+  wire is_snan_b = is_nan_b && !man_msb_b;
+  wire is_qnan_a = is_nan_a && man_msb_a;   // Quiet NaN has MSB=1
+  wire is_qnan_b = is_nan_b && man_msb_b;
 
-  // Check for zero (both +0 and -0)
-  wire is_zero_a = (operand_a[FLEN-2:0] == 0);
-  wire is_zero_b = (operand_b[FLEN-2:0] == 0);
+  // Check for zero (both +0 and -0) - exponent and mantissa both zero
+  wire is_zero_a = (exp_a == 0) && (man_a == 0);
+  wire is_zero_b = (exp_b == 0) && (man_b == 0);
 
   // Check for both zeros (+0 == -0 in IEEE 754)
   wire both_zero = is_zero_a && is_zero_b;
@@ -60,8 +89,9 @@ module fp_compare #(
   wire signs_differ = sign_a != sign_b;
 
   // For positive numbers or when comparing magnitudes
-  wire mag_a_less_than_b = operand_a[FLEN-2:0] < operand_b[FLEN-2:0];
-  wire a_equal_b = (operand_a == operand_b);
+  // Compare exponent first, then mantissa
+  wire mag_a_less_than_b = (exp_a < exp_b) || ((exp_a == exp_b) && (man_a < man_b));
+  wire a_equal_b = (sign_a == sign_b) && (exp_a == exp_b) && (man_a == man_b);
 
   // True FP less-than comparison
   wire a_less_than_b = both_zero ? 1'b0 :  // +0 and -0 are equal, not less than

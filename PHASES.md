@@ -630,8 +630,8 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 1    | 9%   | ❌ REGRESSION - Bug #43: F+D mixed precision support needed |
-| RV32D     | 9     | 1    | 11%  | 🚧 In Progress - Blocked by Bug #43 |
+| RV32F     | 11    | 4    | 36%  | 🚧 Bug #43 Phase 1 COMPLETE - Phase 2 in progress |
+| RV32D     | 9     | 1    | 11%  | 🚧 In Progress - Blocked by Bug #43 Phase 2 |
 
 ### Custom Test Coverage
 - **Unit tests**: All modules have dedicated unit tests
@@ -669,6 +669,7 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-23**: Bug #43 Phase 1 COMPLETE - Phase 2 partial (fp_adder) - RV32F 4/11 (36%) - fclass, fcmp, fmin passing ✅
 **2025-10-22 (evening)**: Bug #43 identified - F+D mixed precision support incomplete - RV32F regressed 11/11 → 1/11 ❌
 **2025-10-22 (afternoon)**: RV32D FLEN refactoring - Bugs #27 & #28 COMPLETE - Memory interface widened to 64-bit, 1/9 tests passing ✅
 **2025-10-21 (late PM)**: RV32F completion - All remaining FPU tests passing! RV32UF 11/11 (100%) ✅

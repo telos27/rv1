@@ -78,6 +78,10 @@ module fpu #(
   localparam FP_MV_XW  = 5'b10001;  // FMV.X.W (bitcast FP→INT, 1 cycle)
   localparam FP_MV_WX  = 5'b10010;  // FMV.W.X (bitcast INT→FP, 1 cycle)
 
+  // Extract format from funct7[1:0]: 00=single, 01=double
+  // For single-precision: fmt=0, for double-precision: fmt=1
+  wire fmt = funct7[0];  // Bit 0 distinguishes single (0) from double (1)
+
   // ========================================
   // FP Adder/Subtractor
   // ========================================
@@ -106,6 +110,7 @@ module fpu #(
     .reset_n        (reset_n),
     .start          (adder_start),
     .is_sub         (fp_alu_op == FP_SUB),
+    .fmt            (fmt),
     .rounding_mode  (rounding_mode),
     .busy           (adder_busy),
     .done           (adder_done),
@@ -276,6 +281,7 @@ module fpu #(
     .operand_a      (operand_a),
     .operand_b      (operand_b),
     .is_max         (minmax_is_max),
+    .fmt            (fmt),
     .result         (minmax_result),
     .flag_nv        (minmax_flag_nv)
   );
@@ -300,6 +306,7 @@ module fpu #(
     .operand_a      (operand_a),
     .operand_b      (operand_b),
     .operation      (cmp_op),
+    .fmt            (fmt),
     .result         (cmp_result),
     .flag_nv        (cmp_flag_nv)
   );
@@ -311,6 +318,7 @@ module fpu #(
 
   fp_classify #(.FLEN(FLEN)) u_fp_classify (
     .operand        (operand_a),
+    .fmt            (fmt),
     .result         (class_result)
   );
 

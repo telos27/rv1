@@ -12,6 +12,7 @@ module fp_adder #(
   // Control
   input  wire              start,          // Start operation
   input  wire              is_sub,         // 0: ADD, 1: SUB
+  input  wire              fmt,            // 0: single-precision, 1: double-precision
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
   output reg               busy,           // Operation in progress
   output reg               done,           // Operation complete (1 cycle pulse)
@@ -47,22 +48,23 @@ module fp_adder #(
 
   reg [2:0] state, next_state;
 
-  // Unpacked operands
+  // Unpacked operands (use max widths for both formats)
   reg sign_a, sign_b, sign_result;
-  reg [EXP_WIDTH-1:0] exp_a, exp_b, exp_result;
-  reg [MAN_WIDTH:0] man_a, man_b;  // +1 bit for implicit leading 1
+  reg [10:0] exp_a, exp_b, exp_result;  // Max 11 bits for double-precision
+  reg [52:0] man_a, man_b;              // Max 53 bits (52+1 implicit) for double-precision
+  reg fmt_latched;                      // Latched format signal
 
   // Special value flags
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
   reg is_subnormal_a, is_subnormal_b;
   reg special_case_handled;  // Track if special case was processed in ALIGN stage
 
-  // Computation
-  reg [MAN_WIDTH+3:0] aligned_man_a, aligned_man_b;  // +3 for GRS bits
-  reg [MAN_WIDTH+4:0] sum;  // +1 for overflow
-  reg [EXP_WIDTH:0] exp_diff;  // +1 bit to handle full range
-  reg [MAN_WIDTH+4:0] normalized_man;
-  reg [EXP_WIDTH:0] adjusted_exp;
+  // Computation (use max widths)
+  reg [55:0] aligned_man_a, aligned_man_b;  // 52+3 GRS bits + 1 for alignment
+  reg [56:0] sum;                            // +1 for overflow
+  reg [11:0] exp_diff;                       // 11+1 bits
+  reg [56:0] normalized_man;
+  reg [11:0] adjusted_exp;
 
   // Rounding
   reg guard, round, sticky;
@@ -130,37 +132,82 @@ module fp_adder #(
           // Clear special case flag for new operation
           special_case_handled <= 1'b0;
 
-          // Extract sign
-          sign_a <= operand_a[FLEN-1];
-          sign_b <= operand_b[FLEN-1] ^ is_sub;  // Flip sign for subtraction
+          // Latch format signal
+          fmt_latched <= fmt;
 
-          // Extract exponent
-          exp_a <= operand_a[FLEN-2:MAN_WIDTH];
-          exp_b <= operand_b[FLEN-2:MAN_WIDTH];
+          // Format-aware extraction for FLEN=64
+          if (FLEN == 64) begin
+            if (fmt) begin
+              // Double-precision: use bits [63:0]
+              sign_a <= operand_a[63];
+              sign_b <= operand_b[63] ^ is_sub;
+              exp_a  <= operand_a[62:52];
+              exp_b  <= operand_b[62:52];
 
-          // Extract mantissa and add implicit leading 1 (if normalized)
-          is_subnormal_a <= (operand_a[FLEN-2:MAN_WIDTH] == 0) && (operand_a[MAN_WIDTH-1:0] != 0);
-          is_subnormal_b <= (operand_b[FLEN-2:MAN_WIDTH] == 0) && (operand_b[MAN_WIDTH-1:0] != 0);
+              is_subnormal_a <= (operand_a[62:52] == 0) && (operand_a[51:0] != 0);
+              is_subnormal_b <= (operand_b[62:52] == 0) && (operand_b[51:0] != 0);
 
-          man_a <= (operand_a[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_a[MAN_WIDTH-1:0]} :  // Subnormal: no implicit 1
-                   {1'b1, operand_a[MAN_WIDTH-1:0]};   // Normal: implicit 1
+              man_a <= (operand_a[62:52] == 0) ?
+                       {1'b0, operand_a[51:0]} :
+                       {1'b1, operand_a[51:0]};
+              man_b <= (operand_b[62:52] == 0) ?
+                       {1'b0, operand_b[51:0]} :
+                       {1'b1, operand_b[51:0]};
 
-          man_b <= (operand_b[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_b[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_b[MAN_WIDTH-1:0]};
+              is_nan_a <= (operand_a[62:52] == 11'h7FF) && (operand_a[51:0] != 0);
+              is_nan_b <= (operand_b[62:52] == 11'h7FF) && (operand_b[51:0] != 0);
+              is_inf_a <= (operand_a[62:52] == 11'h7FF) && (operand_a[51:0] == 0);
+              is_inf_b <= (operand_b[62:52] == 11'h7FF) && (operand_b[51:0] == 0);
+              is_zero_a <= (operand_a[62:0] == 0);
+              is_zero_b <= (operand_b[62:0] == 0);
+            end else begin
+              // Single-precision: use bits [31:0] (NaN-boxed in [63:32])
+              sign_a <= operand_a[31];
+              sign_b <= operand_b[31] ^ is_sub;
+              exp_a  <= {3'b000, operand_a[30:23]};
+              exp_b  <= {3'b000, operand_b[30:23]};
 
-          // Detect special values
-          is_nan_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] != 0);
-          is_nan_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] != 0);
-          is_inf_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] == 0);
-          is_inf_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] == 0);
-          is_zero_a <= (operand_a[FLEN-2:0] == 0);
-          is_zero_b <= (operand_b[FLEN-2:0] == 0);
+              is_subnormal_a <= (operand_a[30:23] == 0) && (operand_a[22:0] != 0);
+              is_subnormal_b <= (operand_b[30:23] == 0) && (operand_b[22:0] != 0);
+
+              man_a <= (operand_a[30:23] == 0) ?
+                       {1'b0, operand_a[22:0], 29'b0} :
+                       {1'b1, operand_a[22:0], 29'b0};
+              man_b <= (operand_b[30:23] == 0) ?
+                       {1'b0, operand_b[22:0], 29'b0} :
+                       {1'b1, operand_b[22:0], 29'b0};
+
+              is_nan_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 0);
+              is_nan_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 0);
+              is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
+              is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
+              is_zero_a <= (operand_a[30:0] == 0);
+              is_zero_b <= (operand_b[30:0] == 0);
+            end
+          end else begin
+            // FLEN=32: always single-precision
+            sign_a <= operand_a[31];
+            sign_b <= operand_b[31] ^ is_sub;
+            exp_a  <= {3'b000, operand_a[30:23]};
+            exp_b  <= {3'b000, operand_b[30:23]};
+
+            is_subnormal_a <= (operand_a[30:23] == 0) && (operand_a[22:0] != 0);
+            is_subnormal_b <= (operand_b[30:23] == 0) && (operand_b[22:0] != 0);
+
+            man_a <= (operand_a[30:23] == 0) ?
+                     {1'b0, operand_a[22:0], 29'b0} :
+                     {1'b1, operand_a[22:0], 29'b0};
+            man_b <= (operand_b[30:23] == 0) ?
+                     {1'b0, operand_b[22:0], 29'b0} :
+                     {1'b1, operand_b[22:0], 29'b0};
+
+            is_nan_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 0);
+            is_nan_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 0);
+            is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
+            is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
+            is_zero_a <= (operand_a[30:0] == 0);
+            is_zero_b <= (operand_b[30:0] == 0);
+          end
         end
 
         // ============================================================
@@ -173,8 +220,13 @@ module fp_adder #(
           `endif
           // Handle special cases first
           if (is_nan_a || is_nan_b) begin
-            // NaN propagation: return canonical NaN
-            result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+            // NaN propagation: return canonical NaN based on format
+            if (FLEN == 64 && fmt_latched)
+              result <= 64'h7FF8000000000000;  // Double canonical NaN
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single canonical NaN (NaN-boxed)
+            else
+              result <= 32'h7FC00000;  // FLEN=32 single canonical NaN
             flag_nv <= 1'b1;  // Invalid operation
             flag_nx <= 1'b0;  // Clear inexact flag for special cases
             flag_of <= 1'b0;
@@ -185,7 +237,12 @@ module fp_adder #(
             `endif
           end else if (is_inf_a && is_inf_b && (sign_a != sign_b)) begin
             // ∞ - ∞: Invalid
-            result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+            if (FLEN == 64 && fmt_latched)
+              result <= 64'h7FF8000000000000;  // Double canonical NaN
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single canonical NaN (NaN-boxed)
+            else
+              result <= 32'h7FC00000;  // FLEN=32 single canonical NaN
             flag_nv <= 1'b1;
             flag_nx <= 1'b0;  // Clear inexact flag for invalid operations
             flag_of <= 1'b0;
@@ -196,7 +253,12 @@ module fp_adder #(
             `endif
           end else if (is_inf_a) begin
             // a is ∞: return a (exact result, no exceptions)
-            result <= {sign_a, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            if (FLEN == 64 && fmt_latched)
+              result <= {sign_a, 11'h7FF, 52'h0};  // Double infinity
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_a, 8'hFF, 23'h0};  // Single infinity (NaN-boxed)
+            else
+              result <= {sign_a, 8'hFF, 23'h0};  // FLEN=32 single infinity
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
@@ -207,7 +269,12 @@ module fp_adder #(
             `endif
           end else if (is_inf_b) begin
             // b is ∞: return b (exact result, no exceptions)
-            result <= {sign_b, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            if (FLEN == 64 && fmt_latched)
+              result <= {sign_b, 11'h7FF, 52'h0};  // Double infinity
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_b, 8'hFF, 23'h0};  // Single infinity (NaN-boxed)
+            else
+              result <= {sign_b, 8'hFF, 23'h0};  // FLEN=32 single infinity
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
@@ -323,9 +390,14 @@ module fp_adder #(
 
           adjusted_exp <= exp_result;
 
-          // Check for zero result
+          // Check for zero result (format-aware)
           if (sum == 0) begin
-            result <= {sign_result, {FLEN-1{1'b0}}};
+            if (FLEN == 64 && fmt_latched)
+              result <= {sign_result, 63'b0};  // Double zero
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_result, 31'b0};  // Single zero (NaN-boxed)
+            else
+              result <= {sign_result, 31'b0};  // FLEN=32 single zero
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] NORMALIZE: sum is zero, returning zero");
             `endif
@@ -397,11 +469,18 @@ module fp_adder #(
             end
           end
 
-          // Check for overflow
-          if (adjusted_exp >= MAX_EXP) begin
+          // Check for overflow (format-aware)
+          if ((FLEN == 64 && fmt_latched && adjusted_exp >= 12'd2047) ||
+              (FLEN == 64 && !fmt_latched && adjusted_exp >= 12'd255) ||
+              (FLEN == 32 && adjusted_exp >= 12'd255)) begin
             flag_of <= 1'b1;
-            // Return ±infinity based on rounding mode
-            result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            // Return ±infinity based on format
+            if (FLEN == 64 && fmt_latched)
+              result <= {sign_result, 11'h7FF, 52'h0};  // Double infinity
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // Single infinity (NaN-boxed)
+            else
+              result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 single infinity
             `ifdef DEBUG_FPU
             $display("[FP_ADDER] NORMALIZE: exponent overflow, returning Inf");
             `endif
@@ -420,18 +499,40 @@ module fp_adder #(
             `endif
 
             // Apply rounding (using combinational round_up_comb)
-            // Extract mantissa without implicit 1: normalized_man[MAN_WIDTH+2:3]
-            // This gives us 23 bits for single-precision (bits 25:3)
-            `ifdef DEBUG_FPU
-            $display("[FP_ADDER] ROUND: sign=%b exp=%h man=%h round_up=%b",
-                     sign_result, adjusted_exp[EXP_WIDTH-1:0], normalized_man[MAN_WIDTH+2:3], round_up_comb);
-            `endif
-            if (round_up_comb) begin
-              result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
-                         normalized_man[MAN_WIDTH+2:3] + 1'b1};
+            // Format-aware result assembly
+            if (FLEN == 64 && fmt_latched) begin
+              // Double-precision: 64-bit result
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] ROUND (double): sign=%b exp=%h man=%h round_up=%b",
+                       sign_result, adjusted_exp[10:0], normalized_man[54:3], round_up_comb);
+              `endif
+              if (round_up_comb) begin
+                result <= {sign_result, adjusted_exp[10:0], normalized_man[54:3] + 1'b1};
+              end else begin
+                result <= {sign_result, adjusted_exp[10:0], normalized_man[54:3]};
+              end
+            end else if (FLEN == 64 && !fmt_latched) begin
+              // Single-precision in 64-bit register (NaN-boxed)
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] ROUND (single/64): sign=%b exp=%h man=%h round_up=%b",
+                       sign_result, adjusted_exp[7:0], normalized_man[25:3], round_up_comb);
+              `endif
+              if (round_up_comb) begin
+                result <= {32'hFFFFFFFF, sign_result, adjusted_exp[7:0], normalized_man[25:3] + 1'b1};
+              end else begin
+                result <= {32'hFFFFFFFF, sign_result, adjusted_exp[7:0], normalized_man[25:3]};
+              end
             end else begin
-              result <= {sign_result, adjusted_exp[EXP_WIDTH-1:0],
-                         normalized_man[MAN_WIDTH+2:3]};
+              // FLEN=32: single-precision in 32-bit register
+              `ifdef DEBUG_FPU
+              $display("[FP_ADDER] ROUND (single/32): sign=%b exp=%h man=%h round_up=%b",
+                       sign_result, adjusted_exp[7:0], normalized_man[25:3], round_up_comb);
+              `endif
+              if (round_up_comb) begin
+                result <= {sign_result, adjusted_exp[7:0], normalized_man[25:3] + 1'b1};
+              end else begin
+                result <= {sign_result, adjusted_exp[7:0], normalized_man[25:3]};
+              end
             end
 
             // Set inexact flag (only for normal cases)
