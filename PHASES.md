@@ -669,7 +669,8 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
-**2025-10-23**: Bug #43 Phase 1 COMPLETE - Phase 2 partial (fp_adder) - RV32F 4/11 (36%) - fclass, fcmp, fmin passing ✅
+**2025-10-23 (PM)**: Bug #43 Phase 2.1 COMPLETE - fp_adder.v FIXED - fadd test #5 → #8, FADD/FSUB working ✅
+**2025-10-23 (AM)**: Bug #43 Phase 1 COMPLETE - Phase 2 partial (fp_adder) - RV32F 4/11 (36%) - fclass, fcmp, fmin passing ✅
 **2025-10-22 (evening)**: Bug #43 identified - F+D mixed precision support incomplete - RV32F regressed 11/11 → 1/11 ❌
 **2025-10-22 (afternoon)**: RV32D FLEN refactoring - Bugs #27 & #28 COMPLETE - Memory interface widened to 64-bit, 1/9 tests passing ✅
 **2025-10-21 (late PM)**: RV32F completion - All remaining FPU tests passing! RV32UF 11/11 (100%) ✅

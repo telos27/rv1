@@ -1,9 +1,9 @@
 # Bug #43: F+D Mixed Precision Support Incomplete
 
-**Status**: 🚧 PHASE 1 COMPLETE - Phase 2 in progress (4/10 modules fixed)
+**Status**: 🚧 PHASE 2 PARTIAL - fp_adder fixed, fp_multiplier next (5/10 modules fixed)
 **Severity**: HIGH (blocks most RV32F tests)
 **Discovered**: 2025-10-22
-**Progress**: Phase 1 complete (3/3 simple modules) + Phase 2 partial (1/7 complex modules)
+**Progress**: Phase 1 complete (4/4 simple modules) + Phase 2 partial (1/6 complex modules fixed)
 
 ---
 
@@ -95,15 +95,15 @@ Some tests timeout with 99.8% pipeline flush rate, indicating undefined (X) valu
 ### Phase 2: Complex Modules (Multi-cycle State Machines) 🚧 IN PROGRESS
 
 5. **fp_adder.v** ✅ **FIXED** (2025-10-23)
-   - **Issue**: UNPACK/ALIGN/NORMALIZE/ROUND stages use FLEN-relative positions
-   - **Fix**: Complete refactoring with fmt_latched, format-aware extraction/assembly
-   - **Changes**:
-     - Added fmt input and fmt_latched register
-     - UNPACK: Format-aware field extraction from [31:0] vs [63:0]
-     - ALIGN: Format-aware special case handling (NaN, Inf, Zero)
-     - NORMALIZE: Format-aware overflow detection
-     - ROUND: Format-aware result assembly with NaN-boxing
-   - **Status**: Code complete, needs debugging (fadd test still failing)
+   - **Issue**: ROUND stage extracted mantissa from wrong bit positions
+   - **Root Cause**: After FLEN=64 refactoring, single-precision mantissas stored as:
+     - `man_a[52:0] = {implicit_1[52], mantissa[51:29], padding[28:0]}`
+     - After ALIGN: `aligned_man_a[55:0] = {implicit_1[55], mantissa[54:32], padding[31:3], GRS[2:0]}`
+     - ROUND was extracting `normalized_man[25:3]` (from padding!) instead of `[54:32]` (actual mantissa)
+   - **Fix**: Changed ROUND stage to extract `normalized_man[54:32]` for single-precision
+   - **Also Fixed**: Zero-return cases in ALIGN stage to use correct bit ranges
+   - **Status**: ✅ **WORKING** - fadd test progressed from test #5 → test #8 (now failing on FMUL)
+   - **Impact**: FADD.S, FSUB.S now working correctly!
 
 6. **fp_multiplier.v** ❌ **TODO**
    - **Issue**: Similar field extraction issues in UNPACK/NORMALIZE/ROUND
@@ -275,21 +275,21 @@ fp_xxx #(.FLEN(FLEN)) u_fp_xxx (
 - [x] Bug identified and root cause analyzed
 - [x] fp_sign.v fixed
 - [x] Documentation created
-- [ ] fp_compare.v fixed
-- [ ] fp_classify.v fixed
-- [ ] fp_minmax.v fixed
-- [ ] fp_adder.v fixed
-- [ ] fp_multiplier.v fixed
-- [ ] fp_divider.v fixed
-- [ ] fp_sqrt.v fixed
-- [ ] fp_fma.v fixed
-- [ ] fp_converter.v fixed
-- [ ] RV32UF 11/11 passing
+- [x] fp_compare.v fixed (Phase 1)
+- [x] fp_classify.v fixed (Phase 1)
+- [x] fp_minmax.v fixed (Phase 1)
+- [x] fp_adder.v fixed (Phase 2) ✅ **NEW**
+- [ ] fp_multiplier.v fixed (Phase 2) ← **NEXT**
+- [ ] fp_divider.v fixed (Phase 2)
+- [ ] fp_sqrt.v fixed (Phase 2)
+- [ ] fp_fma.v fixed (Phase 3)
+- [ ] fp_converter.v fixed (Phase 3)
+- [ ] RV32UF 11/11 passing (currently 4/11 = 36%)
 - [ ] RV32UD 9/9 passing
 
 ---
 
-**Next Session**: Start with fp_compare.v, fp_classify.v, fp_minmax.v (Phase 1)
+**Next Session**: Fix fp_multiplier.v (Phase 2) - apply same ROUND stage fix pattern
 
 **Estimated Total Time**: 12-18 hours across 7 sessions
 

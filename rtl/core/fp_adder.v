@@ -297,7 +297,13 @@ module fp_adder #(
             `endif
           end else if (is_zero_a) begin
             // a is 0: return b (exact result)
-            result <= {sign_b, exp_b, man_b[MAN_WIDTH-1:0]};
+            // Format-aware result assembly
+            if (FLEN == 64 && fmt_latched)
+              result <= {sign_b, exp_b, man_b[51:0]};  // Double: 52-bit mantissa
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_b, exp_b[7:0], man_b[51:29]};  // Single: 23-bit mantissa (NaN-boxed)
+            else
+              result <= {sign_b, exp_b[7:0], man_b[51:29]};  // FLEN=32 single: 23-bit mantissa
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
@@ -308,7 +314,13 @@ module fp_adder #(
             `endif
           end else if (is_zero_b) begin
             // b is 0: return a (exact result)
-            result <= {sign_a, exp_a, man_a[MAN_WIDTH-1:0]};
+            // Format-aware result assembly
+            if (FLEN == 64 && fmt_latched)
+              result <= {sign_a, exp_a, man_a[51:0]};  // Double: 52-bit mantissa
+            else if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_a, exp_a[7:0], man_a[51:29]};  // Single: 23-bit mantissa (NaN-boxed)
+            else
+              result <= {sign_a, exp_a[7:0], man_a[51:29]};  // FLEN=32 single: 23-bit mantissa
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
@@ -513,17 +525,20 @@ module fp_adder #(
               end
             end else if (FLEN == 64 && !fmt_latched) begin
               // Single-precision in 64-bit register (NaN-boxed)
+              // Extract mantissa from bits [54:32] (where actual SP mantissa is after padding)
               `ifdef DEBUG_FPU
               $display("[FP_ADDER] ROUND (single/64): sign=%b exp=%h man=%h round_up=%b",
-                       sign_result, adjusted_exp[7:0], normalized_man[25:3], round_up_comb);
+                       sign_result, adjusted_exp[7:0], normalized_man[54:32], round_up_comb);
               `endif
               if (round_up_comb) begin
-                result <= {32'hFFFFFFFF, sign_result, adjusted_exp[7:0], normalized_man[25:3] + 1'b1};
+                result <= {32'hFFFFFFFF, sign_result, adjusted_exp[7:0], normalized_man[54:32] + 1'b1};
               end else begin
-                result <= {32'hFFFFFFFF, sign_result, adjusted_exp[7:0], normalized_man[25:3]};
+                result <= {32'hFFFFFFFF, sign_result, adjusted_exp[7:0], normalized_man[54:32]};
               end
             end else begin
               // FLEN=32: single-precision in 32-bit register
+              // For FLEN=32, normalized_man layout is different (no padding)
+              // Mantissa is at bits [25:3] (23 bits)
               `ifdef DEBUG_FPU
               $display("[FP_ADDER] ROUND (single/32): sign=%b exp=%h man=%h round_up=%b",
                        sign_result, adjusted_exp[7:0], normalized_man[25:3], round_up_comb);
