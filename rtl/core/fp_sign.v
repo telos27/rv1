@@ -32,9 +32,9 @@ module fp_sign #(
       // For FLEN=64, support both single and double precision
       assign sign_a = fmt ? operand_a[63] : operand_a[31];
       assign sign_b = fmt ? operand_b[63] : operand_b[31];
-      // For single-precision, preserve NaN-boxing [63:32] and magnitude [30:0]
-      // For double-precision, use full magnitude [62:0]
-      assign magnitude_a = fmt ? operand_a[62:0] : {operand_a[63:32], operand_a[30:0]};
+      // For single-precision: magnitude is only lower 31 bits [30:0]
+      // For double-precision: magnitude is lower 63 bits [62:0]
+      assign magnitude_a = fmt ? operand_a[62:0] : operand_a[30:0];
     end else begin : g_flen32
       // For FLEN=32, only single-precision supported
       assign sign_a = operand_a[31];
@@ -56,6 +56,14 @@ module fp_sign #(
   end
 
   // Assemble result: new sign + original magnitude
-  assign result = {result_sign, magnitude_a};
+  // For FLEN=64 with single-precision (fmt=0), preserve NaN-boxing in upper bits
+  generate
+    if (FLEN == 64) begin : g_result_flen64
+      assign result = fmt ? {result_sign, magnitude_a} :
+                            {operand_a[63:32], result_sign, magnitude_a[30:0]};
+    end else begin : g_result_flen32
+      assign result = {result_sign, magnitude_a};
+    end
+  endgenerate
 
 endmodule
