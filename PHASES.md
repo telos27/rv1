@@ -631,7 +631,7 @@ Before adding new features, consider fixing these existing issues:
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
 | RV32F     | 11    | 11   | 100% | ✅ Complete |
-| RV32D     | 9     | 0    | 0%   | 🚧 Bug #49 - MISA fixed, investigating FLD/double-precision FPU |
+| RV32D     | 9     | 6    | 66%  | 🚧 Bug #50 fixed - 3 tests remain (fcvt/fdiv/fmadd) |
 
 ### Custom Test Coverage
 - **Unit tests**: All modules have dedicated unit tests
@@ -669,6 +669,16 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-23 (Session 17)**: Bug #50 FIXED - FLD Format Bit Extraction - RV32D 66%! 🎉
+  - **Bug #50 COMPLETE**: Fixed decoder format bit extraction for FP loads/stores
+  - Root cause: decoder.v always used instruction[26:25] for format, but FLD uses funct3[1:0]
+  - Impact: FLD loaded 0xfff0000000000000 as 0xffffffff00000000 (incorrect NaN-boxing)
+  - Fix: Use funct3[1:0] for FP load/store format, instruction[26:25] for FP ops/FMA
+  - **RV32D Progress**: 0/9 → 6/9 tests passing (66%)
+  - Passing: fclass, fcmp, fcvt_w, fmin, ldst ✅
+  - Remaining: fcvt (timeout), fdiv, fmadd (3 tests)
+  - Systematic debugging approach documented in docs/RV32D_DEBUG_PLAN.md
+  - See: docs/SESSION_2025-10-23_BUG50_FLD_FORMAT_FIX.md
 **2025-10-23 (Session 16)**: Bug #49 - MISA Register Fixed - RV32F 100%! 🎉
   - **RV32F COMPLETE**: Bug #48 fixed (FCVT mantissa padding) - ALL 11/11 tests PASSING! ✅
   - Bug #49 Phase 1: Fixed MISA register to advertise M/A/F/D extensions (was only I)
