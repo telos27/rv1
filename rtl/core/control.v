@@ -430,8 +430,8 @@ module control #(
               fp_alu_en = 1'b1;
               fp_alu_op = (funct3[0]) ? FP_MAX : FP_MIN;
             end
-            5'b11000, 5'b11001, 5'b11010, 5'b11011: begin  // FCVT (float to int, int to float, float to float)
-              if (funct7[1:0] == 2'b00 || funct7[1:0] == 2'b01) begin  // FCVT to/from integer
+            5'b01000, 5'b11000, 5'b11001, 5'b11010, 5'b11011: begin  // FCVT (float↔float: 0x20-0x21, float↔int: 0x60-0x6F)
+              if (funct7[5]) begin  // FCVT to/from integer (0x60-0x6F have bit 5 set)
                 // Check funct7[3] for conversion direction (per RISC-V spec)
                 // funct7[3]=0: FP→INT (FCVT.W.S = 0x60), funct7[3]=1: INT→FP (FCVT.S.W = 0x68)
                 if (funct7[3] == 1'b0) begin
