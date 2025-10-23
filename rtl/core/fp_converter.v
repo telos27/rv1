@@ -368,7 +368,23 @@ module fp_converter #(
                   reg       should_round_up;
                   reg [63:0] rounded_result;
 
-                  man_64_full = {1'b1, man_fp, 40'b0};
+                  // Bug #48 fix: Adjust padding based on format when FLEN=64
+                  // For FLEN=64:
+                  //   - Single-precision: man_fp[51:29] contains 23-bit mantissa, man_fp[28:0] is zero
+                  //                      Build: {1'b1, man_fp[51:29], 40'b0} = 64 bits
+                  //   - Double-precision: man_fp[51:0] contains 52-bit mantissa
+                  //                      Build: {1'b1, man_fp[51:0], 11'b0} = 64 bits
+                  // For FLEN=32:
+                  //   - Single-precision only: man_fp[22:0] contains 23-bit mantissa
+                  //                      Build: {1'b1, man_fp[22:0], 40'b0} = 64 bits
+                  if (FLEN == 64) begin
+                    if (fmt_latched)
+                      man_64_full = {1'b1, man_fp[51:0], 11'b0};  // Double-precision
+                    else
+                      man_64_full = {1'b1, man_fp[51:29], 40'b0}; // Single-precision
+                  end else begin
+                    man_64_full = {1'b1, man_fp[22:0], 40'b0};    // FLEN=32, single-precision only
+                  end
 
                   shifted_man = man_64_full >> (63 - int_exp);
 

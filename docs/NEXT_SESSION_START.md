@@ -1,283 +1,308 @@
 # Next Session Starting Point
 
-**Date**: 2025-10-21
-**Last Session**: FPU Bug #20, #21 Fixed + Infrastructure Improvements
-**Current Status**: 5/11 RV32UF tests passing (45%)
+**Date**: 2025-10-23
+**Last Session**: Bug #48 Investigation - FCVT_W Address Calculation
+**Current Status**: 10/11 RV32F tests passing (90%) ✅
 
 ---
 
-## Session 2025-10-21 Summary
+## Current Test Status
 
-### Bugs Fixed This Session
-
-#### Bug #20: FP Compare Incorrect Comparison Logic ✅
-**File**: `rtl/core/fp_compare.v`
-**Problem**: Used `$signed(operand_a) < $signed(operand_b)` which treats FP bit patterns as signed integers
-**Example Failure**: Negative number comparisons incorrect
-**Fix**: Implemented proper IEEE 754 comparison:
-- Signs differ: negative < positive
-- Both positive: magnitude comparison
-- Both negative: REVERSE magnitude comparison (larger bits = more negative)
-**Result**: rv32uf-p-fcmp now PASSING
-
-#### Bug #21: FP Converter Uninitialized Intermediate Variables ✅
-**File**: `rtl/core/fp_converter.v:262-272`
-**Problem**: FCVT.S.W with zero input produced garbage (xxxxxxxx)
-**Root Cause**:
-- CONVERT stage sets `fp_result=0` directly for zero input
-- ROUND stage always runs, rebuilds `fp_result` from intermediate variables
-- Intermediate variables (`sign_result`, `exp_result`, `man_result`) were never initialized
-- ROUND combined 'x' values → garbage output
-**Fix**: Initialize intermediate variables to zero in early-exit cases
-**Testing**: FCVT.S.W x0 now produces 0x00000000 correctly
-
-### Infrastructure Improvements ✅
-
-#### Hex File Format Standardization
-**Problem**: Recurring format issues across multiple sessions causing garbled instructions
-**Solution**:
-1. **New Tool**: `tools/asm_to_hex.sh`
-   - Complete pipeline: .s → .o → .elf → .hex
-   - One command: `./tools/asm_to_hex.sh tests/asm/test.s`
-   - Supports all extensions (I/M/A/F/D/C)
-   - Configurable architecture, ABI, start address
-
-2. **New Tool**: `tools/elf_to_hex.sh`
-   - Converts ELF to correct hex format
-   - Ensures byte-per-line output
-
-3. **Documentation**: `docs/HEX_FILE_FORMAT.md`
-   - Complete specification
-   - Examples of correct/incorrect formats
-   - Troubleshooting guide
-   - Historical context
-
-4. **Quick Reference**: `tools/README.md`
-   - Common workflows
-   - Tool descriptions
-   - Debugging tips
-
-**Format**: One byte per line (e.g., `53`, `75`, `00`, `d0`)
-**Benefit**: Future sessions won't waste time on format issues
-
-#### Test Runner Debug Support
-**File**: `tools/test_pipelined.sh`
-**Addition**: Support for debug environment variables
-- `DEBUG_FPU=1` - Enable FPU debug output
-- `DEBUG_M=1` - Enable M extension debug
-- `DEBUG_HAZARD=1` - Enable hazard detection debug
-**Usage**: `DEBUG_FPU=1 ./tools/test_pipelined.sh test_name`
-
----
-
-## Current RV32UF Test Status
-
-**Overall**: 5/11 tests passing (45%)
+### RV32F (Single-Precision Floating Point)
+**Overall**: 10/11 tests passing (90%)
 
 | Test | Status | Notes |
 |------|--------|-------|
-| fadd | ✅ PASS | All addition/subtraction operations working |
+| fadd | ✅ PASS | Addition/subtraction working |
 | fclass | ✅ PASS | FP classification working |
-| fcmp | ✅ PASS | FP comparison fixed this session |
+| fcmp | ✅ PASS | FP comparison working |
+| fcvt | ✅ PASS | Sign injection (FSGNJ) working |
+| fcvt_w | ❌ FAIL | **Bug #48: Address calculation error** |
+| fdiv | ✅ PASS | Division and sqrt working |
+| fmadd | ✅ PASS | Fused multiply-add working |
+| fmin | ✅ PASS | Min/max operations working |
 | ldst | ✅ PASS | FP load/store working |
 | move | ✅ PASS | FP move operations working |
-| fcvt | ❌ FAIL | Fails at test #5 (sign injection operations) |
-| fcvt_w | ❌ FAIL | INT↔FP conversions |
-| fdiv | ❌ FAIL | FP division |
-| fmadd | ❌ FAIL | Fused multiply-add |
-| fmin | ❌ FAIL | Min/max operations |
-| recoding | ❌ FAIL | NaN recoding |
+| recoding | ✅ PASS | NaN recoding working |
 
 ---
 
-## Next Issue: rv32uf-p-fcvt Test #5
+## Current Issue: Bug #48 - FCVT_W Address Calculation Error
+
+### Quick Summary
+- **Test**: rv32uf-p-fcvt_w fails at test #5
+- **Symptom**: a3 = 0xffffffff instead of 0x00000000
+- **Root Cause**: Register a0 contains wrong base address
+  - **Expected**: a0 = 0x80002030
+  - **Actual**: a0 = 0x80002000
+  - **Offset**: -48 bytes (-0x30)
+- **Result**: Load from wrong address (0x8000200c instead of 0x8000203c)
 
 ### What We Know
+✅ Memory subsystem works correctly (returns right data for address it receives)
+✅ LW instruction decodes correctly
+✅ Sign extension works correctly
+✅ Tests #1-#4 pass (gp=5 means failure at test #5)
+❌ Something in tests #1-#4 sets a0 to wrong value
+❌ 48-byte offset suggests data table addressing issue
 
-1. **Test Name**: `rv32uf-p-fcvt`
-   - **Misleading!** Despite the name, this test does NOT primarily test FCVT.W.S/FCVT.S.W
-   - Actually tests **sign injection** operations: FSGNJ.S, FSGNJN.S, FSGNJX.S
-   - The fcvt_w test handles INT↔FP conversions
+### Investigation Status
+- ✅ **Root cause identified**: a0 register has wrong value
+- ✅ **Debug methodology established**: See action plan below
+- ❌ **Not yet fixed**: Need to find which instruction sets a0 incorrectly
+- 📄 **Full documentation**: `docs/BUG_48_FCVT_W_ADDRESS_CALCULATION.md`
+- 📄 **Session notes**: `docs/SESSION_2025-10-23_BUG48_INVESTIGATION.md`
 
-2. **Failure Point**: Test #5
-   - Test harness tracks test number in x3 (gp)
-   - Fails at gp=5
+---
 
-3. **From Previous Debug Session**:
-   ```
-   [FPU] START: op=10 a=00000000 b=00000000 c=00000000
-   [FPU] DONE: op=10 result=40000000 flags=00000
-   ```
-   - Op 10 = FP_CVT
-   - Input: a=0x00000000, b=0x00000000, c=0x00000000
-   - Output: result=0x40000000 (2.0) ← WRONG! Should be 0x00000000
+## Next Session Action Plan
 
-4. **Test Binary Location**: `tests/official-compliance/rv32uf-p-fcvt.hex`
-   - First instruction at offset 0x1AC: `0xd0057553`
-   - Decoded: FCVT.S.W f10, f10 (but this is suspicious - rs1 should be integer register!)
+### Step 1: Add a0 Tracking Debug (RECOMMENDED START)
 
-### Investigation Strategy for Next Session
+Add this to `rtl/core/rv32i_core_pipelined.v`:
 
-#### Step 1: Identify Exact Instruction Being Tested
+```verilog
+// Debug: Track writes to a0 (x10)
+`ifdef DEBUG_A0_TRACKING
+  integer cycle_count_a0;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      cycle_count_a0 <= 0;
+    else
+      cycle_count_a0 <= cycle_count_a0 + 1;
+  end
+
+  always @(posedge clk) begin
+    if (memwb_valid && memwb_reg_write && memwb_rd_addr == 5'd10) begin
+      $display("[A0_WRITE] cycle=%0d x10 <= 0x%08h (wb_sel=%b source=%s pc=0x%08h instr=0x%08h)",
+               cycle_count_a0, wb_data, memwb_wb_sel,
+               (memwb_wb_sel == 3'b000) ? "ALU" :
+               (memwb_wb_sel == 3'b001) ? "MEM" :
+               (memwb_wb_sel == 3'b010) ? "PC+4" :
+               (memwb_wb_sel == 3'b110) ? "FP2INT" : "OTHER",
+               memwb_pc, memwb_instruction);
+    end
+  end
+`endif
+```
+
+Compile and run:
 ```bash
-# Decode the hex file around test #5
+iverilog -g2012 -I"rtl" -DXLEN=32 -DFLEN=64 -DCOMPLIANCE_TEST \
+  -DDEBUG_A0_TRACKING \
+  -DMEM_FILE='"tests/official-compliance/rv32uf-p-fcvt_w.hex"' \
+  -o sim/test_a0_debug.vvp \
+  rtl/core/*.v rtl/memory/*.v tb/integration/tb_core_pipelined.v
+
+timeout 5s vvp sim/test_a0_debug.vvp 2>&1 | tee a0_trace.log
+
+# Find when a0 gets set to wrong value
+grep "A0_WRITE" a0_trace.log
+```
+
+Look for the write that sets a0 to 0x80002000 (should be 0x80002030).
+
+### Step 2: Bisect to Find Exact Breaking Commit
+
+```bash
+git bisect start main 7dc1afd
+git bisect run bash -c "make clean && env XLEN=32 timeout 10s ./tools/run_official_tests.sh uf fcvt_w 2>&1 | grep -q PASSED"
+```
+
+This will automatically find the exact commit that introduced the bug.
+
+### Step 3: Compare Working vs Broken Execution
+
+If Step 1-2 don't reveal the issue, do full instruction trace comparison:
+
+```bash
+# Save current state
+git stash
+
+# Working commit
+git checkout 7dc1afd
+DEBUG_TRACE=1 ./tools/run_official_tests.sh uf fcvt_w > trace_working.log 2>&1
+
+# Broken commit
+git checkout main
+git stash pop
+DEBUG_TRACE=1 ./tools/run_official_tests.sh uf fcvt_w > trace_broken.log 2>&1
+
+# Find first divergence
+diff -u trace_working.log trace_broken.log | less
+```
+
+### Step 4: Check Test Disassembly
+
+Understand test structure:
+```bash
+riscv64-unknown-elf-objdump -d tests/official-compliance/rv32uf-p-fcvt_w.elf > fcvt_w_disasm.txt
+
+# Look for:
+# 1. How a0 is initialized (look for auipc/lui to a0)
+# 2. Test #1-#4 instructions
+# 3. Any instructions that write to a0
+
+grep -E "(auipc.*a0|lui.*a0|addi.*a0)" fcvt_w_disasm.txt
+```
+
+---
+
+## Quick Commands
+
+### Run Single Test
+```bash
+env XLEN=32 timeout 5s ./tools/run_official_tests.sh uf fcvt_w
+```
+
+### Run Full RV32F Suite
+```bash
+env XLEN=32 timeout 30s ./tools/run_official_tests.sh uf
+```
+
+### Check Test Log
+```bash
+cat sim/official-compliance/rv32uf-p-fcvt_w.log | tail -60
+```
+
+### Verify Hex File
+```bash
 python3 << 'EOF'
-with open('tests/official-compliance/rv32uf-p-fcvt.hex', 'r') as f:
-    lines = f.readlines()
-
-# Test #5 is approximately at byte offset (based on test structure)
-# Each test is ~20-30 instructions
-# Decode instructions around offset 100-200
-
-for i in range(100, 200, 4):
-    if i+3 < len(lines):
-        word = lines[i+3].strip() + lines[i+2].strip() + lines[i+1].strip() + lines[i].strip()
-        instr = int(word, 16)
-        print(f"[0x{i:04x}] = 0x{word} | opcode=0x{instr&0x7F:02x}")
+with open('tests/official-compliance/rv32uf-p-fcvt_w.hex', 'r') as f:
+    lines = [line.strip() for line in f.readlines() if line.strip()]
+# Check expected address
+offset = 0x203c
+bytes_val = [lines[offset+i] for i in range(4)]
+word = f"0x{bytes_val[3]}{bytes_val[2]}{bytes_val[1]}{bytes_val[0]}"
+print(f"Address 0x8000203c: {word}")  # Should be 0x00000000
+# Check actual wrong address
+offset = 0x200c
+bytes_val = [lines[offset+i] for i in range(4)]
+word = f"0x{bytes_val[3]}{bytes_val[2]}{bytes_val[1]}{bytes_val[0]}"
+print(f"Address 0x8000200c: {word}")  # Is 0xffffffff
 EOF
 ```
 
-#### Step 2: Check Control Unit Decoding
-- Verify FSGNJ operations are decoded correctly
-- Check if FCVT operations are being confused with FSGNJ
-- Look for overlap in funct7 encodings
+---
 
-#### Step 3: Run with Full Debug
+## Recent Progress
+
+### Session 14 (2025-10-23) - Before Bug #48 Investigation
+- ✅ **Bug #47 Fixed**: FSGNJ NaN-boxing for F+D mixed precision
+- ✅ **rv32uf-p-move**: Now PASSING
+- ✅ **RV32F**: Improved from 9/11 (81%) to 10/11 (90%)
+
+### Session 13 (2025-10-23) - Bugs #44 & #45
+- ✅ **Bug #44 Fixed**: FMA aligned_c positioning
+- ✅ **Bug #45 Fixed**: FMV.W.X width mismatch
+- ✅ **rv32uf-p-fmadd**: Now PASSING
+- ✅ **RV32F**: Improved from 8/11 (72%) to 9/11 (81%)
+
+### Earlier Sessions
+- ✅ **Bug #43**: F+D mixed precision support (complete)
+- ✅ **Bugs #27 & #28**: RV32D FLEN refactoring (this introduced Bug #48)
+- ✅ **Bug #42**: C.JAL/C.JALR (last known good state for fcvt_w)
+
+---
+
+## Files to Review
+
+### Bug #48 Documentation
+- `docs/BUG_48_FCVT_W_ADDRESS_CALCULATION.md` - Full investigation report
+- `docs/SESSION_2025-10-23_BUG48_INVESTIGATION.md` - Session notes
+
+### Related Code
+- `rtl/core/rv32i_core_pipelined.v` - Main pipeline (where to add debug)
+- `rtl/memory/data_memory.v` - Memory module (verified working)
+- `rtl/core/memwb_register.v` - MEM/WB pipeline register
+- `rtl/core/exmem_register.v` - EX/MEM pipeline register
+
+### Test Files
+- `tests/official-compliance/rv32uf-p-fcvt_w.hex` - Test binary
+- `sim/official-compliance/rv32uf-p-fcvt_w.log` - Test output
+
+---
+
+## Commits Reference
+
+**Working commit** (fcvt_w passes):
+```
+7dc1afd - Bug #42 Fixed: C.JAL/C.JALR Return Address - rv32uc-p-rvc PASSING!
+```
+
+**Breaking commits** (fcvt_w starts failing):
+```
+d7c2d33 - WIP: RV32D Support - FLEN Refactoring (Bugs #27 & #28 Partial)
+747a716 - Bug #27 & #28 COMPLETE: RV32D Memory Interface - 64-bit FP on 32-bit CPU
+```
+
+**Current commit**:
+```
+a55ddf2 - Documentation: Session 14 - Bug #47 Complete (FSGNJ NaN-Boxing)
+```
+
+---
+
+## Expected Outcome
+
+When Bug #48 is fixed:
+- ✅ **rv32uf-p-fcvt_w** will PASS
+- ✅ **RV32F**: 11/11 (100%) ✨
+- 🎉 **Complete RV32F compliance!**
+
+Then can move on to:
+- RV32D (double-precision) testing and fixes
+- Or other extensions/optimizations
+
+---
+
+## Key Debugging Insights
+
+1. **Start with a0 tracking** - Most direct path to finding the bug
+2. **Bisect if unclear** - Will pinpoint exact breaking change
+3. **Trust the evidence** - Memory and load instructions work; a0 is wrong
+4. **48-byte offset is systematic** - Not a random corruption, likely logic error
+5. **Tests #1-#4 pass but corrupt a0** - Side effect of successful test
+
+---
+
+## Untracked Files (Clean Up Later)
+
+```
+tests/asm/test_fcvt_debug.hex
+tests/asm/test_fcvt_debug.s
+tests/asm/test_fcvt_w_debug.hex
+tests/asm/test_fcvt_w_debug.s
+```
+
+These are debug test files from investigation. Can delete after Bug #48 is fixed.
+
+---
+
+## Quick Health Check
+
+Before starting next session, verify baseline:
+
 ```bash
-# Enable all debug flags
-DEBUG_FPU=1 timeout 60s ./tools/run_hex_tests.sh rv32uf-p-fcvt 2>&1 | tee debug_fcvt_full.log
+# Check current test status
+env XLEN=32 timeout 30s ./tools/run_official_tests.sh uf
 
-# Search for test #5 context
-grep -B30 -A10 "test number: 5" debug_fcvt_full.log
-```
-
-#### Step 4: Check FSGNJ Implementation
-- File: `rtl/core/fp_sign.v`
-- Verify FSGNJ, FSGNJN, FSGNJX logic
-- Check operand routing
-- Verify output multiplexing in `rtl/core/fpu.v`
-
-#### Step 5: Check if Issue is Operand Routing
-Previous analysis suggested:
-```
-[CORE] FPU START: fp_alu_op=10 rs1=10 rs2=0 rs3=26 rd=10
-       operands: a=00000000 b=00000000 c=00000000
-```
-- rs1=10 means reading from f10 (FP register)
-- But for INT→FP, should read from x10 (integer register)
-- **Question**: Is there confusion between INT and FP register file reads?
-
----
-
-## Quick Commands for Next Session
-
-### Run Tests
-```bash
-# Run single test with debug
-DEBUG_FPU=1 timeout 60s ./tools/run_hex_tests.sh rv32uf-p-fcvt
-
-# Run full FPU test suite
-timeout 120s ./tools/run_hex_tests.sh rv32uf
-
-# Check specific test log
-tail -100 sim/test_rv32uf-p-fcvt.log
-grep "test number" sim/test_rv32uf-p-fcvt.log
-```
-
-### Debug Hex File
-```bash
-# View hex file
-head -100 tests/official-compliance/rv32uf-p-fcvt.hex
-
-# Decode specific instruction
-python3 -c "
-word = 'd0057553'
-instr = int(word, 16)
-print(f'opcode: 0x{instr&0x7F:02x}')
-print(f'funct3: 0x{(instr>>12)&0x7:x}')
-print(f'funct7: 0x{(instr>>25)&0x7F:02x}')
-print(f'rd: {(instr>>7)&0x1F}')
-print(f'rs1: {(instr>>15)&0x1F}')
-print(f'rs2: {(instr>>20)&0x1F}')
-"
-```
-
-### Create Custom Test
-```bash
-# Write assembly
-vim tests/asm/test_fsgnj_debug.s
-
-# Convert to hex (one command!)
-./tools/asm_to_hex.sh tests/asm/test_fsgnj_debug.s
-
-# Run test
-DEBUG_FPU=1 ./tools/test_pipelined.sh test_fsgnj_debug
+# Should see:
+# rv32uf-p-fadd...      PASSED
+# rv32uf-p-fclass...    PASSED
+# rv32uf-p-fcmp...      PASSED
+# rv32uf-p-fcvt...      PASSED
+# rv32uf-p-fcvt_w...    FAILED  ← Bug #48
+# rv32uf-p-fdiv...      PASSED
+# rv32uf-p-fmadd...     PASSED
+# rv32uf-p-fmin...      PASSED
+# rv32uf-p-ldst...      PASSED
+# rv32uf-p-move...      PASSED
+# rv32uf-p-recoding...  PASSED
+# Pass rate: 90% (10/11)
 ```
 
 ---
 
-## Relevant Files
-
-### FPU Implementation
-- `rtl/core/fpu.v` - Top-level FPU, operation routing
-- `rtl/core/fp_sign.v` - Sign injection (FSGNJ, FSGNJN, FSGNJX)
-- `rtl/core/fp_converter.v` - INT↔FP conversion (fixed Bug #21)
-- `rtl/core/fp_compare.v` - FP comparison (fixed Bug #20)
-
-### Control & Decoding
-- `rtl/core/control.v` - Instruction decoding, control signals
-- `rtl/core/decoder.v` - Instruction field extraction
-- `rtl/core/rv32i_core_pipelined.v` - Pipeline integration, operand routing
-
-### Test Infrastructure
-- `tools/asm_to_hex.sh` - Assembly to hex conversion
-- `tools/test_pipelined.sh` - Test runner (now supports DEBUG_FPU)
-- `tools/run_hex_tests.sh` - Compliance test runner
-- `docs/HEX_FILE_FORMAT.md` - Hex format documentation
-
----
-
-## Known Issues / Suspicious Patterns
-
-1. **Operation Code Confusion**
-   - Seeing FP_CVT (op=10) when expecting FSGNJ operations
-   - Need to verify control unit isn't misclassifying instructions
-
-2. **Operand Source Confusion**
-   - For FCVT.S.W, rs1 should read from INTEGER register file (x-regs)
-   - But logs show it reading from FP register file (f-regs)
-   - This is likely the root cause
-
-3. **Result Discrepancy**
-   - Expected: 0x00000000 (or whatever the correct FSGNJ result is)
-   - Actual: 0x40000000 (2.0)
-   - Suggests wrong operation entirely or wrong operands
-
----
-
-## Recent Commits
-
-```
-8ef3f90 Bug #21 Fixed: FP Converter Uninitialized Intermediate Variables
-eb47411 Infrastructure: Standardize hex file generation and documentation
-df09d24 Bug #20 Fixed: FP Compare Signed Integer Comparison Error
-```
-
-All commits pushed to remote: https://github.com/telos27/rv1.git
-
----
-
-## Key Takeaway for Next Session
-
-**Be systematic!** The fcvt test has been tricky because:
-1. The test name is misleading (it's not primarily about INT↔FP conversion)
-2. Multiple potential issues (wrong operation, wrong operands, wrong result)
-3. Need to decode the actual test binary to know what instruction is being tested
-
-**Start by**: Decoding the exact instruction at test #5, then trace through the pipeline to see where it goes wrong.
-
-**Tools are ready**: Hex format is solid, debug flags work, documentation is in place. Can focus purely on the bug.
-
----
-
-*End of session notes. Ready to continue FPU debugging!*
+*Ready to fix Bug #48 and achieve 100% RV32F compliance! 🎯*

@@ -1963,4 +1963,38 @@ module rv_core_pipelined #(
   end
   `endif
 
+  //==========================================================================
+  // DEBUG: Track writes to a0 (x10) to debug Bug #48
+  //==========================================================================
+  `ifdef DEBUG_A0_TRACKING
+  integer cycle_count_a0;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      cycle_count_a0 <= 0;
+    else
+      cycle_count_a0 <= cycle_count_a0 + 1;
+  end
+
+  // Also track when instructions that write to a0 are in earlier stages
+  always @(posedge clk) begin
+    // Track writeback
+    if (memwb_valid && memwb_reg_write && memwb_rd_addr == 5'd10) begin
+      $display("[A0_WRITE] cycle=%0d x10 <= 0x%08h (wb_sel=%b source=%s alu=0x%08h mem=0x%08h)",
+               cycle_count_a0, wb_data, memwb_wb_sel,
+               (memwb_wb_sel == 3'b000) ? "ALU    " :
+               (memwb_wb_sel == 3'b001) ? "MEM    " :
+               (memwb_wb_sel == 3'b010) ? "PC+4   " :
+               (memwb_wb_sel == 3'b110) ? "FP2INT " : "OTHER  ",
+               memwb_alu_result, memwb_mem_read_data);
+    end
+
+    // Track EX stage to see PC and instruction
+    if (idex_valid && idex_reg_write && idex_rd_addr == 5'd10) begin
+      $display("[A0_EX   ] cycle=%0d PC=0x%08h instr=0x%08h opcode=%b rd=x10",
+               cycle_count_a0, idex_pc, idex_instruction, idex_instruction[6:0]);
+    end
+  end
+  `endif
+
 endmodule
