@@ -431,7 +431,10 @@ module control #(
               fp_alu_op = (funct3[0]) ? FP_MAX : FP_MIN;
             end
             5'b01000, 5'b11000, 5'b11001, 5'b11010, 5'b11011: begin  // FCVT (float↔float: 0x20-0x21, float↔int: 0x60-0x6F)
-              if (funct7[5]) begin  // FCVT to/from integer (0x60-0x6F have bit 5 set)
+              // Bug #52 Fix: Check funct7[6], not funct7[5] to distinguish FP↔FP vs FP↔INT
+              // FCVT.S.D=0x20 (0b0100000), FCVT.D.S=0x21 (0b0100001) have funct7[6]=0
+              // FCVT.W.S=0x60 (0b1100000), FCVT.S.W=0x68 (0b1101000) have funct7[6]=1
+              if (funct7[6]) begin  // FCVT to/from integer (0x60-0x6F have bit 6 set)
                 // Check funct7[3] for conversion direction (per RISC-V spec)
                 // funct7[3]=0: FP→INT (FCVT.W.S = 0x60), funct7[3]=1: INT→FP (FCVT.S.W = 0x68)
                 if (funct7[3] == 1'b0) begin
@@ -540,5 +543,15 @@ module control #(
       end
     endcase
   end
+
+  // Debug: Track FCVT control signals
+  `ifdef DEBUG_FCVT_CONTROL
+  always @(*) begin
+    if (opcode == 7'b1010011 && is_fp_op && (funct7[6:2] == 5'b01000)) begin
+      $display("[CONTROL] FCVT decode: funct7=%b, funct7[5]=%b, fp_reg_write=%b",
+               funct7, funct7[5], fp_reg_write);
+    end
+  end
+  `endif
 
 endmodule

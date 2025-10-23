@@ -308,6 +308,24 @@ module rv_core_pipelined #(
   end
   `endif
 
+  // Debug: FPU Execution (specifically for FCVT debugging)
+  `ifdef DEBUG_FPU_EXEC
+  always @(posedge clk) begin
+    if (fpu_start) begin
+      $display("[%0t] [FPU] START: op=%0d, rs1=f%0d, rs2=%0d, rd=f%0d, pc=%h",
+               $time, idex_fp_alu_op, idex_fp_rs1_addr, idex_fp_rs2_addr, idex_fp_rd_addr, idex_pc);
+      if (idex_fp_alu_op == 5'b01010) begin  // FP_CVT
+        $display("[%0t] [FPU] FCVT START: fp_operand_a=%h, int_operand=%h",
+                 $time, ex_fp_operand_a, ex_alu_operand_a_forwarded);
+      end
+    end
+    if (ex_fpu_done) begin
+      $display("[%0t] [FPU] DONE: result=%h, busy=%b, pc=%h",
+               $time, ex_fp_result, ex_fpu_busy, idex_pc);
+    end
+  end
+  `endif
+
   //==========================================================================
   // EX/MEM Pipeline Register Outputs
   //==========================================================================
@@ -1851,6 +1869,27 @@ module rv_core_pipelined #(
     if (memwb_fp_reg_write) begin
       $display("[%0t] [MEMWB] FP transfer: f%0d <= 0x%h (wb_sel=%b)",
                $time, memwb_fp_rd_addr, memwb_fp_result, memwb_wb_sel);
+    end
+  end
+  `endif
+
+  // Debug: FCVT Pipeline Tracing
+  `ifdef DEBUG_FCVT_PIPELINE
+  always @(posedge clk) begin
+    // Track FCVT in ID/EX stage
+    if (idex_fp_alu_en && idex_fp_alu_op == 5'b01010 && idex_valid) begin
+      $display("[%0t] [IDEX] FCVT: fp_reg_write=%b, fp_rd_addr=f%0d, valid=%b, pc=%h",
+               $time, idex_fp_reg_write, idex_fp_rd_addr, idex_valid, idex_pc);
+    end
+    // Track FCVT in EX/MEM stage
+    if (exmem_fp_reg_write && exmem_valid) begin
+      $display("[%0t] [EXMEM] FCVT: fp_reg_write=%b, fp_rd_addr=f%0d, valid=%b, pc=%h, fp_result=%h",
+               $time, exmem_fp_reg_write, exmem_fp_rd_addr, exmem_valid, exmem_pc, exmem_fp_result);
+    end
+    // Track FCVT in MEM/WB stage
+    if (memwb_fp_reg_write && memwb_valid) begin
+      $display("[%0t] [MEMWB] FCVT: fp_reg_write=%b, fp_rd_addr=f%0d, valid=%b, fp_result=%h",
+               $time, memwb_fp_reg_write, memwb_fp_rd_addr, memwb_valid, memwb_fp_result);
     end
   end
   `endif
