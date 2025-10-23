@@ -139,9 +139,15 @@ run_test() {
   fi
 
   # Compile testbench
+  debug_flags=""
+  if [ -n "${DEBUG_FPU:-}" ]; then
+    debug_flags="-DDEBUG_FPU"
+  fi
+
   iverilog -g2012 \
     -I"$RTL_DIR" \
     $config_flag \
+    $debug_flags \
     -DCOMPLIANCE_TEST \
     -DMEM_FILE="\"$hex_file\"" \
     -o "$SIM_DIR/${test_name}.vvp" \

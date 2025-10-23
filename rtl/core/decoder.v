@@ -228,12 +228,17 @@ module decoder #(
   // funct2 (fmt) is in bits [26:25]
   assign rs3 = instruction[31:27];
 
-  // Floating-point format (in funct7[1:0] for OP-FP, or funct2 for FMA)
+  // Floating-point format
+  // For FP loads/stores (FLW/FLD/FSW/FSD): format is in funct3[1:0]
+  //   - FLW/FSW: funct3=010 (bit 0=0) → single-precision
+  //   - FLD/FSD: funct3=011 (bit 0=1) → double-precision
+  // For FP operations (OP-FP): format is in funct7[1:0] (instruction[26:25])
+  // For FMA operations: format is in funct2 (instruction[26:25])
   // 00 = single-precision (S)
   // 01 = double-precision (D)
   // 10 = reserved (H - half-precision in Zfh)
   // 11 = reserved (Q - quad-precision)
-  wire [1:0] fmt_field = is_fp_fma ? instruction[26:25] : instruction[26:25];
+  wire [1:0] fmt_field = (is_fp_load || is_fp_store) ? funct3[1:0] : instruction[26:25];
   assign fp_fmt = fmt_field[0];  // 0=single, 1=double (simplified for F/D)
 
   // Floating-point rounding mode

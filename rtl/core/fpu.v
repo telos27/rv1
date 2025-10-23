@@ -326,6 +326,14 @@ module fpu #(
     .result         (class_result)
   );
 
+  `ifdef DEBUG_FPU
+  always @(posedge clk) begin
+    if (start && fp_alu_op == FP_CLASS) begin
+      $display("[FPU] FCLASS: operand_a=0x%h fmt=%d result=0x%03x", operand_a, fmt, class_result);
+    end
+  end
+  `endif
+
   // ========================================
   // FP Converter (multi-cycle, 2-3 cycles)
   // ========================================
