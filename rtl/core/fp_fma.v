@@ -70,6 +70,7 @@ module fp_fma #(
   reg [EXP_WIDTH+1:0] exp_prod;               // Product exponent
   reg [(2*MAN_WIDTH+3):0] product;            // Product mantissa (double width)
   reg [(2*MAN_WIDTH+5):0] aligned_c;          // Aligned addend
+  reg [(2*MAN_WIDTH+6):0] product_positioned; // Product positioned for addition
   reg [(2*MAN_WIDTH+6):0] sum;                // Sum result
   reg [EXP_WIDTH+1:0] exp_diff;               // Exponent difference
   reg [EXP_WIDTH-1:0] exp_result;
@@ -373,19 +374,29 @@ module fp_fma #(
           // When exponents differ, the smaller one is shifted right.
           //
           // Use blocking assignments (=) for intermediate computations
+          //
+          // For FLEN=64: man_c is 53 bits with leading bit at position 52
+          // After product positioning (>>53), product has leading bit at ~51
+          // So man_c also needs to be positioned with leading bit at ~51
+          //
+          // Strategy: Position man_c similarly - shift LEFT to bit 51, then apply exp_diff
+
           if (exp_prod >= exp_c) begin
             exp_result = exp_prod;
             exp_diff = exp_prod - exp_c;
 
             // Product has larger exponent, so it sets the reference position
-            // Position product: 48 bits with leading bit at sum[51]
-            // Position addend: 24 bits shifted right by exp_diff from sum[51]
+            // man_c needs to be positioned at same reference, then shifted right by exp_diff
             if (exp_diff > (2*MAN_WIDTH + 6))
               aligned_c = {1'b0, {(2*MAN_WIDTH+5){1'b0}}, 1'b1};  // Sticky bit only
-            else
-              // Position man_c with leading bit at sum[51], then shift right by exp_diff
-              // man_c needs 51-23=28 bits of padding to reach bit [51]
-              aligned_c = ({man_c[MAN_WIDTH:0], 28'b0} >> exp_diff);
+            else begin
+              // For FLEN=64: man_c[52] is leading bit, shift LEFT by (51-52)=-1 is shift RIGHT by 1
+              // But man_c is already in the right position! Just shift by exp_diff
+              if (FLEN == 64)
+                aligned_c = (man_c >> exp_diff);  // man_c already has leading bit near position 52
+              else
+                aligned_c = ({man_c[MAN_WIDTH:0], 28'b0} >> exp_diff);  // FLEN=32 case
+            end
           end else begin
             exp_result = exp_c;
             exp_diff = exp_c - exp_prod;
@@ -397,24 +408,44 @@ module fp_fma #(
             else
               product = product >> exp_diff;
 
-            // Position man_c with leading bit at sum[51]: need 28 bits of padding
-            aligned_c = {man_c, 28'b0};
+            // Position man_c - for FLEN=64, it's already at the right position
+            if (FLEN == 64)
+              aligned_c = man_c;
+            else
+              aligned_c = {man_c, 28'b0};
           end
 
           // Perform addition/subtraction
-          // Position product to have leading bit at sum[51]: need (51-46)=5 bits of shift
-          // (product has 48 bits in Q2.46 format, leading 1 at bit [46], we want it at [51])
+          // Position product to have leading bit at sum[51]
+          //
+          // Product is (MAN_WIDTH+1) × (MAN_WIDTH+1) = 106 bits for FLEN=64
+          // Leading bit is at position 104 for products >= 2.0, or 103 for products < 2.0
+          // Need to shift RIGHT by 53 bits to position leading bit at [51]
+          //
+          // Note: For single-precision with FLEN=64, mantissas have 29-bit padding,
+          // but the multiplication result still has leading bit at position 104-105.
+          // The shift amount is the same (53 bits) for both single and double precision.
+
+          if (FLEN == 64) begin
+            // Shift product right by 53 to position leading bit at [51]
+            product_positioned = product >> 53;
+          end else begin
+            // FLEN=32: product is 48 bits (24×24), leading bit at position 46
+            // Shift LEFT by 5 to position at [51]
+            product_positioned = product << 5;
+          end
+
           if (sign_prod == sign_c) begin
             // Same sign: add magnitudes
-            sum <= (product << 5) + aligned_c;
+            sum <= product_positioned + aligned_c;
             sign_result <= sign_prod;
           end else begin
             // Different signs: subtract magnitudes
-            if ((product << 5) >= aligned_c) begin
-              sum <= (product << 5) - aligned_c;
+            if (product_positioned >= aligned_c) begin
+              sum <= product_positioned - aligned_c;
               sign_result <= sign_prod;
             end else begin
-              sum <= aligned_c - (product << 5);
+              sum <= aligned_c - product_positioned;
               sign_result <= sign_c;
             end
           end
@@ -422,6 +453,9 @@ module fp_fma #(
           `ifdef DEBUG_FPU
           $display("[FMA_ADD] product=%h aligned_c=%h exp_result=%d exp_diff=%d",
                    product, aligned_c, exp_result, exp_diff);
+          $display("[FMA_ADD] product_positioned=%h sum_will_be=%h",
+                   product_positioned, (sign_prod == sign_c) ? (product_positioned + aligned_c) :
+                   (product_positioned >= aligned_c) ? (product_positioned - aligned_c) : (aligned_c - product_positioned));
           $display("[FMA_ADD_DEBUG] man_c=%h shift_in=%h shift_amount=%d",
                    man_c, {man_c[MAN_WIDTH:0], 29'b0}, exp_diff);
           `endif
@@ -441,39 +475,59 @@ module fp_fma #(
               result <= {sign_result, 31'h0};
             state <= DONE;
           end
-          // Check for overflow (carry out to bit 52)
-          else if (sum[(2*MAN_WIDTH+6)]) begin
+          // Check for overflow (carry out beyond normalized position)
+          // For FLEN=64 with >>53 positioning: normalized position is 51, overflow at 52
+          else if (FLEN == 64 && sum[52]) begin
             sum <= sum >> 1;
             exp_result <= exp_result + 1;
             // After right shift, GRS extraction needs format awareness
-            if (FLEN == 64 && !fmt_latched) begin
-              guard <= sum[29];  // After shift, guard at bit 29
+            if (!fmt_latched) begin
+              guard <= sum[29];  // After shift, guard at bit 29 for single-precision
               round <= sum[28];
               sticky <= |sum[27:0];
             end else begin
-              guard <= sum[0];
+              guard <= sum[0];  // For double-precision
               round <= 1'b0;
               sticky <= 1'b0;
             end
           end
-          // Check if leading 1 is at bit 51 (normalized)
-          else if (sum[(2*MAN_WIDTH+5)]) begin
-            // Already normalized - leading 1 at bit 51
-            // For single-precision in FLEN=64, mantissa has 29-bit padding
-            // GRS must be extracted from appropriate positions
-            if (FLEN == 64 && !fmt_latched) begin
-              // Single-precision: GRS at bits [MAN_WIDTH+4+29:MAN_WIDTH+2+29]
-              guard <= sum[MAN_WIDTH+4+29];   // bit 56 for SP
-              round <= sum[MAN_WIDTH+3+29];   // bit 55
-              sticky <= |sum[MAN_WIDTH+2+29:0]; // bits 54:0
+          // For FLEN=32: Check overflow at old position
+          else if (FLEN == 32 && sum[(2*MAN_WIDTH+6)]) begin
+            sum <= sum >> 1;
+            exp_result <= exp_result + 1;
+            guard <= sum[0];
+            round <= 1'b0;
+            sticky <= 1'b0;
+          end
+          // Check if leading 1 is at normalized position (51 for FLEN=64, varies for FLEN=32)
+          else if (FLEN == 64 && sum[51]) begin
+            // Already normalized - leading 1 at bit 51 (for FLEN=64)
+            // GRS extraction depends on format
+            if (!fmt_latched) begin
+              // Single-precision: For FLEN=64, bits after position 51 down to padding
+              // With 29-bit padding, need to extract GRS from positions relative to mantissa end
+              // Sum[51:29] contains the 23-bit mantissa
+              // GRS at bits [28:26]
+              guard <= sum[28];
+              round <= sum[27];
+              sticky <= |sum[26:0];
             end else begin
-              // Double-precision: GRS at bits [MAN_WIDTH+4:MAN_WIDTH+2]
-              guard <= sum[MAN_WIDTH+4];   // bit 27
-              round <= sum[MAN_WIDTH+3];   // bit 26
-              sticky <= |sum[MAN_WIDTH+2:0]; // bits 25:0
+              // Double-precision: Sum[51:0] contains mantissa, GRS below bit 0
+              // But for FMA, we have extra precision bits below
+              // GRS at appropriate positions for 52-bit mantissa
+              guard <= sum[0];  // Placeholder - needs proper GRS extraction
+              round <= 1'b0;
+              sticky <= 1'b0;
             end
           end
-          // Leading 1 is below bit 51 - need to shift left (can happen after subtraction)
+          // For FLEN=32: Check normalized position at bit (2*MAN_WIDTH+5)
+          else if (FLEN == 32 && sum[(2*MAN_WIDTH+5)]) begin
+            // FLEN=32 normalized case
+            guard <= sum[MAN_WIDTH+4];
+            round <= sum[MAN_WIDTH+3];
+            sticky <= |sum[MAN_WIDTH+2:0];
+          end
+          // Leading 1 is below normalized position - need to shift left (can happen after subtraction)
           else begin
             sum <= sum << 1;
             exp_result <= exp_result - 1;
@@ -510,15 +564,17 @@ module fp_fma #(
 
           // Apply rounding using combinational value
           // Extract mantissa bits based on format
+          // With new positioning (leading bit at 51), mantissa is at sum[50:28] for single-precision
           if (FLEN == 64 && !fmt_latched) begin
             // Single-precision in 64-bit register (NaN-boxed)
-            // Extract 23-bit mantissa from sum[54:32]
+            // Extract 23-bit mantissa from sum[50:28]
+            // Leading bit is implicit 1 at position 51
             if (round_up_comb) begin
               result <= {32'hFFFFFFFF, sign_result, exp_result[7:0],
-                         sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5+29)] + 1'b1};
+                         sum[50:28] + 1'b1};
             end else begin
               result <= {32'hFFFFFFFF, sign_result, exp_result[7:0],
-                         sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5+29)]};
+                         sum[50:28]};
             end
           end else if (FLEN == 64 && fmt_latched) begin
             // Double-precision in 64-bit register

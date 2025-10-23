@@ -1894,8 +1894,12 @@ module rv_core_pipelined #(
   // FP results go to FP register file, INT-to-FP conversions also go to FP register file
   // FP loads (FLW/FLD) also write to FP register file through fp_mem_read_data
   // Detect FP load by checking wb_sel == 001 (memory data) and fp_reg_write is set
-  assign wb_fp_data = (memwb_wb_sel == 3'b001) ? memwb_fp_mem_read_data :  // FP load (uses separate FLEN-wide path)
-                      memwb_fp_result;                                       // FP ALU result
+  // For FLW (single-precision load when FLEN=64), NaN-box the loaded value
+  wire [`FLEN-1:0] fp_load_data_boxed;
+  assign fp_load_data_boxed = (`FLEN == 64 && !memwb_fp_fmt) ? {32'hFFFFFFFF, memwb_fp_mem_read_data[31:0]} : memwb_fp_mem_read_data;
+
+  assign wb_fp_data = (memwb_wb_sel == 3'b001) ? fp_load_data_boxed :  // FP load (NaN-boxed for FLW)
+                      memwb_fp_result;                                   // FP ALU result
 
   // FP-to-INT operations write to integer register file via memwb_int_result_fp:
   // - FP compare (FEQ, FLT, FLE): wb_sel = 3'b110

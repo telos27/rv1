@@ -1,22 +1,22 @@
-# Next Session: Bug #43 - F+D Mixed Precision Phase 2 COMPLETE 🎉
+# Next Session: Bug #44 - FMA ADD Stage Positioning (IN PROGRESS)
 
-**Last Session**: 2025-10-22 (Session 11 - Final)
-**Status**: Bug #43 Phase 2 COMPLETE! 8/11 tests passing (72%)
-**Priority**: 🟢 MEDIUM - Remaining failures are separate issues
+**Last Session**: 2025-10-22 (Session 12)
+**Status**: Bug #44 - 6 fixes applied, still debugging alignment logic
+**Priority**: 🔴 HIGH - FMA operations return incorrect results
 
 ---
 
-## Current Status (2025-10-22 Session 11 FINAL)
+## Current Status
 
-### FPU Compliance: 8/11 tests (72%) 🎉 +1 test fixed (fdiv)!
+### FPU Compliance: 8/11 tests (72%) - Same as before
 
 - ✅ **fadd** - PASSING
 - ✅ **fclass** - PASSING
 - ✅ **fcmp** - PASSING
 - ✅ **fcvt** - PASSING
 - ⚠️ **fcvt_w** - FAILING (separate issue - int conversion)
-- ✅ **fdiv** - **PASSING** 🆕 (FDIV + FSQRT now work!)
-- ⚠️ **fmadd** - FAILING (separate issue - FMA edge cases)
+- ✅ **fdiv** - PASSING
+- ⚠️ **fmadd** - **IN PROGRESS** (Bug #44 - positioning issue)
 - ✅ **fmin** - PASSING
 - ✅ **ldst** - PASSING
 - ⏱️ **move** - TIMEOUT (separate issue)
@@ -24,230 +24,164 @@
 
 ---
 
-## Session 11 Summary (2025-10-22 Final)
+## Session 12 Summary (2025-10-22)
 
-**🎉 BUG #43 PHASE 2 COMPLETE: All FPU modules support F+D mixed precision!**
+### Bugs Fixed
 
-### The Problem (Discovered in Session 11)
+**Bug #44 Phase 1: FLW NaN-Boxing** ✅
+- **File**: `rtl/core/rv32i_core_pipelined.v`
+- **Issue**: FLW loads not NaN-boxing in forwarding path
+- **Fix**: Added NaN-boxing logic for single-precision loads
+- **Impact**: Operands now properly formatted
 
-After fixing GRS extraction in Session 10, fdiv/fmadd were still failing because:
-1. **Operand extraction** - Single-precision operands were being misinterpreted as NaN
-2. **Result packing** - Results were not NaN-boxed for single-precision
-3. **Exponent arithmetic** - Wrong BIAS value used (1023 instead of 127)
+**Bug #44 Phase 2: FMA Positioning** (6 sub-fixes, PARTIAL)
 
-### The Solution (Three-Part Fix)
+Applied 6 fixes to `rtl/core/fp_fma.v`:
 
-Applied to **fp_divider.v**, **fp_sqrt.v**, and **fp_fma.v**:
+1. ✅ **Product positioning** (lines 416-424)
+   - Changed from `product << 5` to `product >> 53` for FLEN=64
+   - Positions product leading bit at position 51
 
-#### Part 1: Format-Aware UNPACK
-Extract operands from correct bit positions based on fmt signal:
+2. ✅ **Aligned_c positioning** (lines 384-416)
+   - Simplified for FLEN=64: `aligned_c = man_c >> exp_diff`
+   - Removes incorrect 28-bit padding
 
-**Single-precision (fmt=0)**: Extract from bits [31:0]
-```verilog
-sign <= operand[31];
-exp  <= {3'b000, operand[30:23]};  // Zero-extend to 11 bits
-man  <= {1'b1, operand[22:0], 29'b0};  // Zero-pad to 53 bits
-is_nan <= (operand[30:23] == 8'hFF) && (operand[22:0] != 0);
-```
+3. ✅ **NORMALIZE overflow detection** (lines 478-501)
+   - Changed from checking bit 110 to bit 52
+   - Correctly detects overflow for new positioning
 
-**Double-precision (fmt=1)**: Extract from bits [63:0]
-```verilog
-sign <= operand[63];
-exp  <= operand[62:52];
-man  <= {1'b1, operand[51:0]};
-is_nan <= (operand[62:52] == 11'h7FF) && (operand[51:0] != 0);
-```
+4. ✅ **NORMALIZE normalized detection** (lines 502-529)
+   - Changed from checking bit 109 to bit 51
+   - Correctly identifies normalized values
 
-#### Part 2: Format-Aware Result PACKING
-Pack results with NaN-boxing for single-precision:
+5. ✅ **NORMALIZE GRS extraction** (lines 506-513)
+   - Changed GRS bits from [56:54] to [28:26]
+   - Matches new positioning scheme
 
-**Single-precision (fmt=0)**: NaN-boxed in [63:32]
-```verilog
-// Normal result
-result <= {32'hFFFFFFFF, sign, exp[7:0], mantissa[22:0]};
-
-// Special values
-NaN: {32'hFFFFFFFF, 32'h7FC00000}
-Inf: {32'hFFFFFFFF, sign, 8'hFF, 23'h0}
-Zero: {32'hFFFFFFFF, sign, 31'h0}
-```
-
-**Double-precision (fmt=1)**: Full 64 bits
-```verilog
-result <= {sign, exp[10:0], mantissa[51:0]};
-```
-
-#### Part 3: Format-Aware Exponent Arithmetic
-Use correct BIAS value for exponent calculations:
-
-```verilog
-// Format-aware BIAS
-wire [10:0] bias_val;
-assign bias_val = (FLEN == 64 && !fmt_latched) ? 11'd127 : 11'd1023;
-
-// Division: exp_result = exp_a - exp_b + BIAS
-exp_diff <= exp_a - exp_b + bias_val;
-
-// Square root: exp_result = (exp - BIAS) / 2 + BIAS
-exp_result <= (exp - bias_val) / 2 + bias_val;
-
-// Multiply (FMA): exp_prod = exp_a + exp_b - BIAS
-exp_prod <= exp_a + exp_b - bias_val;
-```
-
-### Technical Achievements
-
-**Files Modified** (9 files):
-1. `rtl/core/fp_divider.v` - UNPACK, PACKING, GRS, BIAS
-2. `rtl/core/fp_sqrt.v` - UNPACK, PACKING, GRS, BIAS
-3. `rtl/core/fp_fma.v` - UNPACK, PACKING, GRS, BIAS
-4. `rtl/core/fpu.v` - Pass fmt signal to all modules
-
-**Lines Changed**: ~500 lines across 4 modules
-
-**Test Results**:
-- Before: 7/11 passing (63%)
-- After: 8/11 passing (72%)
-- **fdiv test**: FAILED → **PASSED** ✅
-
-### Modules Status
-
-✅ **Phase 1 Complete** (4/4):
-1. fp_sign.v
-2. fp_compare.v
-3. fp_classify.v
-4. fp_minmax.v
-
-✅ **Phase 2 Complete** (6/6):
-5. fp_adder.v (Session 10: GRS fix)
-6. fp_multiplier.v (Session 10: LSB fix)
-7. fp_converter.v (Session 10: fmt handling)
-8. fp_divider.v (Session 11: UNPACK + PACKING + GRS + BIAS)
-9. fp_sqrt.v (Session 11: UNPACK + PACKING + GRS + BIAS)
-10. fp_fma.v (Session 11: UNPACK + PACKING + GRS + BIAS)
+6. ✅ **ROUND mantissa extraction** (lines 568-578)
+   - Changed from `sum[108:86]` to `sum[50:28]`
+   - Extracts correct 23-bit mantissa
 
 ---
 
-## Remaining Issues (Separate from Bug #43)
+## Current Problem
 
-### fcvt_w Test (Float to Int Conversion)
-**Status**: FAILING
-**Likely Cause**: fp_converter.v int conversion edge cases
-**Impact**: Low - conversion instructions less critical than arithmetic
-**Recommendation**: Create new bug ticket
+### Test Case
+**Operation**: `(1.0 × 2.5) + 1.0` should equal `3.5`
 
-### fmadd Test (Fused Multiply-Add)
-**Status**: FAILING
-**Likely Cause**: FMA edge cases or alignment issues in ADD stage
-**Impact**: Medium - FMA is important but not core
-**Recommendation**: Debug separately from Bug #43
+### Results
+- **Expected**: `0x40600000` = 3.5 (exp=128, mantissa=0x600000)
+- **Actual**: `0x40900000` = 4.5 (exp=129, mantissa=0x100000)
 
-### move Test (FMV Instructions)
-**Status**: TIMEOUT
-**Likely Cause**: Undefined/X values propagating
-**Impact**: Low - move instructions are simple
-**Recommendation**: Debug with waveform viewer
+### Root Cause Analysis
 
----
-
-## Key Lessons Learned
-
-### 1. Mixed Precision Requires Four Levels of Format Awareness
-
-1. **UNPACK**: Extract from correct bit positions
-2. **COMPUTE**: Use format-aware GRS extraction
-3. **PACK**: NaN-box single-precision results
-4. **EXPONENT**: Use format-aware BIAS values
-
-### 2. The NaN-Boxing Pattern
-
-For FLEN=64 supporting both F and D extensions:
-- Single-precision values: `{32'hFFFFFFFF, float32}`
-- Double-precision values: `{float64}`
-- Any value with upper 32 bits != 0xFFFFFFFF is treated as NaN
-
-### 3. Bit Layout for Single-Precision in FLEN=64
-
+**Intermediate values**:
 ```
-Operand (NaN-boxed):
-[63:32] = 32'hFFFFFFFF (NaN-boxing)
-[31] = sign
-[30:23] = exponent (8-bit)
-[22:0] = mantissa (23-bit)
-
-Internal (after extraction):
-exp[10:0] = {3'b000, operand[30:23]}  // Zero-extended
-man[52:0] = {1'b1, operand[22:0], 29'b0}  // Zero-padded
-
-Result (NaN-boxed):
-{32'hFFFFFFFF, sign, exp[7:0], mantissa[22:0]}
+product_positioned = 0xA000000000000  (bits 51, 49 set)
+aligned_c          = 0x8000000000000  (bit 51 set)
+sum_will_be        = 0x12000000000000 (bits 52, 49 set)
 ```
 
-### 4. Debugging Strategy for Mixed Precision
+**Problem**: Both product and aligned_c have leading bits at position 51!
 
-1. Check operand extraction (are values being misinterpreted as NaN?)
-2. Check GRS bit positions (correct for format?)
-3. Check result packing (NaN-boxed for single-precision?)
-4. Check exponent arithmetic (using correct BIAS?)
+When exp_prod=128 and exp_c=127 (exp_diff=1):
+- Product: 2.5 × 2^1 with leading bit at 51 → represents 2.5 correctly
+- Aligned C: 1.0 × 2^0, shifted right by 1 → leading bit at 51 → **represents 1.0, not 0.5!**
 
----
+**The bug**: After shifting aligned_c right by exp_diff, the VALUE should be halved (1.0 → 0.5), but the leading bit is still at position 51 (representing 1.0).
 
-## Success Criteria - Phase 2 ✅ COMPLETE
+**Why this happens**:
+- man_c has leading bit at position 52 (representing 1.0)
+- Shifting right by 1 moves bit to position 51
+- But at position 51 with exp=128, this still represents 1.0, not 0.5!
 
-- [x] fp_divider.v: Format-aware UNPACK, PACKING, GRS, BIAS
-- [x] fp_sqrt.v: Format-aware UNPACK, PACKING, GRS, BIAS
-- [x] fp_fma.v: Format-aware UNPACK, PACKING, GRS, BIAS
-- [x] fdiv test: PASSING (includes FDIV + FSQRT)
-- [x] Tests passing: 8/11 (72%)
-- [ ] fmadd test: FAILING (separate issue)
-- [x] Clear documentation of fixes
+**Correct behavior needed**:
+- Product at position 51 with exp=128: represents 2.5
+- Aligned C at position 50 with exp=128: would represent 0.5
+- Sum: bits [51, 50, 49] with exp=128 → represents 3.5 ✓
 
 ---
 
 ## Next Steps
 
-### Option 1: Debug fmadd (Recommended)
-**Why**: Only 1 test away from 9/11 (81%)
-**Time**: 1-2 hours
-**Approach**: Check FMA ADD stage alignment and edge cases
+### Option 1: Fix aligned_c positioning logic (RECOMMENDED)
 
-### Option 2: Debug fcvt_w
-**Why**: Int conversion is important for mixed FP/int code
-**Time**: 1-2 hours
-**Approach**: Check fp_converter int conversion rounding
+When shifting aligned_c right by exp_diff, we need to shift by exp_diff+1 to account for the different reference positions:
 
-### Option 3: Debug move timeout
-**Why**: Simple instructions should work
-**Time**: 30 min - 1 hour
-**Approach**: Check for X propagation in register file
+```verilog
+if (FLEN == 64)
+  aligned_c = (man_c >> (exp_diff + 1));  // Extra shift to move from pos 52 to pos 50
+```
 
-### Option 4: Document and move on
-**Why**: Bug #43 is complete, remaining issues are separate
-**Recommendation**: Commit Phase 2 completion, open new tickets
+This would position aligned_c's leading bit at position 51-exp_diff instead of 51.
+
+### Option 2: Rethink entire positioning scheme
+
+Consider using a consistent reference bit for all operands regardless of their exponent difference.
+
+### Option 3: Study reference FMA implementations
+
+Look at how other FMA implementations handle mixed-exponent addition.
 
 ---
 
-## Testing Commands
+## Key Files Modified
+
+1. `rtl/core/rv32i_core_pipelined.v`
+   - Lines 1897-1902: FLW NaN-boxing
+
+2. `rtl/core/fp_fma.v`
+   - Lines 384-416: aligned_c positioning
+   - Lines 416-424: product_positioned calculation
+   - Lines 478-501: NORMALIZE overflow detection
+   - Lines 502-529: NORMALIZE normalized detection
+   - Lines 568-578: ROUND mantissa extraction
+
+---
+
+## Documentation
+
+- **Bug report**: `docs/BUG_44_FMA_POSITIONING.md`
+- **Session notes**: This file
+
+---
+
+## Test Commands
 
 ```bash
+# Run fmadd test
+timeout 60s ./tools/run_single_test.sh rv32uf-p-fmadd
+
+# Run with debug
+timeout 60s ./tools/run_single_test.sh rv32uf-p-fmadd DEBUG_FPU
+
 # Full RV32F suite
 timeout 240s ./tools/run_hex_tests.sh rv32uf
-
-# Single test with debug
-timeout 60s ./tools/run_single_test.sh rv32uf-p-fdiv DEBUG_FPU_DIVIDER
-timeout 60s ./tools/run_single_test.sh rv32uf-p-fmadd DEBUG_FPU
 ```
 
 ---
 
-## Key Files
+## Key Insights
 
-- **Bug doc**: `docs/BUG_43_FD_MIXED_PRECISION.md`
-- **Fixed modules**: `rtl/core/{fp_divider,fp_sqrt,fp_fma,fpu}.v`
-- **Test results**: `sim/test_*.log`
+1. **Product positioning is correct**: product >> 53 puts leading bit at ~51 ✓
+
+2. **NORMALIZE/ROUND stages fixed**: All bit position checks updated for new scheme ✓
+
+3. **Critical remaining bug**: aligned_c positioning doesn't account for VALUE scaling when exponents differ
+
+4. **The core issue**: We're confusing bit positions with floating-point values:
+   - Bit position 51 with exp=128 represents 1.0 × 2^1 = 2.0
+   - Bit position 51 with exp=127 would represent 1.0 × 2^0 = 1.0
+   - When we shift to align exponents, we need to preserve the VALUE, not just move bits!
 
 ---
 
-**🎉 Bug #43 Phase 2 COMPLETE! F+D mixed precision fully supported across all FPU modules!**
+## Recommended First Action
+
+Try Option 1: Add +1 to aligned_c shift amount and test if this fixes the alignment.
+
+---
+
+**🔧 Bug #44 still in progress - FMA alignment logic needs one more fix!**
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
