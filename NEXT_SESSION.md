@@ -1,176 +1,173 @@
-# Next Session: Bug #43 - F+D Mixed Precision Support (Phase 1)
+# Next Session: Bug #43 - F+D Mixed Precision (Phase 2 Continued)
 
 **Last Session**: 2025-10-22
-**Status**: Root cause identified, 1/10 modules fixed
-**Priority**: 🔥 CRITICAL - All RV32F tests broken (1/11 passing)
+**Status**: 7/10 modules fixed, 6/11 tests passing (54%)
+**Priority**: 🔥 HIGH - 5 tests still failing
 
 ---
 
-## Quick Context
+## Current Status (2025-10-22 Session 9)
 
-### What Happened
-The RV32D refactoring (Bugs #27 & #28) successfully widened FP registers to 64 bits but broke all single-precision FP tests. The FP modules assume `FLEN` directly maps to the precision being operated on, rather than checking the `fmt` signal to distinguish between single (32-bit) and double (64-bit) precision.
+### FPU Compliance: 6/11 tests (54%)
+- ✅ **fadd** - FAILING (needs fp_adder or fp_fma verification)
+- ✅ **fclass** - PASSING
+- ✅ **fcmp** - PASSING
+- ✅ **fcvt** - PASSING 🆕
+- ⚠️ **fcvt_w** - FAILING (different conversion ops, needs investigation)
+- ⚠️ **fdiv** - FAILING (needs fp_sqrt fix)
+- ⚠️ **fmadd** - FAILING (needs fp_fma fix)
+- ✅ **fmin** - PASSING
+- ✅ **ldst** - PASSING
+- ⚠️ **move** - TIMEOUT (undefined values, needs investigation)
+- ✅ **recoding** - PASSING 🆕
 
-### Current Status
-- **RV32UF**: 1/11 (9%) - only ldst passes ❌
-- **RV32UD**: 1/9 (11%) - fclass passes ✅
-- **Root cause**: FP modules extract sign/exponent/mantissa from wrong bit positions
-- **Progress**: fp_sign.v fixed ✅, 9 modules remaining
+## Session 9 Summary (2025-10-22)
 
----
+**🎉 MAJOR PROGRESS: fp_multiplier and fp_converter FIXED!**
 
-## Immediate Next Steps (Phase 1: 2-3 hours)
+### Achievements:
+- ✅ **fp_multiplier.v** fixed - recoding test now PASSING!
+- ✅ **fp_converter.v** fixed - fcvt test now PASSING!
+- ✅ Progress: 4/11 (36%) → 6/11 (54%)
+- ✅ Phase 2: 3/6 complex modules now fixed
 
-Fix the simple bit-extraction modules that don't have complex state machines:
+### Technical Wins:
 
-### 1. Fix fp_compare.v (45 min)
+**fp_multiplier.v:**
+- Added `fmt` input and latched it
+- Fixed UNPACK stage with conditional field extraction
+- Fixed MULTIPLY stage with correct bias selection (127 vs 1023)
+- Fixed NORMALIZE stage handling 29-bit padding for single-precision
+- Fixed ROUND stage with NaN-boxing for single-precision results
+- Fixed special cases (NaN, Inf, Zero) with proper NaN-boxing
 
-**Issue**: Extracts sign/exponent/mantissa from FLEN-relative positions [63:0] instead of [31:0] for single-precision.
+**fp_converter.v:**
+- Added `fmt` input and latched it
+- Fixed FP→INT: conditional field extraction, correct bias
+- Fixed INT→FP: correct bias and mantissa width by format
+- Fixed ROUND: NaN-boxing for single-precision results
 
-**Fix**:
-```verilog
-// Add fmt input
-input wire fmt,  // 0: single-precision, 1: double-precision
+### Modules Status:
+✅ **Phase 1 Complete** (4/4):
+1. fp_sign.v
+2. fp_compare.v
+3. fp_classify.v
+4. fp_minmax.v
 
-// Extract fields conditionally
-generate
-  if (FLEN == 64) begin : g_flen64
-    assign sign_a = fmt ? operand_a[63] : operand_a[31];
-    assign sign_b = fmt ? operand_b[63] : operand_b[31];
-    assign exp_a = fmt ? operand_a[62:52] : operand_a[30:23];
-    assign exp_b = fmt ? operand_b[62:52] : operand_b[30:23];
-    assign man_a = fmt ? operand_a[51:0] : operand_a[22:0];
-    assign man_b = fmt ? operand_b[51:0] : operand_b[22:0];
-  end else begin : g_flen32
-    // FLEN=32: only single-precision
-    assign sign_a = operand_a[31];
-    assign sign_b = operand_b[31];
-    assign exp_a = operand_a[30:23];
-    assign exp_b = operand_b[30:23];
-    assign man_a = operand_a[22:0];
-    assign man_b = operand_b[22:0];
-  end
-endgenerate
-```
+✅ **Phase 2 Partial** (3/6):
+5. fp_adder.v (done earlier)
+6. fp_multiplier.v 🆕
+7. fp_converter.v 🆕
 
-**Update fpu.v instantiation** (line ~280):
-```verilog
-fp_compare #(.FLEN(FLEN)) u_fp_compare (
-  .operand_a(operand_a),
-  .operand_b(operand_b),
-  .operation(compare_op),
-  .fmt(fmt),              // ← ADD THIS
-  .result(compare_result),
-  .flag_nv(compare_flag_nv)
-);
-```
-
-**Test**:
-```bash
-env XLEN=32 timeout 10s ./tools/run_official_tests.sh uf fcmp
-```
-
-### 2. Fix fp_classify.v (30 min)
-
-**Issue**: Same as fp_compare - extracts from wrong bit positions.
-
-**Fix**: Similar pattern - add `fmt` input and conditional extraction.
-
-**Files to modify**:
-- rtl/core/fp_classify.v: Add fmt input, fix extraction (lines 21-23)
-- rtl/core/fpu.v: Pass fmt to fp_classify (line ~290)
-
-**Test**:
-```bash
-env XLEN=32 timeout 10s ./tools/run_official_tests.sh uf fclass
-```
-
-### 3. Fix fp_minmax.v (45 min)
-
-**Issue**: Min/max operations likely compare wrong fields or extract wrong sign bits.
-
-**Need to check first**:
-```bash
-grep -n "operand.*\[" rtl/core/fp_minmax.v
-```
-
-**Fix**: Add fmt input, fix any bit extraction.
-
-**Test**:
-```bash
-env XLEN=32 timeout 10s ./tools/run_official_tests.sh uf fmin
-```
-
-### 4. Verify Phase 1 Progress
-
-After fixing these 3 modules, test results should improve:
-```bash
-env XLEN=32 ./tools/run_official_tests.sh uf
-```
-
-**Target**: 4-5 tests passing (ldst, fcmp, fclass, fmin, move)
+❌ **Phase 2 Remaining** (3/6):
+8. fp_sqrt.v - Blocks fdiv test
+9. fp_fma.v - Blocks fmadd test
+10. fp_adder.v - May need re-verification (fadd still failing)
 
 ---
 
-## Key Files
+## Next Session Priority
 
-- **Main bug doc**: `docs/BUG_43_FD_MIXED_PRECISION.md` - Complete analysis and plan
-- **Reference implementation**: `rtl/core/fp_sign.v` - Already fixed, use as template
-- **FPU instantiations**: `rtl/core/fpu.v` - Lines 258-300 (module instantiations)
+### Option 1: Fix fp_sqrt.v (Recommended) ⭐
+**Why**: Blocks fdiv test, clear failure mode
+**Time**: 1-2 hours
+**Impact**: Should unlock fdiv test → 7/11 (63%)
+
+**Approach**:
+- Follow fp_multiplier pattern
+- Add `fmt` input
+- Fix UNPACK/COMPUTE/NORMALIZE/ROUND stages
+- Handle radix-2 or radix-4 sqrt algorithm with correct bit positions
+
+### Option 2: Investigate move timeout
+**Why**: Understand undefined value source
+**Time**: 30-45 min
+**Impact**: May reveal additional issues
+
+### Option 3: Fix fp_fma.v
+**Why**: Blocks fmadd test
+**Time**: 1-2 hours
+**Impact**: Should unlock fmadd → 7/11 (63%)
+
+**Note**: FMA may already work if multiplier+adder fixes are sufficient
+
+---
+
+## Remaining Issues
+
+### 1. fadd test - FAILING
+**Current**: Failing (was progressing before)
+**Possible Causes**:
+- fp_adder may have regression
+- May depend on fp_fma for some operations
+- Test may include operations beyond basic FADD
+
+**Investigation**:
+```bash
+grep -E "gp.*=" sim/test_rv32uf-p-fadd.log | tail -5
+```
+
+### 2. fcvt_w test - FAILING
+**Current**: Failing (fcvt passes, fcvt_w fails)
+**Possible Causes**:
+- Different conversion operations (maybe FP→word specific)
+- Edge cases in fp_converter
+- Rounding or special value handling
+
+**Investigation**:
+```bash
+timeout 30s ./tools/run_hex_tests.sh rv32uf-p-fcvt_w 2>&1 | tail -30
+```
+
+### 3. move test - TIMEOUT
+**Current**: 99.8% flush rate, undefined values
+**Possible Causes**:
+- FMV.X.W or FMV.W.X operations
+- May involve fp_converter edge cases
+- Could be unrelated to fp_converter
+
+**Investigation**:
+```bash
+timeout 5s ./tools/run_hex_tests.sh rv32uf-p-move 2>&1
+tail -50 sim/test_rv32uf-p-move.log
+```
 
 ---
 
 ## Testing Commands
 
 ```bash
-# Single test
-env XLEN=32 timeout 10s ./tools/run_official_tests.sh uf <test_name>
+# Test specific module
+timeout 30s ./tools/run_hex_tests.sh rv32uf-p-<test> 2>&1 | tail -30
 
-# Full F-extension suite
-env XLEN=32 ./tools/run_official_tests.sh uf
+# Full suite
+timeout 180s ./tools/run_hex_tests.sh rv32uf 2>&1
 
-# Check for undefined values
-timeout 2s vvp sim/official-compliance/rv32uf-p-<test>.vvp 2>&1 | grep -i "x\|undef"
-
-# View waveform (if needed)
-gtkwave sim/waves/core_pipelined.vcd
+# Check failure point
+grep -E "gp.*=" sim/test_rv32uf-p-<test>.log | tail -10
 ```
 
 ---
 
-## Success Criteria - Phase 1
+## Key Files
 
-- [ ] fp_compare.v: Added fmt input, fixed bit extraction
-- [ ] fp_classify.v: Added fmt input, fixed bit extraction
-- [ ] fp_minmax.v: Added fmt input, fixed bit extraction
-- [ ] fpu.v: Updated all 3 instantiations to pass fmt
-- [ ] Tests passing: fcmp, fclass, fmin, move (4-5 total)
-- [ ] No test timeouts
-- [ ] Committed with clear message
+- **Main bug doc**: `docs/BUG_43_FD_MIXED_PRECISION.md`
+- **Fixed modules**: `rtl/core/fp_multiplier.v`, `rtl/core/fp_converter.v`
+- **Next targets**: `rtl/core/fp_sqrt.v`, `rtl/core/fp_fma.v`
+- **FPU top**: `rtl/core/fpu.v`
 
 ---
 
-## Future Sessions
+## Success Criteria - Phase 2 Complete
 
-**Phase 2** (Sessions 2-4): Arithmetic modules - fp_adder, fp_multiplier, fp_divider, fp_sqrt
-**Phase 3** (Session 5): fp_converter, fp_fma
-**Phase 4** (Session 6): Testing & verification
-
-**Final Goal**: RV32UF 11/11 ✅, RV32UD 9/9 ✅
-
----
-
-## Important Notes
-
-⚠️ **Don't test full suite until Phase 1 complete** - arithmetic ops will still fail
-⚠️ **Use timeouts** - Some tests may hang with X values
-⚠️ **Commit incrementally** - After each module fix
-
-📚 **Pattern to follow**: See fp_sign.v for reference implementation
-🎯 **Start with**: fp_compare.v (most straightforward)
+- [ ] fp_sqrt.v: Added fmt input, fixed bit extraction (fdiv test)
+- [ ] fp_fma.v: Verified/fixed fmt handling (fmadd test)
+- [ ] Investigate fadd, fcvt_w, move failures
+- [ ] Tests passing: 8-9/11 (72-81%)
+- [ ] Commit with clear message
 
 ---
 
-**Ready to start?** Open `rtl/core/fp_compare.v` and add the fmt input!
+**Ready to continue?** Start with `rtl/core/fp_sqrt.v` - follow fp_multiplier pattern!
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

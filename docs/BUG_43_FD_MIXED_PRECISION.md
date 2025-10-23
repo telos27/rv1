@@ -1,9 +1,9 @@
 # Bug #43: F+D Mixed Precision Support Incomplete
 
-**Status**: 🚧 PHASE 2 PARTIAL - fp_adder fixed, fp_multiplier next (5/10 modules fixed)
-**Severity**: HIGH (blocks most RV32F tests)
+**Status**: 🚧 PHASE 2 IN PROGRESS - 7/10 modules fixed (fp_multiplier, fp_converter done)
+**Severity**: HIGH (blocks 5 RV32F tests)
 **Discovered**: 2025-10-22
-**Progress**: Phase 1 complete (4/4 simple modules) + Phase 2 partial (1/6 complex modules fixed)
+**Progress**: Phase 1 complete (4/4 simple modules) + Phase 2 partial (3/6 complex modules fixed)
 
 ---
 
@@ -15,6 +15,7 @@ The RV32D refactoring (Bugs #27 & #28) successfully widened the FP register file
 - **Before RV32D refactoring** (commit 7dc1afd): RV32UF 11/11 (100%) ✅
 - **After RV32D refactoring** (commit 747a716): RV32UF 1/11 (9%) ❌ - only ldst passes
 - **After Phase 1 fixes** (2025-10-23): RV32UF 4/11 (36%) 🚧 - ldst, fclass, fcmp, fmin passing
+- **After Phase 2 partial** (2025-10-22): RV32UF 6/11 (54%) 🚧 - +recoding, +fcvt now passing
 
 ---
 
@@ -105,10 +106,18 @@ Some tests timeout with 99.8% pipeline flush rate, indicating undefined (X) valu
    - **Status**: ✅ **WORKING** - fadd test progressed from test #5 → test #8 (now failing on FMUL)
    - **Impact**: FADD.S, FSUB.S now working correctly!
 
-6. **fp_multiplier.v** ❌ **TODO**
-   - **Issue**: Similar field extraction issues in UNPACK/NORMALIZE/ROUND
-   - **Impact**: FMUL.S incorrect results, affects fmadd/recoding tests
-   - **Estimate**: 1-2 hours (similar pattern to fp_adder)
+6. **fp_multiplier.v** ✅ **FIXED** (2025-10-22)
+   - **Issue**: UNPACK/NORMALIZE/ROUND extracted fields from FLEN-relative positions
+   - **Root Cause**: No fmt-based field extraction, used compile-time MAN_WIDTH/EXP_WIDTH
+   - **Fix**:
+     - Added `fmt` input and latched it
+     - UNPACK: Conditional field extraction (single: [31:0], double: [63:0])
+     - MULTIPLY: Correct bias selection (127 vs 1023)
+     - NORMALIZE: Handle 29-bit padding in single-precision product
+     - ROUND: NaN-boxing for single-precision results
+     - Special cases: Proper NaN/Inf/Zero handling with NaN-boxing
+   - **Status**: ✅ **WORKING** - recoding test now PASSING!
+   - **Impact**: FMUL.S now working, recoding test fixed
 
 7. **fp_divider.v** ❌ **TODO**
    - **Issue**: Similar field extraction issues
@@ -125,11 +134,16 @@ Some tests timeout with 99.8% pipeline flush rate, indicating undefined (X) valu
    - **Impact**: FMADD.S, FMSUB.S, FNMADD.S, FNMSUB.S incorrect
    - **Note**: Should work once adder and multiplier are fixed
 
-10. **fp_converter.v** ⚠️ **LOW PRIORITY**
-    - **Issue**: INT↔FP conversion may have field extraction issues
-    - **Impact**: FCVT.S.W, FCVT.W.S, etc. incorrect
-    - **Note**: Complex module, lower priority for initial F extension support
-    - **Priority**: High (affects many tests)
+10. **fp_converter.v** ✅ **FIXED** (2025-10-22)
+    - **Issue**: FP→INT and INT→FP extracted fields from FLEN-relative positions
+    - **Root Cause**: No fmt-based field extraction, used compile-time BIAS/MAN_WIDTH
+    - **Fix**:
+      - Added `fmt` input and latched it
+      - FP→INT CONVERT: Conditional field extraction and correct bias (127 vs 1023)
+      - INT→FP CONVERT: Correct bias and mantissa width based on format
+      - ROUND: Proper result assembly with NaN-boxing for single-precision
+    - **Status**: ✅ **WORKING** - fcvt test now PASSING!
+    - **Impact**: FCVT.W.S, FCVT.S.W, and other conversions working
 
 ---
 

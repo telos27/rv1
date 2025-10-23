@@ -12,6 +12,7 @@ module fp_multiplier #(
   // Control
   input  wire              start,          // Start operation
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
+  input  wire              fmt,            // 0: single-precision, 1: double-precision
   output reg               busy,           // Operation in progress
   output reg               done,           // Operation complete (1 cycle pulse)
 
@@ -47,21 +48,31 @@ module fp_multiplier #(
 
   // Latched input operands (captured on start)
   reg [FLEN-1:0] operand_a_latched, operand_b_latched;
+  reg fmt_latched;  // Latched format signal
 
   // Unpacked operands
   reg sign_a, sign_b, sign_result;
-  reg [EXP_WIDTH-1:0] exp_a, exp_b;
-  reg [MAN_WIDTH:0] man_a, man_b;  // +1 bit for implicit leading 1
+  reg [10:0] exp_a, exp_b;  // Max width for double-precision (11 bits)
+  reg [52:0] man_a, man_b;  // Max width for double-precision (52+1 bits for implicit 1)
 
   // Special value flags
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
   reg special_case_handled;  // Track if special case was processed
 
+  // Effective widths based on latched format
+  wire [10:0] eff_exp_all_ones;  // All 1s for current format
+  wire [5:0] eff_man_width;      // Effective mantissa width
+  wire [3:0] eff_exp_width;      // Effective exponent width
+
+  assign eff_exp_all_ones = fmt_latched ? 11'h7FF : 11'h0FF;
+  assign eff_man_width = fmt_latched ? 6'd52 : 6'd23;
+  assign eff_exp_width = fmt_latched ? 4'd11 : 4'd8;
+
   // Computation
-  reg [EXP_WIDTH+1:0] exp_sum;  // +2 bits for overflow handling
-  reg [(2*MAN_WIDTH+3):0] product;  // Double width + GRS bits
-  reg [MAN_WIDTH:0] normalized_man;
-  reg [EXP_WIDTH-1:0] exp_result;
+  reg [12:0] exp_sum;  // Max 11+2 bits for double-precision overflow handling
+  reg [109:0] product;  // Double width for double-precision: (52+1)*2 + extra = 106+4
+  reg [52:0] normalized_man;  // Max width for double-precision
+  reg [10:0] exp_result;  // Max width for double-precision
 
   // Rounding
   reg guard, round, sticky;
@@ -113,6 +124,7 @@ module fp_multiplier #(
           if (start) begin
             operand_a_latched <= operand_a;
             operand_b_latched <= operand_b;
+            fmt_latched <= fmt;
           end
         end
 
@@ -124,37 +136,90 @@ module fp_multiplier #(
           special_case_handled <= 1'b0;
 
           // Extract sign (XOR for multiplication)
-          sign_a <= operand_a_latched[FLEN-1];
-          sign_b <= operand_b_latched[FLEN-1];
-          sign_result <= operand_a_latched[FLEN-1] ^ operand_b_latched[FLEN-1];
+          // For FLEN=64: use bit [63] for double, bit [31] for single
+          if (FLEN == 64) begin
+            sign_a <= fmt_latched ? operand_a_latched[63] : operand_a_latched[31];
+            sign_b <= fmt_latched ? operand_b_latched[63] : operand_b_latched[31];
+            sign_result <= (fmt_latched ? operand_a_latched[63] : operand_a_latched[31]) ^
+                           (fmt_latched ? operand_b_latched[63] : operand_b_latched[31]);
+          end else begin
+            sign_a <= operand_a_latched[31];
+            sign_b <= operand_b_latched[31];
+            sign_result <= operand_a_latched[31] ^ operand_b_latched[31];
+          end
 
-          // Extract exponent
-          exp_a <= operand_a_latched[FLEN-2:MAN_WIDTH];
-          exp_b <= operand_b_latched[FLEN-2:MAN_WIDTH];
+          // Extract exponent based on format
+          if (FLEN == 64) begin
+            exp_a <= fmt_latched ? operand_a_latched[62:52] : {3'b000, operand_a_latched[30:23]};
+            exp_b <= fmt_latched ? operand_b_latched[62:52] : {3'b000, operand_b_latched[30:23]};
+          end else begin
+            exp_a <= {3'b000, operand_a_latched[30:23]};
+            exp_b <= {3'b000, operand_b_latched[30:23]};
+          end
 
           // Extract mantissa with implicit leading 1 (if normalized)
-          man_a <= (operand_a_latched[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_a_latched[MAN_WIDTH-1:0]} :  // Subnormal: no implicit 1
-                   {1'b1, operand_a_latched[MAN_WIDTH-1:0]};   // Normal: implicit 1
+          // For double: bits [51:0], for single: bits [22:0]
+          if (FLEN == 64) begin
+            if (fmt_latched) begin
+              // Double-precision
+              man_a <= (operand_a_latched[62:52] == 0) ?
+                       {1'b0, operand_a_latched[51:0]} :  // Subnormal
+                       {1'b1, operand_a_latched[51:0]};   // Normal
+              man_b <= (operand_b_latched[62:52] == 0) ?
+                       {1'b0, operand_b_latched[51:0]} :
+                       {1'b1, operand_b_latched[51:0]};
+            end else begin
+              // Single-precision (pad to 53 bits)
+              man_a <= (operand_a_latched[30:23] == 0) ?
+                       {1'b0, operand_a_latched[22:0], 29'b0} :  // Subnormal
+                       {1'b1, operand_a_latched[22:0], 29'b0};   // Normal
+              man_b <= (operand_b_latched[30:23] == 0) ?
+                       {1'b0, operand_b_latched[22:0], 29'b0} :
+                       {1'b1, operand_b_latched[22:0], 29'b0};
+            end
+          end else begin
+            // FLEN=32, always single-precision (pad to 53 bits for consistency)
+            man_a <= (operand_a_latched[30:23] == 0) ?
+                     {1'b0, operand_a_latched[22:0], 29'b0} :
+                     {1'b1, operand_a_latched[22:0], 29'b0};
+            man_b <= (operand_b_latched[30:23] == 0) ?
+                     {1'b0, operand_b_latched[22:0], 29'b0} :
+                     {1'b1, operand_b_latched[22:0], 29'b0};
+          end
 
-          man_b <= (operand_b_latched[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_b_latched[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_b_latched[MAN_WIDTH-1:0]};
-
-          // Detect special values
+          // Detect special values (using extracted exponent and mantissa)
           `ifdef DEBUG_FPU
-          $display("[FP_MUL] UNPACK: operand_a=%h operand_b=%h", operand_a_latched, operand_b_latched);
+          $display("[FP_MUL] UNPACK: operand_a=%h operand_b=%h fmt=%b", operand_a_latched, operand_b_latched, fmt_latched);
           `endif
-          is_nan_a <= (operand_a_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a_latched[MAN_WIDTH-1:0] != 0);
-          is_nan_b <= (operand_b_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b_latched[MAN_WIDTH-1:0] != 0);
-          is_inf_a <= (operand_a_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a_latched[MAN_WIDTH-1:0] == 0);
-          is_inf_b <= (operand_b_latched[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b_latched[MAN_WIDTH-1:0] == 0);
-          is_zero_a <= (operand_a_latched[FLEN-2:0] == 0);
-          is_zero_b <= (operand_b_latched[FLEN-2:0] == 0);
+
+          // NaN detection: exp == all 1s AND mantissa != 0
+          if (FLEN == 64) begin
+            is_nan_a <= fmt_latched ?
+                        ((operand_a_latched[62:52] == 11'h7FF) && (operand_a_latched[51:0] != 0)) :
+                        ((operand_a_latched[30:23] == 8'hFF) && (operand_a_latched[22:0] != 0));
+            is_nan_b <= fmt_latched ?
+                        ((operand_b_latched[62:52] == 11'h7FF) && (operand_b_latched[51:0] != 0)) :
+                        ((operand_b_latched[30:23] == 8'hFF) && (operand_b_latched[22:0] != 0));
+            is_inf_a <= fmt_latched ?
+                        ((operand_a_latched[62:52] == 11'h7FF) && (operand_a_latched[51:0] == 0)) :
+                        ((operand_a_latched[30:23] == 8'hFF) && (operand_a_latched[22:0] == 0));
+            is_inf_b <= fmt_latched ?
+                        ((operand_b_latched[62:52] == 11'h7FF) && (operand_b_latched[51:0] == 0)) :
+                        ((operand_b_latched[30:23] == 8'hFF) && (operand_b_latched[22:0] == 0));
+            is_zero_a <= fmt_latched ?
+                         (operand_a_latched[62:0] == 0) :
+                         (operand_a_latched[30:0] == 0);
+            is_zero_b <= fmt_latched ?
+                         (operand_b_latched[62:0] == 0) :
+                         (operand_b_latched[30:0] == 0);
+          end else begin
+            is_nan_a <= (operand_a_latched[30:23] == 8'hFF) && (operand_a_latched[22:0] != 0);
+            is_nan_b <= (operand_b_latched[30:23] == 8'hFF) && (operand_b_latched[22:0] != 0);
+            is_inf_a <= (operand_a_latched[30:23] == 8'hFF) && (operand_a_latched[22:0] == 0);
+            is_inf_b <= (operand_b_latched[30:23] == 8'hFF) && (operand_b_latched[22:0] == 0);
+            is_zero_a <= (operand_a_latched[30:0] == 0);
+            is_zero_b <= (operand_b_latched[30:0] == 0);
+          end
         end
 
         // ============================================================
@@ -167,8 +232,12 @@ module fp_multiplier #(
                    is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b);
           `endif
           if (is_nan_a || is_nan_b) begin
-            // NaN propagation
-            result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+            // NaN propagation (canonical NaN)
+            if (fmt_latched) begin
+              result <= 64'h7FF8000000000000;  // Double canonical NaN
+            end else begin
+              result <= (FLEN == 64) ? 64'hFFFFFFFF7FC00000 : 32'h7FC00000;  // Single canonical NaN (NaN-boxed if needed)
+            end
             flag_nv <= 1'b1;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
@@ -176,8 +245,12 @@ module fp_multiplier #(
             special_case_handled <= 1'b1;
             state <= DONE;
           end else if ((is_inf_a && is_zero_b) || (is_zero_a && is_inf_b)) begin
-            // 0 × ∞: Invalid
-            result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+            // 0 × ∞: Invalid - return canonical NaN
+            if (fmt_latched) begin
+              result <= 64'h7FF8000000000000;
+            end else begin
+              result <= (FLEN == 64) ? 64'hFFFFFFFF7FC00000 : 32'h7FC00000;
+            end
             flag_nv <= 1'b1;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
@@ -186,7 +259,11 @@ module fp_multiplier #(
             state <= DONE;
           end else if (is_inf_a || is_inf_b) begin
             // ∞ × x: return ±∞
-            result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            if (fmt_latched) begin
+              result <= {sign_result, 11'h7FF, 52'b0};  // Double infinity
+            end else begin
+              result <= (FLEN == 64) ? {32'hFFFFFFFF, sign_result, 8'hFF, 23'b0} : {sign_result, 8'hFF, 23'b0};  // Single infinity
+            end
             flag_nv <= 1'b0;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
@@ -195,7 +272,11 @@ module fp_multiplier #(
             state <= DONE;
           end else if (is_zero_a || is_zero_b) begin
             // 0 × x: return ±0
-            result <= {sign_result, {FLEN-1{1'b0}}};
+            if (fmt_latched) begin
+              result <= {sign_result, 63'b0};  // Double zero
+            end else begin
+              result <= (FLEN == 64) ? {32'hFFFFFFFF, sign_result, 31'b0} : {sign_result, 31'b0};  // Single zero
+            end
             flag_nv <= 1'b0;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
@@ -212,7 +293,11 @@ module fp_multiplier #(
 
             // Add exponents (subtract bias)
             // exp_sum = exp_a + exp_b - BIAS
-            exp_sum <= exp_a + exp_b - BIAS;
+            // Use correct bias based on format
+            if (fmt_latched)
+              exp_sum <= exp_a + exp_b - 13'd1023;  // Double-precision bias
+            else
+              exp_sum <= exp_a + exp_b - 13'd127;   // Single-precision bias
           end
         end
 
@@ -221,52 +306,88 @@ module fp_multiplier #(
         // ============================================================
         NORMALIZE: begin
           // Product is (1.xxx * 1.yyy) = 1.zzz to 3.zzz (needs 0 or 1 shift)
-          // Bit 47: determines if product >= 2.0 (need to shift right)
-          // Bit 46: implicit 1 for products < 2.0
+          //
+          // For double-precision (fmt=1): man_a, man_b are 53 bits each
+          //   Product is 106 bits, bit [105] = overflow, bit [104] = MSB of normal result
+          //
+          // For single-precision (fmt=0): man_a, man_b are 24 bits + 29 zero padding = 53 bits
+          //   Product is 106 bits, but actual mantissa product is at bits [105:58]
+          //   (24+1) * (24+1) = 48-bit product at top, padding below
 
           `ifdef DEBUG_FPU
-          $display("[FP_MUL] NORMALIZE: product=%h bit47=%b", product, product[(2*MAN_WIDTH+1)]);
+          $display("[FP_MUL] NORMALIZE: product=%h fmt=%b", product, fmt_latched);
           `endif
 
-          if (product[(2*MAN_WIDTH+1)]) begin
-            // Product >= 2.0, shift right by 1
-            // Implicit 1 is at bit 47, mantissa is bits [46:24]
-            normalized_man <= {1'b0, product[(2*MAN_WIDTH):(MAN_WIDTH+1)]};
-            exp_result <= exp_sum + 1;
-            guard <= product[MAN_WIDTH];
-            round <= product[MAN_WIDTH-1];
-            sticky <= |product[MAN_WIDTH-2:0];
-            `ifdef DEBUG_FPU
-            $display("[FP_MUL] NORMALIZE: >= 2.0, extract product[46:24]=%h", product[(2*MAN_WIDTH):(MAN_WIDTH+1)]);
-            `endif
+          if (fmt_latched) begin
+            // Double-precision: 53-bit mantissas, 106-bit product
+            if (product[105]) begin
+              // Product >= 2.0, shift right by 1
+              normalized_man <= {1'b0, product[104:53]};
+              exp_result <= exp_sum + 1;
+              guard <= product[52];
+              round <= product[51];
+              sticky <= |product[50:0];
+            end else begin
+              // Product in [1.0, 2.0), already normalized
+              normalized_man <= {1'b0, product[103:52]};
+              exp_result <= exp_sum;
+              guard <= product[51];
+              round <= product[50];
+              sticky <= |product[49:0];
+            end
           end else begin
-            // Product in [1.0, 2.0), already normalized
-            // Implicit 1 is at bit 46, mantissa is bits [45:23]
-            normalized_man <= {1'b0, product[(2*MAN_WIDTH-1):(MAN_WIDTH)]};
-            exp_result <= exp_sum;
-            guard <= product[MAN_WIDTH-1];
-            round <= product[MAN_WIDTH-2];
-            sticky <= |product[MAN_WIDTH-3:0];
-            `ifdef DEBUG_FPU
-            $display("[FP_MUL] NORMALIZE: < 2.0, extract product[45:23]=%h", product[(2*MAN_WIDTH-1):(MAN_WIDTH)]);
-            `endif
+            // Single-precision: 24-bit mantissas in 53-bit container (bits [52:29])
+            // Product of two 24-bit mantissas = 48 bits at positions [105:58]
+            if (product[105]) begin
+              // Product >= 2.0, shift right by 1
+              // Extract mantissa from [104:82] (23 bits)
+              normalized_man <= {1'b0, product[104:82], 29'b0};  // Pad to 53 bits
+              exp_result <= exp_sum + 1;
+              guard <= product[81];
+              round <= product[80];
+              sticky <= |product[79:0];
+              `ifdef DEBUG_FPU
+              $display("[FP_MUL] NORMALIZE SP: >= 2.0, extract product[104:82]=%h", product[104:82]);
+              `endif
+            end else begin
+              // Product in [1.0, 2.0), already normalized
+              // Extract mantissa from [103:81] (23 bits)
+              normalized_man <= {1'b0, product[103:81], 29'b0};  // Pad to 53 bits
+              exp_result <= exp_sum;
+              guard <= product[80];
+              round <= product[79];
+              sticky <= |product[78:0];
+              `ifdef DEBUG_FPU
+              $display("[FP_MUL] NORMALIZE SP: < 2.0, extract product[103:81]=%h", product[103:81]);
+              `endif
+            end
           end
 
-          // Check for overflow
-          if (exp_sum >= MAX_EXP || exp_result >= MAX_EXP) begin
-            flag_of <= 1'b1;
-            flag_nx <= 1'b1;
-            // Return ±infinity
-            result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
-            state <= DONE;
-          end
-          // Check for underflow
-          else if (exp_sum < 1 || exp_result < 1) begin
-            flag_uf <= 1'b1;
-            flag_nx <= 1'b1;
-            // Return ±0 (flush to zero for simplicity)
-            result <= {sign_result, {FLEN-1{1'b0}}};
-            state <= DONE;
+          // Check for overflow (use correct MAX_EXP based on format)
+          if (fmt_latched) begin
+            if (exp_sum >= 13'd2047 || exp_result >= 11'd2047) begin
+              flag_of <= 1'b1;
+              flag_nx <= 1'b1;
+              result <= {sign_result, 11'h7FF, 52'b0};  // Double infinity
+              state <= DONE;
+            end else if (exp_sum < 1 || exp_result < 1) begin
+              flag_uf <= 1'b1;
+              flag_nx <= 1'b1;
+              result <= {sign_result, 63'b0};  // Double zero
+              state <= DONE;
+            end
+          end else begin
+            if (exp_sum >= 13'd255 || exp_result >= 11'd255) begin
+              flag_of <= 1'b1;
+              flag_nx <= 1'b1;
+              result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'b0};  // Single infinity (NaN-boxed)
+              state <= DONE;
+            end else if (exp_sum < 1 || exp_result < 1) begin
+              flag_uf <= 1'b1;
+              flag_nx <= 1'b1;
+              result <= {32'hFFFFFFFF, sign_result, 31'b0};  // Single zero (NaN-boxed)
+              state <= DONE;
+            end
           end
         end
 
@@ -298,17 +419,38 @@ module fp_multiplier #(
               end
             endcase
 
-            // Apply rounding
-            if (round_up) begin
-              result <= {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0] + 1'b1};
+            // Apply rounding and assemble result based on format
+            if (fmt_latched) begin
+              // Double-precision result
+              if (round_up) begin
+                result <= {sign_result, exp_result, normalized_man[51:0] + 1'b1};
+              end else begin
+                result <= {sign_result, exp_result, normalized_man[51:0]};
+              end
             end else begin
-              result <= {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0]};
+              // Single-precision result (NaN-boxed for FLEN=64)
+              if (FLEN == 64) begin
+                if (round_up) begin
+                  result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], normalized_man[51:29] + 1'b1};
+                end else begin
+                  result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], normalized_man[51:29]};
+                end
+              end else begin
+                if (round_up) begin
+                  result <= {sign_result, exp_result[7:0], normalized_man[51:29] + 1'b1};
+                end else begin
+                  result <= {sign_result, exp_result[7:0], normalized_man[51:29]};
+                end
+              end
             end
 
             `ifdef DEBUG_FPU
-            $display("[FP_MUL] ROUND: sign=%b exp=%h normalized_man=%h man[22:0]=%h GRS=%b%b%b round_up=%b",
-                     sign_result, exp_result, normalized_man, normalized_man[MAN_WIDTH-1:0], guard, round, sticky, round_up);
-            $display("[FP_MUL] Result: %h", {sign_result, exp_result, normalized_man[MAN_WIDTH-1:0] + (round_up ? 1'b1 : 1'b0)});
+            $display("[FP_MUL] ROUND: fmt=%b sign=%b exp=%h normalized_man=%h GRS=%b%b%b round_up=%b",
+                     fmt_latched, sign_result, exp_result, normalized_man, guard, round, sticky, round_up);
+            if (fmt_latched)
+              $display("[FP_MUL] Result (DP): %h", {sign_result, exp_result, normalized_man[51:0] + (round_up ? 1'b1 : 1'b0)});
+            else
+              $display("[FP_MUL] Result (SP): %h", {sign_result, exp_result[7:0], normalized_man[51:29] + (round_up ? 1'b1 : 1'b0)});
             `endif
 
             // Set inexact flag (only for normal cases)

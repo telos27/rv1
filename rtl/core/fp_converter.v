@@ -13,6 +13,7 @@ module fp_converter #(
   input  wire              start,          // Start operation
   input  wire [3:0]        operation,      // Conversion type (see encoding below)
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
+  input  wire              fmt,            // 0: single-precision, 1: double-precision
   output reg               busy,           // Operation in progress
   output reg               done,           // Operation complete (1 cycle pulse)
 
@@ -79,6 +80,7 @@ module fp_converter #(
   reg [FLEN-1:0] fp_operand_latched;
   reg [3:0] operation_latched;
   reg [2:0] rounding_mode_latched;
+  reg fmt_latched;  // Latched format signal
 
   // Effective operands: use latched values during conversion, direct values when idle
   wire [XLEN-1:0] int_operand_eff;
@@ -110,6 +112,7 @@ module fp_converter #(
       fp_operand_latched <= {FLEN{1'b0}};
       operation_latched <= 4'b0;
       rounding_mode_latched <= 3'b0;
+      fmt_latched <= 1'b0;
     end else begin
       state <= next_state;
       // Latch inputs on start (transition from IDLE to CONVERT)
@@ -118,6 +121,7 @@ module fp_converter #(
         fp_operand_latched <= fp_operand;
         operation_latched <= operation;
         rounding_mode_latched <= rounding_mode;
+        fmt_latched <= fmt;
       end
     end
   end
@@ -170,15 +174,34 @@ module fp_converter #(
               flag_uf <= 1'b0;
               flag_nx <= 1'b0;
 
-              // Extract FP components - Bug #28 fix: use latched fp_operand
-              sign_fp = fp_operand_latched[FLEN-1];
-              exp_fp = fp_operand_latched[FLEN-2:MAN_WIDTH];
-              man_fp = fp_operand_latched[MAN_WIDTH-1:0];
-
-              // Check for special values
-              is_nan = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp != 0);
-              is_inf = (exp_fp == {EXP_WIDTH{1'b1}}) && (man_fp == 0);
-              is_zero = (fp_operand_latched[FLEN-2:0] == 0);  // Bug #28 fix
+              // Extract FP components - Bug #43 fix: extract based on fmt_latched
+              if (FLEN == 64) begin
+                if (fmt_latched) begin
+                  // Double-precision
+                  sign_fp = fp_operand_latched[63];
+                  exp_fp = fp_operand_latched[62:52];
+                  man_fp = fp_operand_latched[51:0];
+                  is_nan = (fp_operand_latched[62:52] == 11'h7FF) && (fp_operand_latched[51:0] != 0);
+                  is_inf = (fp_operand_latched[62:52] == 11'h7FF) && (fp_operand_latched[51:0] == 0);
+                  is_zero = (fp_operand_latched[62:0] == 0);
+                end else begin
+                  // Single-precision (extract from lower 32 bits)
+                  sign_fp = fp_operand_latched[31];
+                  exp_fp = {3'b000, fp_operand_latched[30:23]};  // Pad to EXP_WIDTH
+                  man_fp = {fp_operand_latched[22:0], 29'b0};    // Pad to MAN_WIDTH
+                  is_nan = (fp_operand_latched[30:23] == 8'hFF) && (fp_operand_latched[22:0] != 0);
+                  is_inf = (fp_operand_latched[30:23] == 8'hFF) && (fp_operand_latched[22:0] == 0);
+                  is_zero = (fp_operand_latched[30:0] == 0);
+                end
+              end else begin
+                // FLEN=32, always single-precision
+                sign_fp = fp_operand_latched[31];
+                exp_fp = fp_operand_latched[30:23];
+                man_fp = fp_operand_latched[22:0];
+                is_nan = (fp_operand_latched[30:23] == 8'hFF) && (fp_operand_latched[22:0] != 0);
+                is_inf = (fp_operand_latched[30:23] == 8'hFF) && (fp_operand_latched[22:0] == 0);
+                is_zero = (fp_operand_latched[30:0] == 0);
+              end
 
               `ifdef DEBUG_FPU_CONVERTER
               $display("[CONVERTER] FP→INT: fp_operand=%h, sign=%b, exp=%d, man=%h",
@@ -207,8 +230,11 @@ module fp_converter #(
                 int_result <= {XLEN{1'b0}};
               end else begin
                 // Normal conversion
-                // Compute integer exponent
-                int_exp = exp_fp - BIAS;
+                // Compute integer exponent (Bug #43 fix: use correct bias based on format)
+                if (fmt_latched)
+                  int_exp = exp_fp - 16'd1023;  // Double-precision bias
+                else
+                  int_exp = exp_fp - 16'd127;   // Single-precision bias
 
                 // Bug #20 fix: Check if exponent is too large (overflow)
                 // Bug #25 fix: Corrected unsigned word overflow detection
@@ -595,23 +621,35 @@ module fp_converter #(
                   default: lz_temp = 6'd63;  // All zeros (shouldn't happen due to zero check)
                 endcase
 
-                // Compute exponent
-                exp_temp = BIAS + (63 - lz_temp);
+                // Compute exponent (Bug #43 fix: use correct bias based on format)
+                if (fmt_latched)
+                  exp_temp = 11'd1023 + (63 - lz_temp);  // Double-precision
+                else
+                  exp_temp = 11'd127 + (63 - lz_temp);   // Single-precision
 
                 // Normalize mantissa (shift to align MSB to bit 63)
                 // Bug #13b fix: Shift by leading_zeros only (not +1)
                 // Bug #18 fix: Use blocking assignments throughout
                 // The +1 skip is implicit in the extraction [62:62-MAN_WIDTH+1]
                 shifted_temp = int_abs_temp << lz_temp;
-                // Extract mantissa bits (skip the implicit 1 at bit 63)
-                man_temp = shifted_temp[62:62-MAN_WIDTH+1];
 
-                // Extract GRS bits for rounding
-                // Bug #13b fix: Adjust GRS bit positions for new shift
-                // Mantissa is at [62:62-MAN_WIDTH+1], so GRS starts at 62-MAN_WIDTH
-                g_temp = shifted_temp[62-MAN_WIDTH];
-                r_temp = shifted_temp[62-MAN_WIDTH-1];
-                s_temp = |shifted_temp[62-MAN_WIDTH-2:0];
+                // Extract mantissa bits (Bug #43 fix: extract correct width based on format)
+                // For double: 52 bits, for single: 23 bits
+                if (fmt_latched) begin
+                  // Double-precision: extract bits [62:11] (52 bits)
+                  man_temp = shifted_temp[62:11];
+                  // GRS bits for double
+                  g_temp = shifted_temp[10];
+                  r_temp = shifted_temp[9];
+                  s_temp = |shifted_temp[8:0];
+                end else begin
+                  // Single-precision: extract bits [62:40] (23 bits), pad with zeros
+                  man_temp = {shifted_temp[62:40], 29'b0};
+                  // GRS bits for single
+                  g_temp = shifted_temp[39];
+                  r_temp = shifted_temp[38];
+                  s_temp = |shifted_temp[37:0];
+                end
 
                 // Now register all computed values
                 sign_result <= sign_temp;
@@ -745,35 +783,47 @@ module fp_converter #(
                      (rounding_mode == 3'b100) ? guard : 1'b0);
             `endif
 
-            // Apply rounding - computed inline to avoid variable declaration issues
-            // Bug #16 fix: Handle mantissa overflow when rounding
+            // Apply rounding - Bug #43 fix: handle both single and double precision
             if ((rounding_mode == 3'b000 && guard && (round || sticky || man_result[0])) ||
                 (rounding_mode == 3'b010 && sign_result && (guard || round || sticky)) ||
                 (rounding_mode == 3'b011 && !sign_result && (guard || round || sticky)) ||
                 (rounding_mode == 3'b100 && guard)) begin
               // Need to round up - check for mantissa overflow
-              if (man_result[MAN_WIDTH-1:0] == {MAN_WIDTH{1'b1}}) begin
-                // All 1s: rounding will overflow, increment exponent
-                fp_result <= {sign_result, exp_result + 1'b1, {MAN_WIDTH{1'b0}}};
-                `ifdef DEBUG_FPU_CONVERTER
-                $display("[CONVERTER]   Rounding with overflow: exp=%d->%d, man=all1s->0",
-                         exp_result, exp_result + 1);
-                `endif
+              if (fmt_latched) begin
+                // Double-precision (52-bit mantissa)
+                if (man_result[51:0] == 52'hFFFFFFFFFFFFF) begin
+                  fp_result <= {sign_result, exp_result + 1'b1, 52'b0};
+                end else begin
+                  fp_result <= {sign_result, exp_result, man_result[51:0] + 1'b1};
+                end
               end else begin
-                // No overflow: just add 1 to mantissa
-                fp_result <= {sign_result, exp_result, man_result[MAN_WIDTH-1:0] + 1'b1};
-                `ifdef DEBUG_FPU_CONVERTER
-                $display("[CONVERTER]   Rounding without overflow: man=0x%h->0x%h",
-                         man_result[MAN_WIDTH-1:0], man_result[MAN_WIDTH-1:0] + 1'b1);
-                `endif
+                // Single-precision (23-bit mantissa, NaN-boxed if FLEN=64)
+                if (man_result[51:29] == 23'h7FFFFF) begin
+                  // Mantissa overflow
+                  if (FLEN == 64)
+                    fp_result <= {32'hFFFFFFFF, sign_result, exp_result[7:0] + 1'b1, 23'b0};
+                  else
+                    fp_result <= {sign_result, exp_result[7:0] + 1'b1, 23'b0};
+                end else begin
+                  // No overflow
+                  if (FLEN == 64)
+                    fp_result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], man_result[51:29] + 1'b1};
+                  else
+                    fp_result <= {sign_result, exp_result[7:0], man_result[51:29] + 1'b1};
+                end
               end
             end else begin
               // No rounding needed
-              fp_result <= {sign_result, exp_result, man_result[MAN_WIDTH-1:0]};
-              `ifdef DEBUG_FPU_CONVERTER
-              $display("[CONVERTER]   No rounding: result=0x%h",
-                       {sign_result, exp_result, man_result[MAN_WIDTH-1:0]});
-              `endif
+              if (fmt_latched) begin
+                // Double-precision
+                fp_result <= {sign_result, exp_result, man_result[51:0]};
+              end else begin
+                // Single-precision (NaN-boxed if FLEN=64)
+                if (FLEN == 64)
+                  fp_result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], man_result[51:29]};
+                else
+                  fp_result <= {sign_result, exp_result[7:0], man_result[51:29]};
+              end
             end
 
             flag_nx <= guard || round || sticky;
