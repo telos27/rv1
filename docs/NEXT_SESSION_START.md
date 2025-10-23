@@ -1,15 +1,14 @@
 # Next Session Starting Point
 
 **Date**: 2025-10-23
-**Last Session**: Bug #48 Investigation - FCVT_W Address Calculation
-**Current Status**: 10/11 RV32F tests passing (90%) ✅
+**Last Session**: Bug #48 FIXED - FCVT mantissa padding for FLEN=64
+**Current Status**: RV32F 100% Complete! 🎉
 
 ---
 
-## Current Test Status
+## 🎉 Milestone Achieved: RV32F 100% Compliance
 
-### RV32F (Single-Precision Floating Point)
-**Overall**: 10/11 tests passing (90%)
+**All 11 RV32F (Single-Precision Floating Point) tests passing!**
 
 | Test | Status | Notes |
 |------|--------|-------|
@@ -17,7 +16,7 @@
 | fclass | ✅ PASS | FP classification working |
 | fcmp | ✅ PASS | FP comparison working |
 | fcvt | ✅ PASS | Sign injection (FSGNJ) working |
-| fcvt_w | ❌ FAIL | **Bug #48: Address calculation error** |
+| fcvt_w | ✅ PASS | **Bug #48 FIXED!** FP-to-INT conversion |
 | fdiv | ✅ PASS | Division and sqrt working |
 | fmadd | ✅ PASS | Fused multiply-add working |
 | fmin | ✅ PASS | Min/max operations working |
@@ -25,284 +24,199 @@
 | move | ✅ PASS | FP move operations working |
 | recoding | ✅ PASS | NaN recoding working |
 
----
-
-## Current Issue: Bug #48 - FCVT_W Address Calculation Error
-
-### Quick Summary
-- **Test**: rv32uf-p-fcvt_w fails at test #5
-- **Symptom**: a3 = 0xffffffff instead of 0x00000000
-- **Root Cause**: Register a0 contains wrong base address
-  - **Expected**: a0 = 0x80002030
-  - **Actual**: a0 = 0x80002000
-  - **Offset**: -48 bytes (-0x30)
-- **Result**: Load from wrong address (0x8000200c instead of 0x8000203c)
-
-### What We Know
-✅ Memory subsystem works correctly (returns right data for address it receives)
-✅ LW instruction decodes correctly
-✅ Sign extension works correctly
-✅ Tests #1-#4 pass (gp=5 means failure at test #5)
-❌ Something in tests #1-#4 sets a0 to wrong value
-❌ 48-byte offset suggests data table addressing issue
-
-### Investigation Status
-- ✅ **Root cause identified**: a0 register has wrong value
-- ✅ **Debug methodology established**: See action plan below
-- ❌ **Not yet fixed**: Need to find which instruction sets a0 incorrectly
-- 📄 **Full documentation**: `docs/BUG_48_FCVT_W_ADDRESS_CALCULATION.md`
-- 📄 **Session notes**: `docs/SESSION_2025-10-23_BUG48_INVESTIGATION.md`
+**Pass rate: 100% (11/11)** ✨
 
 ---
 
-## Next Session Action Plan
+## Bug #48 Summary
 
-### Step 1: Add a0 Tracking Debug (RECOMMENDED START)
+### What Was Fixed
+The FP-to-INT converter had incorrect mantissa padding when FLEN=64.
 
-Add this to `rtl/core/rv32i_core_pipelined.v`:
+**Before**: `man_64_full = {1'b1, man_fp, 40'b0};` (assumed 23-bit man_fp)
+**After**: Properly handle 52-bit man_fp for FLEN=64:
+- Single: `{1'b1, man_fp[51:29], 40'b0}` - extract 23 actual bits
+- Double: `{1'b1, man_fp[51:0], 11'b0}` - use all 52 bits
 
-```verilog
-// Debug: Track writes to a0 (x10)
-`ifdef DEBUG_A0_TRACKING
-  integer cycle_count_a0;
+### Impact
+- All FCVT.W.S/WU.S/L.S/LU.S operations now work correctly
+- Fixes apply to both single and double precision conversions
+- Essential foundation for RV32D support
 
-  always @(posedge clk or negedge reset_n) begin
-    if (!reset_n)
-      cycle_count_a0 <= 0;
-    else
-      cycle_count_a0 <= cycle_count_a0 + 1;
-  end
+### Documentation
+- `docs/SESSION_2025-10-23_BUG48_FIX.md` - Complete fix report
+- `docs/SESSION_2025-10-23_BUG48_INVESTIGATION.md` - Investigation notes
+- `docs/BUG_48_FCVT_W_ADDRESS_CALCULATION.md` - Initial analysis
 
-  always @(posedge clk) begin
-    if (memwb_valid && memwb_reg_write && memwb_rd_addr == 5'd10) begin
-      $display("[A0_WRITE] cycle=%0d x10 <= 0x%08h (wb_sel=%b source=%s pc=0x%08h instr=0x%08h)",
-               cycle_count_a0, wb_data, memwb_wb_sel,
-               (memwb_wb_sel == 3'b000) ? "ALU" :
-               (memwb_wb_sel == 3'b001) ? "MEM" :
-               (memwb_wb_sel == 3'b010) ? "PC+4" :
-               (memwb_wb_sel == 3'b110) ? "FP2INT" : "OTHER",
-               memwb_pc, memwb_instruction);
-    end
-  end
-`endif
+---
+
+## Current Architecture Status
+
+### Implemented Extensions
+- ✅ **RV32I** - Base integer ISA (100%)
+- ✅ **RV32M** - Multiply/Divide (integrated)
+- ✅ **RV32A** - Atomics (integrated)
+- ✅ **RV32F** - Single-precision FP (100%)
+- ✅ **RV32C** - Compressed instructions (100%)
+- 🔧 **RV32D** - Double-precision FP (0%, needs work)
+- ✅ **Zicsr** - CSR instructions (integrated)
+- ✅ **Privilege** - M/S/U modes (integrated)
+
+### Pipeline Features
+- 5-stage pipeline (IF/ID/EX/MEM/WB)
+- Forwarding and hazard detection
+- Multi-cycle FPU support
+- Multi-cycle M-extension support
+- Atomic reservation stations
+- Exception handling
+- CSR support
+
+---
+
+## Next Session: RV32D Double-Precision Support
+
+### Current RV32D Status
+**0/9 tests passing (0%)**
+
+```
+rv32ud-p-fadd...      FAILED (gp=)
+rv32ud-p-fclass...    FAILED (gp=)
+rv32ud-p-fcmp...      FAILED (gp=)
+rv32ud-p-fcvt...      TIMEOUT
+rv32ud-p-fcvt_w...    FAILED (gp=)
+rv32ud-p-fdiv...      FAILED (gp=)
+rv32ud-p-fmadd...     FAILED (gp=)
+rv32ud-p-fmin...      FAILED (gp=)
+rv32ud-p-ldst...      FAILED (gp=)
 ```
 
-Compile and run:
+### Investigation Priorities
+
+1. **Check test startup**: Many tests show `gp=` (empty), suggesting early failure
+2. **Verify FLD/FSD**: Double-precision load/store (64-bit on 32-bit CPU)
+3. **Check NaN-boxing**: 64-bit results in 64-bit FP registers
+4. **Test basic operations**: Start with simple FADD.D/FSUB.D
+5. **Converter verification**: Bug #48 fix should help FCVT.W.D/L.D
+
+### Approach
+
+**Step 1: Single test deep-dive**
 ```bash
-iverilog -g2012 -I"rtl" -DXLEN=32 -DFLEN=64 -DCOMPLIANCE_TEST \
-  -DDEBUG_A0_TRACKING \
-  -DMEM_FILE='"tests/official-compliance/rv32uf-p-fcvt_w.hex"' \
-  -o sim/test_a0_debug.vvp \
-  rtl/core/*.v rtl/memory/*.v tb/integration/tb_core_pipelined.v
-
-timeout 5s vvp sim/test_a0_debug.vvp 2>&1 | tee a0_trace.log
-
-# Find when a0 gets set to wrong value
-grep "A0_WRITE" a0_trace.log
+env XLEN=32 timeout 10s ./tools/run_official_tests.sh ud fadd
+cat sim/official-compliance/rv32ud-p-fadd.log | tail -100
 ```
 
-Look for the write that sets a0 to 0x80002000 (should be 0x80002030).
+**Step 2: Check what's failing**
+- Empty gp suggests test startup issue
+- Could be FLD/FSD not working
+- Could be test framework incompatibility
+- Could be double-precision arithmetic issue
 
-### Step 2: Bisect to Find Exact Breaking Commit
-
+**Step 3: Enable FPU debug**
 ```bash
-git bisect start main 7dc1afd
-git bisect run bash -c "make clean && env XLEN=32 timeout 10s ./tools/run_official_tests.sh uf fcvt_w 2>&1 | grep -q PASSED"
-```
-
-This will automatically find the exact commit that introduced the bug.
-
-### Step 3: Compare Working vs Broken Execution
-
-If Step 1-2 don't reveal the issue, do full instruction trace comparison:
-
-```bash
-# Save current state
-git stash
-
-# Working commit
-git checkout 7dc1afd
-DEBUG_TRACE=1 ./tools/run_official_tests.sh uf fcvt_w > trace_working.log 2>&1
-
-# Broken commit
-git checkout main
-git stash pop
-DEBUG_TRACE=1 ./tools/run_official_tests.sh uf fcvt_w > trace_broken.log 2>&1
-
-# Find first divergence
-diff -u trace_working.log trace_broken.log | less
-```
-
-### Step 4: Check Test Disassembly
-
-Understand test structure:
-```bash
-riscv64-unknown-elf-objdump -d tests/official-compliance/rv32uf-p-fcvt_w.elf > fcvt_w_disasm.txt
-
-# Look for:
-# 1. How a0 is initialized (look for auipc/lui to a0)
-# 2. Test #1-#4 instructions
-# 3. Any instructions that write to a0
-
-grep -E "(auipc.*a0|lui.*a0|addi.*a0)" fcvt_w_disasm.txt
+# Add -DDEBUG_FPU_CONVERTER or -DDEBUG_FPU_FADD
+# Trace first few operations
 ```
 
 ---
 
 ## Quick Commands
 
-### Run Single Test
+### Run Full Test Suites
 ```bash
-env XLEN=32 timeout 5s ./tools/run_official_tests.sh uf fcvt_w
-```
-
-### Run Full RV32F Suite
-```bash
+# RV32F (should be 100%)
 env XLEN=32 timeout 30s ./tools/run_official_tests.sh uf
+
+# RV32D (currently 0%)
+env XLEN=32 timeout 60s ./tools/run_official_tests.sh ud
+
+# RV32C (should be 100%)
+env XLEN=32 timeout 30s ./tools/run_official_tests.sh uc
 ```
 
-### Check Test Log
+### Single Test Debugging
 ```bash
-cat sim/official-compliance/rv32uf-p-fcvt_w.log | tail -60
-```
+# Run specific test with timeout
+env XLEN=32 timeout 10s ./tools/run_official_tests.sh ud <test_name>
 
-### Verify Hex File
-```bash
-python3 << 'EOF'
-with open('tests/official-compliance/rv32uf-p-fcvt_w.hex', 'r') as f:
-    lines = [line.strip() for line in f.readlines() if line.strip()]
-# Check expected address
-offset = 0x203c
-bytes_val = [lines[offset+i] for i in range(4)]
-word = f"0x{bytes_val[3]}{bytes_val[2]}{bytes_val[1]}{bytes_val[0]}"
-print(f"Address 0x8000203c: {word}")  # Should be 0x00000000
-# Check actual wrong address
-offset = 0x200c
-bytes_val = [lines[offset+i] for i in range(4)]
-word = f"0x{bytes_val[3]}{bytes_val[2]}{bytes_val[1]}{bytes_val[0]}"
-print(f"Address 0x8000200c: {word}")  # Is 0xffffffff
-EOF
+# Check log
+cat sim/official-compliance/rv32ud-p-<test_name>.log | tail -100
 ```
 
 ---
 
-## Recent Progress
+## Recent Sessions Summary
 
-### Session 14 (2025-10-23) - Before Bug #48 Investigation
+### Session 2025-10-23 (This Session)
+- ✅ **Bug #48 Fixed**: FCVT mantissa padding for FLEN=64
+- ✅ **RV32F**: Achieved 100% compliance (11/11)
+- 📝 **Documentation**: Complete investigation and fix reports
+
+### Session 14 (2025-10-23)
 - ✅ **Bug #47 Fixed**: FSGNJ NaN-boxing for F+D mixed precision
 - ✅ **rv32uf-p-move**: Now PASSING
 - ✅ **RV32F**: Improved from 9/11 (81%) to 10/11 (90%)
 
-### Session 13 (2025-10-23) - Bugs #44 & #45
+### Session 13 (2025-10-23)
 - ✅ **Bug #44 Fixed**: FMA aligned_c positioning
 - ✅ **Bug #45 Fixed**: FMV.W.X width mismatch
 - ✅ **rv32uf-p-fmadd**: Now PASSING
 - ✅ **RV32F**: Improved from 8/11 (72%) to 9/11 (81%)
 
-### Earlier Sessions
-- ✅ **Bug #43**: F+D mixed precision support (complete)
-- ✅ **Bugs #27 & #28**: RV32D FLEN refactoring (this introduced Bug #48)
-- ✅ **Bug #42**: C.JAL/C.JALR (last known good state for fcvt_w)
+---
+
+## Design Notes for RV32D
+
+### Key Differences from RV32F
+1. **64-bit operands** on 32-bit CPU
+   - FP registers are 64-bit (FLEN=64)
+   - Memory interface must handle 64-bit transfers
+   - Already implemented in FLEN refactoring
+
+2. **No NaN-boxing for D**
+   - Single-precision results are NaN-boxed (upper 32 bits = 0xFFFFFFFF)
+   - Double-precision results use full 64 bits
+   - Already handled by fmt signal
+
+3. **Different exponent/mantissa widths**
+   - Single: 8-bit exp, 23-bit mantissa
+   - Double: 11-bit exp, 52-bit mantissa
+   - Already parameterized in FPU modules
+
+4. **Memory alignment**
+   - FLD/FSD must handle 64-bit unaligned access on 32-bit bus
+   - May need two memory cycles
+   - Already implemented in FLEN refactoring (Bugs #27 & #28)
+
+### What Should Already Work
+- ✅ FPU arithmetic (FADD.D, FSUB.D, FMUL.D, etc.)
+- ✅ FP-to-INT conversion (Bug #48 fix)
+- ✅ Memory interface (64-bit on 32-bit bus)
+- ✅ Format handling (fmt signal distinguishes S vs D)
+
+### What Might Need Work
+- ❓ Test framework compatibility
+- ❓ Edge cases in double-precision operations
+- ❓ Rounding modes for double-precision
+- ❓ Exception flags for double-precision
 
 ---
 
-## Files to Review
+## Goals for Next Session
 
-### Bug #48 Documentation
-- `docs/BUG_48_FCVT_W_ADDRESS_CALCULATION.md` - Full investigation report
-- `docs/SESSION_2025-10-23_BUG48_INVESTIGATION.md` - Session notes
+### Primary Goal
+**Get at least 1 RV32D test passing** to validate the infrastructure
 
-### Related Code
-- `rtl/core/rv32i_core_pipelined.v` - Main pipeline (where to add debug)
-- `rtl/memory/data_memory.v` - Memory module (verified working)
-- `rtl/core/memwb_register.v` - MEM/WB pipeline register
-- `rtl/core/exmem_register.v` - EX/MEM pipeline register
+### Stretch Goals
+- Identify common failure pattern across RV32D tests
+- Fix any infrastructure issues
+- Get 3-5 RV32D tests passing
 
-### Test Files
-- `tests/official-compliance/rv32uf-p-fcvt_w.hex` - Test binary
-- `sim/official-compliance/rv32uf-p-fcvt_w.log` - Test output
-
----
-
-## Commits Reference
-
-**Working commit** (fcvt_w passes):
-```
-7dc1afd - Bug #42 Fixed: C.JAL/C.JALR Return Address - rv32uc-p-rvc PASSING!
-```
-
-**Breaking commits** (fcvt_w starts failing):
-```
-d7c2d33 - WIP: RV32D Support - FLEN Refactoring (Bugs #27 & #28 Partial)
-747a716 - Bug #27 & #28 COMPLETE: RV32D Memory Interface - 64-bit FP on 32-bit CPU
-```
-
-**Current commit**:
-```
-a55ddf2 - Documentation: Session 14 - Bug #47 Complete (FSGNJ NaN-Boxing)
-```
+### Success Criteria
+- Understand why RV32D tests fail early (gp=)
+- Have a clear action plan for fixing RV32D
+- Make measurable progress (>0% pass rate)
 
 ---
 
-## Expected Outcome
-
-When Bug #48 is fixed:
-- ✅ **rv32uf-p-fcvt_w** will PASS
-- ✅ **RV32F**: 11/11 (100%) ✨
-- 🎉 **Complete RV32F compliance!**
-
-Then can move on to:
-- RV32D (double-precision) testing and fixes
-- Or other extensions/optimizations
-
----
-
-## Key Debugging Insights
-
-1. **Start with a0 tracking** - Most direct path to finding the bug
-2. **Bisect if unclear** - Will pinpoint exact breaking change
-3. **Trust the evidence** - Memory and load instructions work; a0 is wrong
-4. **48-byte offset is systematic** - Not a random corruption, likely logic error
-5. **Tests #1-#4 pass but corrupt a0** - Side effect of successful test
-
----
-
-## Untracked Files (Clean Up Later)
-
-```
-tests/asm/test_fcvt_debug.hex
-tests/asm/test_fcvt_debug.s
-tests/asm/test_fcvt_w_debug.hex
-tests/asm/test_fcvt_w_debug.s
-```
-
-These are debug test files from investigation. Can delete after Bug #48 is fixed.
-
----
-
-## Quick Health Check
-
-Before starting next session, verify baseline:
-
-```bash
-# Check current test status
-env XLEN=32 timeout 30s ./tools/run_official_tests.sh uf
-
-# Should see:
-# rv32uf-p-fadd...      PASSED
-# rv32uf-p-fclass...    PASSED
-# rv32uf-p-fcmp...      PASSED
-# rv32uf-p-fcvt...      PASSED
-# rv32uf-p-fcvt_w...    FAILED  ← Bug #48
-# rv32uf-p-fdiv...      PASSED
-# rv32uf-p-fmadd...     PASSED
-# rv32uf-p-fmin...      PASSED
-# rv32uf-p-ldst...      PASSED
-# rv32uf-p-move...      PASSED
-# rv32uf-p-recoding...  PASSED
-# Pass rate: 90% (10/11)
-```
-
----
-
-*Ready to fix Bug #48 and achieve 100% RV32F compliance! 🎯*
+*RV32F complete! Ready to tackle RV32D double-precision support! 🚀*
