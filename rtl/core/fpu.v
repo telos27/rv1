@@ -485,6 +485,9 @@ module fpu #(
         flag_of = fma_flag_of;
         flag_uf = fma_flag_uf;
         flag_nx = fma_flag_nx;
+        `ifdef DEBUG_FPU
+        if (done) $display("[FPU] FMA result mux: fma_result=%h op=%b", fma_result, fma_op_type);
+        `endif
       end
 
       FP_SGNJ, FP_SGNJN, FP_SGNJX: begin
