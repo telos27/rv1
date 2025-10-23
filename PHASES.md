@@ -630,7 +630,7 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 8    | 72%  | 🚧 Bug #43 PHASE 2 COMPLETE - All FPU modules support F+D mixed precision |
+| RV32F     | 11    | 9    | 81%  | 🚧 Bugs #44 & #45 FIXED - 2 tests remaining (fcvt_w, move) |
 | RV32D     | 9     | 1    | 11%  | 🚧 In Progress - fdiv passing, other issues remain |
 
 ### Custom Test Coverage
@@ -669,6 +669,11 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-23 (Session 13)**: Bugs #44 & #45 FIXED - FMA positioning and FMV.W.X width mismatch - RV32F 9/11 (81%) ✅
+  - Bug #44 COMPLETE: Fixed FMA aligned_c shift amount (exp_diff → exp_diff+1) - fmadd now PASSING!
+  - Bug #45 FIXED: FMV.W.X undefined value bug (RV32D with FLEN=64 accessing 64-bit from 32-bit signal)
+  - move test no longer times out (was 49,999 cycles with X values, now 138 cycles)
+  - Remaining: fcvt_w (memory load issue), move test #21 (FSGNJN sign bit)
 **2025-10-22 (Session 11)**: Bug #43 PHASE 2 COMPLETE - All 10 FPU modules support F+D mixed precision - RV32F 8/11 (72%) ✅
   - Fixed fp_divider.v, fp_sqrt.v, fp_fma.v with format-aware UNPACK, PACKING, GRS, and BIAS
   - fdiv test now PASSING (includes FDIV + FSQRT operations)
