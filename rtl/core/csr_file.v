@@ -129,13 +129,14 @@ module csr_file #(
   reg        mstatus_mxr_r;   // [19] - Make eXecutable Readable
 
   // Machine ISA Register (misa) - read-only
-  // RV32: [31:30] = 2'b01 (MXL=1), [25:0] = extensions (bit 8 = I)
-  // RV64: [63:62] = 2'b10 (MXL=2), [25:0] = extensions (bit 8 = I)
+  // RV32: [31:30] = 2'b01 (MXL=1), [25:0] = extensions
+  // RV64: [63:62] = 2'b10 (MXL=2), [25:0] = extensions
+  // Extensions: I(8), M(12), A(0), F(5), D(3) = 0x1129
   generate
     if (XLEN == 32) begin : gen_misa_rv32
-      wire [31:0] misa = {2'b01, 4'b0, 26'b00000000000000000100000000};
+      wire [31:0] misa = {2'b01, 4'b0, 26'b00000000000001000100101001};
     end else begin : gen_misa_rv64
-      wire [63:0] misa = {2'b10, 36'b0, 26'b00000000000000000100000000};
+      wire [63:0] misa = {2'b10, 36'b0, 26'b00000000000001000100101001};
     end
   endgenerate
 

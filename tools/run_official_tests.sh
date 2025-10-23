@@ -122,6 +122,13 @@ run_test() {
     else
       config_flag="-DCONFIG_RV64IMAF"
     fi
+  elif [[ "$test_name" == rv32ud* ]] || [[ "$test_name" == rv64ud* ]]; then
+    # D extension test - needs M+A+F (D is enabled via FLEN=64 default)
+    if [[ "$test_name" == rv32* ]]; then
+      config_flag="-DCONFIG_RV32IMAF"
+    else
+      config_flag="-DCONFIG_RV64GC"
+    fi
   elif [[ "$test_name" == rv32ui* ]] || [[ "$test_name" == rv64ui* ]]; then
     # Base I test
     if [[ "$test_name" == rv32* ]]; then
