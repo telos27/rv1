@@ -11,6 +11,7 @@ module fp_sqrt #(
 
   // Control
   input  wire              start,          // Start operation
+  input  wire              fmt,            // Format: 0=single, 1=double
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
   output reg               busy,           // Operation in progress
   output reg               done,           // Operation complete (1 cycle pulse)
@@ -51,6 +52,13 @@ module fp_sqrt #(
   // Special value flags
   reg is_nan, is_inf, is_zero, is_negative;
 
+  // Format latching
+  reg fmt_latched;
+
+  // Format-aware BIAS for exponent arithmetic
+  wire [10:0] bias_val;
+  assign bias_val = (FLEN == 64 && !fmt_latched) ? 11'd127 : 11'd1023;
+
   // Square root computation (digit recurrence)
   reg [MAN_WIDTH+3:0] root;          // Square root result (27 bits for SP)
   reg [MAN_WIDTH+5:0] remainder;     // Current remainder (A register in algorithm) - needs root_width + 2 bits
@@ -71,6 +79,10 @@ module fp_sqrt #(
   // Rounding
   reg guard, round, sticky;
   reg round_up;
+
+  // Format-aware LSB for RNE rounding (tie-breaking)
+  wire lsb_bit_sqrt;
+  assign lsb_bit_sqrt = (FLEN == 64 && !fmt_latched) ? root[32] : root[3];
 
   // State machine
   always @(posedge clk or negedge reset_n) begin
@@ -186,24 +198,49 @@ module fp_sqrt #(
           flag_nv <= 1'b0;
           flag_nx <= 1'b0;
 
-          // Extract sign
-          sign <= operand[FLEN-1];
+          // Latch format for entire operation
+          fmt_latched <= fmt;
 
-          // Extract exponent
-          exp <= operand[FLEN-2:MAN_WIDTH];
+          // Format-aware extraction for FLEN=64
+          if (FLEN == 64) begin
+            if (fmt) begin
+              // Double-precision: use bits [63:0]
+              sign <= operand[63];
+              exp <= operand[62:52];
+              mantissa <= (operand[62:52] == 0) ?
+                          {1'b0, operand[51:0]} :
+                          {1'b1, operand[51:0]};
 
-          // Extract mantissa with implicit leading 1 (if normalized)
-          mantissa <= (operand[FLEN-2:MAN_WIDTH] == 0) ?
-                      {1'b0, operand[MAN_WIDTH-1:0]} :
-                      {1'b1, operand[MAN_WIDTH-1:0]};
+              is_nan <= (operand[62:52] == 11'h7FF) && (operand[51:0] != 0);
+              is_inf <= (operand[62:52] == 11'h7FF) && (operand[51:0] == 0);
+              is_zero <= (operand[62:0] == 0);
+              is_negative <= operand[63] && (operand[62:0] != 0);  // -0 is OK
+            end else begin
+              // Single-precision: use bits [31:0] (NaN-boxed in [63:32])
+              sign <= operand[31];
+              exp <= {3'b000, operand[30:23]};
+              mantissa <= (operand[30:23] == 0) ?
+                          {1'b0, operand[22:0], 29'b0} :
+                          {1'b1, operand[22:0], 29'b0};
 
-          // Detect special values
-          is_nan <= (operand[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                    (operand[MAN_WIDTH-1:0] != 0);
-          is_inf <= (operand[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                    (operand[MAN_WIDTH-1:0] == 0);
-          is_zero <= (operand[FLEN-2:0] == 0);
-          is_negative <= operand[FLEN-1] && !((operand[FLEN-2:0] == 0));  // -0 is OK
+              is_nan <= (operand[30:23] == 8'hFF) && (operand[22:0] != 0);
+              is_inf <= (operand[30:23] == 8'hFF) && (operand[22:0] == 0);
+              is_zero <= (operand[30:0] == 0);
+              is_negative <= operand[31] && (operand[30:0] != 0);  // -0 is OK
+            end
+          end else begin
+            // FLEN=32: always single-precision
+            sign <= operand[31];
+            exp <= {3'b000, operand[30:23]};
+            mantissa <= (operand[30:23] == 0) ?
+                        {1'b0, operand[22:0], 29'b0} :
+                        {1'b1, operand[22:0], 29'b0};
+
+            is_nan <= (operand[30:23] == 8'hFF) && (operand[22:0] != 0);
+            is_inf <= (operand[30:23] == 8'hFF) && (operand[22:0] == 0);
+            is_zero <= (operand[30:0] == 0);
+            is_negative <= operand[31] && (operand[30:0] != 0);  // -0 is OK
+          end
 
           // Initialize counter for COMPUTE state
           // Need SQRT_CYCLES iterations to get all mantissa bits + GRS
@@ -218,20 +255,40 @@ module fp_sqrt #(
             // First iteration: special case handling and initialization
             if (is_nan) begin
               // sqrt(NaN) = NaN
-              result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single NaN (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= 64'h7FF8000000000000;  // Double NaN
+              else
+                result <= 32'h7FC00000;  // FLEN=32 single NaN
               state <= DONE;
             end else if (is_negative) begin
               // sqrt(negative) = NaN, set invalid flag
-              result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single NaN (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= 64'h7FF8000000000000;  // Double NaN
+              else
+                result <= 32'h7FC00000;  // FLEN=32 single NaN
               flag_nv <= 1'b1;
               state <= DONE;
             end else if (is_inf) begin
               // sqrt(+∞) = +∞
-              result <= {1'b0, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, 1'b0, 8'hFF, 23'h0};  // Single +∞ (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= {1'b0, 11'h7FF, 52'h0};  // Double +∞
+              else
+                result <= {1'b0, 8'hFF, 23'h0};  // FLEN=32 single +∞
               state <= DONE;
             end else if (is_zero) begin
               // sqrt(±0) = ±0 (preserve sign)
-              result <= operand;
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, sign, 31'h0};  // Single ±0 (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= {sign, 63'h0};  // Double ±0
+              else
+                result <= {sign, 31'h0};  // FLEN=32 single ±0
               state <= DONE;
             end else begin
               // Initialize square root computation using digit-by-digit algorithm
@@ -240,11 +297,11 @@ module fp_sqrt #(
 
               if (exp[0]) begin
                 // Odd exponent: adjust by shifting mantissa left by 1
-                exp_result <= (exp - BIAS) / 2 + BIAS;
+                exp_result <= (exp - bias_val) / 2 + bias_val;
                 radicand_shift <= {mantissa, 4'b0000, {(MAN_WIDTH+3){1'b0}}} << 1;
               end else begin
                 // Even exponent: no adjustment needed
-                exp_result <= (exp - BIAS) / 2 + BIAS;
+                exp_result <= (exp - bias_val) / 2 + bias_val;
                 radicand_shift <= {mantissa, 4'b0000, {(MAN_WIDTH+3){1'b0}}};
               end
 
@@ -285,9 +342,19 @@ module fp_sqrt #(
         // ============================================================
         NORMALIZE: begin
           // Extract GRS bits from root
-          guard <= root[2];
-          round <= root[1];
-          sticky <= root[0] || (remainder != 0);  // Any remaining bits in remainder
+          // For single-precision in FLEN=64, root has 29-bit padding at LSBs
+          // GRS must be extracted from bits [31:29] (not [2:0])
+          if (FLEN == 64 && !fmt_latched) begin
+            // Single-precision: GRS at bits [31:29]
+            guard <= root[31];
+            round <= root[30];
+            sticky <= |root[29:0] || (remainder != 0);
+          end else begin
+            // Double-precision: GRS at bits [2:0]
+            guard <= root[2];
+            round <= root[1];
+            sticky <= root[0] || (remainder != 0);
+          end
         end
 
         // ============================================================
@@ -298,7 +365,7 @@ module fp_sqrt #(
           // Must be computed here to use in same cycle
           case (rounding_mode)
             3'b000: begin  // RNE: Round to nearest, ties to even
-              round_up = guard && (round || sticky || root[3]);
+              round_up = guard && (round || sticky || lsb_bit_sqrt);
             end
             3'b001: begin  // RTZ: Round toward zero
               round_up = 1'b0;
@@ -318,11 +385,28 @@ module fp_sqrt #(
           endcase
 
           // Apply rounding (result is always positive)
-          // Extract MAN_WIDTH bits (23 for SP, 52 for DP) - NOT including implicit leading 1
-          if (round_up) begin
-            result <= {1'b0, exp_result, root[MAN_WIDTH+2:3] + 1'b1};
+          // Extract mantissa bits based on format
+          if (FLEN == 64 && !fmt_latched) begin
+            // Single-precision in 64-bit register (NaN-boxed)
+            if (round_up) begin
+              result <= {32'hFFFFFFFF, 1'b0, exp_result[7:0], root[MAN_WIDTH+2:32] + 1'b1};
+            end else begin
+              result <= {32'hFFFFFFFF, 1'b0, exp_result[7:0], root[MAN_WIDTH+2:32]};
+            end
+          end else if (FLEN == 64 && fmt_latched) begin
+            // Double-precision in 64-bit register
+            if (round_up) begin
+              result <= {1'b0, exp_result[10:0], root[MAN_WIDTH+2:3] + 1'b1};
+            end else begin
+              result <= {1'b0, exp_result[10:0], root[MAN_WIDTH+2:3]};
+            end
           end else begin
-            result <= {1'b0, exp_result, root[MAN_WIDTH+2:3]};
+            // FLEN=32: single-precision in 32-bit register
+            if (round_up) begin
+              result <= {1'b0, exp_result[7:0], root[25:3] + 1'b1};
+            end else begin
+              result <= {1'b0, exp_result[7:0], root[25:3]};
+            end
           end
 
           // Set inexact flag

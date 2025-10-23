@@ -11,6 +11,7 @@ module fp_fma #(
 
   // Control
   input  wire              start,          // Start operation
+  input  wire              fmt,            // Format: 0=single, 1=double
   input  wire [1:0]        fma_op,         // 00: FMADD, 01: FMSUB, 10: FNMSUB, 11: FNMADD
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
   output reg               busy,           // Operation in progress
@@ -58,6 +59,13 @@ module fp_fma #(
   reg is_inf_a, is_inf_b, is_inf_c;
   reg is_zero_a, is_zero_b, is_zero_c;
 
+  // Format latching
+  reg fmt_latched;
+
+  // Format-aware BIAS for exponent arithmetic
+  wire [10:0] bias_val;
+  assign bias_val = (FLEN == 64 && !fmt_latched) ? 11'd127 : 11'd1023;
+
   // Computation
   reg [EXP_WIDTH+1:0] exp_prod;               // Product exponent
   reg [(2*MAN_WIDTH+3):0] product;            // Product mantissa (double width)
@@ -70,13 +78,18 @@ module fp_fma #(
   reg guard, round, sticky;
   reg round_up;
 
+  // Format-aware LSB for RNE rounding (tie-breaking)
+  // For single-precision in FLEN=64, mantissa is in upper bits, LSB is at sum[MAN_WIDTH+5+29]
+  // For double-precision, LSB is at sum[MAN_WIDTH+5]
+  wire lsb_bit_fma;
+  assign lsb_bit_fma = (FLEN == 64 && !fmt_latched) ? sum[MAN_WIDTH+5+29] : sum[MAN_WIDTH+5];
+
   // Compute round_up combinationally for use in same cycle
-  // LSB of mantissa is at bit 28, so for tie-breaking we check sum[28]
   wire round_up_comb;
-  assign round_up_comb = (rounding_mode == 3'b000) ? (guard && (round || sticky || sum[MAN_WIDTH+5])) :  // RNE (LSB is bit 28)
-                         (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :         // RDN
-                         (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :        // RUP
-                         (rounding_mode == 3'b100) ? guard : 1'b0;                                         // RMM or RTZ
+  assign round_up_comb = (rounding_mode == 3'b000) ? (guard && (round || sticky || lsb_bit_fma)) :  // RNE
+                         (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :   // RDN
+                         (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :  // RUP
+                         (rounding_mode == 3'b100) ? guard : 1'b0;                                   // RMM or RTZ
 
   // FMA operation decode
   wire negate_product = fma_op[1];  // FNMSUB, FNMADD negate product
@@ -156,41 +169,106 @@ module fp_fma #(
         // UNPACK: Extract sign, exponent, mantissa from all 3 operands
         // ============================================================
         UNPACK: begin
-          // Operand A (rs1)
-          sign_a <= operand_a[FLEN-1];
-          exp_a <= operand_a[FLEN-2:MAN_WIDTH];
-          man_a <= (operand_a[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_a[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_a[MAN_WIDTH-1:0]};
-          is_nan_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] != 0);
-          is_inf_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] == 0);
-          is_zero_a <= (operand_a[FLEN-2:0] == 0);
+          // Latch format for entire operation
+          fmt_latched <= fmt;
 
-          // Operand B (rs2)
-          sign_b <= operand_b[FLEN-1];
-          exp_b <= operand_b[FLEN-2:MAN_WIDTH];
-          man_b <= (operand_b[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_b[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_b[MAN_WIDTH-1:0]};
-          is_nan_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] != 0);
-          is_inf_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] == 0);
-          is_zero_b <= (operand_b[FLEN-2:0] == 0);
+          // Format-aware extraction for FLEN=64
+          if (FLEN == 64) begin
+            if (fmt) begin
+              // Double-precision: use bits [63:0]
+              // Operand A (rs1)
+              sign_a <= operand_a[63];
+              exp_a <= operand_a[62:52];
+              man_a <= (operand_a[62:52] == 0) ?
+                       {1'b0, operand_a[51:0]} :
+                       {1'b1, operand_a[51:0]};
+              is_nan_a <= (operand_a[62:52] == 11'h7FF) && (operand_a[51:0] != 0);
+              is_inf_a <= (operand_a[62:52] == 11'h7FF) && (operand_a[51:0] == 0);
+              is_zero_a <= (operand_a[62:0] == 0);
 
-          // Operand C (rs3)
-          sign_c <= operand_c[FLEN-1] ^ subtract_addend;  // Flip sign if subtract
-          exp_c <= operand_c[FLEN-2:MAN_WIDTH];
-          man_c <= (operand_c[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_c[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_c[MAN_WIDTH-1:0]};
-          is_nan_c <= (operand_c[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_c[MAN_WIDTH-1:0] != 0);
-          is_inf_c <= (operand_c[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_c[MAN_WIDTH-1:0] == 0);
-          is_zero_c <= (operand_c[FLEN-2:0] == 0);
+              // Operand B (rs2)
+              sign_b <= operand_b[63];
+              exp_b <= operand_b[62:52];
+              man_b <= (operand_b[62:52] == 0) ?
+                       {1'b0, operand_b[51:0]} :
+                       {1'b1, operand_b[51:0]};
+              is_nan_b <= (operand_b[62:52] == 11'h7FF) && (operand_b[51:0] != 0);
+              is_inf_b <= (operand_b[62:52] == 11'h7FF) && (operand_b[51:0] == 0);
+              is_zero_b <= (operand_b[62:0] == 0);
+
+              // Operand C (rs3)
+              sign_c <= operand_c[63] ^ subtract_addend;
+              exp_c <= operand_c[62:52];
+              man_c <= (operand_c[62:52] == 0) ?
+                       {1'b0, operand_c[51:0]} :
+                       {1'b1, operand_c[51:0]};
+              is_nan_c <= (operand_c[62:52] == 11'h7FF) && (operand_c[51:0] != 0);
+              is_inf_c <= (operand_c[62:52] == 11'h7FF) && (operand_c[51:0] == 0);
+              is_zero_c <= (operand_c[62:0] == 0);
+            end else begin
+              // Single-precision: use bits [31:0] (NaN-boxed in [63:32])
+              // Operand A (rs1)
+              sign_a <= operand_a[31];
+              exp_a <= {3'b000, operand_a[30:23]};
+              man_a <= (operand_a[30:23] == 0) ?
+                       {1'b0, operand_a[22:0], 29'b0} :
+                       {1'b1, operand_a[22:0], 29'b0};
+              is_nan_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 0);
+              is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
+              is_zero_a <= (operand_a[30:0] == 0);
+
+              // Operand B (rs2)
+              sign_b <= operand_b[31];
+              exp_b <= {3'b000, operand_b[30:23]};
+              man_b <= (operand_b[30:23] == 0) ?
+                       {1'b0, operand_b[22:0], 29'b0} :
+                       {1'b1, operand_b[22:0], 29'b0};
+              is_nan_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 0);
+              is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
+              is_zero_b <= (operand_b[30:0] == 0);
+
+              // Operand C (rs3)
+              sign_c <= operand_c[31] ^ subtract_addend;
+              exp_c <= {3'b000, operand_c[30:23]};
+              man_c <= (operand_c[30:23] == 0) ?
+                       {1'b0, operand_c[22:0], 29'b0} :
+                       {1'b1, operand_c[22:0], 29'b0};
+              is_nan_c <= (operand_c[30:23] == 8'hFF) && (operand_c[22:0] != 0);
+              is_inf_c <= (operand_c[30:23] == 8'hFF) && (operand_c[22:0] == 0);
+              is_zero_c <= (operand_c[30:0] == 0);
+            end
+          end else begin
+            // FLEN=32: always single-precision
+            // Operand A (rs1)
+            sign_a <= operand_a[31];
+            exp_a <= {3'b000, operand_a[30:23]};
+            man_a <= (operand_a[30:23] == 0) ?
+                     {1'b0, operand_a[22:0], 29'b0} :
+                     {1'b1, operand_a[22:0], 29'b0};
+            is_nan_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 0);
+            is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
+            is_zero_a <= (operand_a[30:0] == 0);
+
+            // Operand B (rs2)
+            sign_b <= operand_b[31];
+            exp_b <= {3'b000, operand_b[30:23]};
+            man_b <= (operand_b[30:23] == 0) ?
+                     {1'b0, operand_b[22:0], 29'b0} :
+                     {1'b1, operand_b[22:0], 29'b0};
+            is_nan_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 0);
+            is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
+            is_zero_b <= (operand_b[30:0] == 0);
+
+            // Operand C (rs3)
+            sign_c <= operand_c[31] ^ subtract_addend;
+            exp_c <= {3'b000, operand_c[30:23]};
+            man_c <= (operand_c[30:23] == 0) ?
+                     {1'b0, operand_c[22:0], 29'b0} :
+                     {1'b1, operand_c[22:0], 29'b0};
+            is_nan_c <= (operand_c[30:23] == 8'hFF) && (operand_c[22:0] != 0);
+            is_inf_c <= (operand_c[30:23] == 8'hFF) && (operand_c[22:0] == 0);
+            is_zero_c <= (operand_c[30:0] == 0);
+          end
         end
 
         // ============================================================
@@ -200,18 +278,33 @@ module fp_fma #(
           // Handle special cases
           if (is_nan_a || is_nan_b || is_nan_c) begin
             // NaN propagation
-            result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, 32'h7FC00000};
+            else if (FLEN == 64 && fmt_latched)
+              result <= 64'h7FF8000000000000;
+            else
+              result <= 32'h7FC00000;
             flag_nv <= 1'b1;
             state <= DONE;
           end else if ((is_inf_a && is_zero_b) || (is_zero_a && is_inf_b)) begin
             // 0 × ∞: Invalid
-            result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, 32'h7FC00000};
+            else if (FLEN == 64 && fmt_latched)
+              result <= 64'h7FF8000000000000;
+            else
+              result <= 32'h7FC00000;
             flag_nv <= 1'b1;
             state <= DONE;
           end else if ((is_inf_a || is_inf_b) && is_inf_c &&
                        ((sign_a ^ sign_b ^ negate_product) != sign_c)) begin
             // ∞ + (-∞): Invalid
-            result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, 32'h7FC00000};
+            else if (FLEN == 64 && fmt_latched)
+              result <= 64'h7FF8000000000000;
+            else
+              result <= 32'h7FC00000;
             flag_nv <= 1'b1;
             state <= DONE;
           end else if (is_inf_a || is_inf_b || is_inf_c) begin
@@ -220,21 +313,36 @@ module fp_fma #(
               sign_result <= sign_c;
             else
               sign_result <= sign_a ^ sign_b ^ negate_product;
-            result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};
+            else if (FLEN == 64 && fmt_latched)
+              result <= {sign_result, 11'h7FF, 52'h0};
+            else
+              result <= {sign_result, 8'hFF, 23'h0};
             state <= DONE;
           end else if ((is_zero_a || is_zero_b) && is_zero_c) begin
             // 0 + 0
             sign_result <= (sign_a ^ sign_b ^ negate_product) && sign_c;
-            result <= {sign_result, {FLEN-1{1'b0}}};
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_result, 31'h0};
+            else if (FLEN == 64 && fmt_latched)
+              result <= {sign_result, 63'h0};
+            else
+              result <= {sign_result, 31'h0};
             state <= DONE;
           end else if (is_zero_a || is_zero_b) begin
             // Product is 0, return addend
-            result <= {sign_c, exp_c, man_c[MAN_WIDTH-1:0]};
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_c, exp_c[7:0], man_c[51:29]};
+            else if (FLEN == 64 && fmt_latched)
+              result <= {sign_c, exp_c[10:0], man_c[51:0]};
+            else
+              result <= {sign_c, exp_c[7:0], man_c[51:29]};
             state <= DONE;
           end else if (is_zero_c) begin
             // Addend is 0, return product
             sign_prod <= sign_a ^ sign_b ^ negate_product;
-            exp_prod <= exp_a + exp_b - BIAS;
+            exp_prod <= exp_a + exp_b - bias_val;
             // Store 48-bit product directly - we'll position it during ADD
             product <= man_a * man_b;
           end else begin
@@ -242,7 +350,7 @@ module fp_fma #(
             sign_prod <= sign_a ^ sign_b ^ negate_product;
             // Store 48-bit product directly - we'll position it during ADD
             product <= man_a * man_b;
-            exp_prod <= exp_a + exp_b - BIAS;
+            exp_prod <= exp_a + exp_b - bias_val;
           end
         end
 
@@ -325,27 +433,45 @@ module fp_fma #(
         NORMALIZE: begin
           // Check for zero result
           if (sum == 0) begin
-            result <= {sign_result, {FLEN-1{1'b0}}};
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_result, 31'h0};
+            else if (FLEN == 64 && fmt_latched)
+              result <= {sign_result, 63'h0};
+            else
+              result <= {sign_result, 31'h0};
             state <= DONE;
           end
           // Check for overflow (carry out to bit 52)
           else if (sum[(2*MAN_WIDTH+6)]) begin
             sum <= sum >> 1;
             exp_result <= exp_result + 1;
-            guard <= sum[0];
-            round <= 1'b0;
-            sticky <= 1'b0;
+            // After right shift, GRS extraction needs format awareness
+            if (FLEN == 64 && !fmt_latched) begin
+              guard <= sum[29];  // After shift, guard at bit 29
+              round <= sum[28];
+              sticky <= |sum[27:0];
+            end else begin
+              guard <= sum[0];
+              round <= 1'b0;
+              sticky <= 1'b0;
+            end
           end
           // Check if leading 1 is at bit 51 (normalized)
           else if (sum[(2*MAN_WIDTH+5)]) begin
             // Already normalized - leading 1 at bit 51
-            // Mantissa is [50:28], so guard/round/sticky are:
-            // guard = bit 27 (0.5 ULP)
-            // round = bit 26 (0.25 ULP)
-            // sticky = OR of bits [25:0]
-            guard <= sum[MAN_WIDTH+4];   // bit 27
-            round <= sum[MAN_WIDTH+3];   // bit 26
-            sticky <= |sum[MAN_WIDTH+2:0]; // bits 25:0
+            // For single-precision in FLEN=64, mantissa has 29-bit padding
+            // GRS must be extracted from appropriate positions
+            if (FLEN == 64 && !fmt_latched) begin
+              // Single-precision: GRS at bits [MAN_WIDTH+4+29:MAN_WIDTH+2+29]
+              guard <= sum[MAN_WIDTH+4+29];   // bit 56 for SP
+              round <= sum[MAN_WIDTH+3+29];   // bit 55
+              sticky <= |sum[MAN_WIDTH+2+29:0]; // bits 54:0
+            end else begin
+              // Double-precision: GRS at bits [MAN_WIDTH+4:MAN_WIDTH+2]
+              guard <= sum[MAN_WIDTH+4];   // bit 27
+              round <= sum[MAN_WIDTH+3];   // bit 26
+              sticky <= |sum[MAN_WIDTH+2:0]; // bits 25:0
+            end
           end
           // Leading 1 is below bit 51 - need to shift left (can happen after subtraction)
           else begin
@@ -358,7 +484,12 @@ module fp_fma #(
           if (exp_result >= MAX_EXP) begin
             flag_of <= 1'b1;
             flag_nx <= 1'b1;
-            result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+            if (FLEN == 64 && !fmt_latched)
+              result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};
+            else if (FLEN == 64 && fmt_latched)
+              result <= {sign_result, 11'h7FF, 52'h0};
+            else
+              result <= {sign_result, 8'hFF, 23'h0};
             state <= DONE;
           end
         end
@@ -378,13 +509,37 @@ module fp_fma #(
           `endif
 
           // Apply rounding using combinational value
-          // Extract mantissa from sum[50:28] (23 bits), assuming sum[51] is the implicit 1
-          if (round_up_comb) begin
-            result <= {sign_result, exp_result[EXP_WIDTH-1:0],
-                       sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)] + 1'b1};
+          // Extract mantissa bits based on format
+          if (FLEN == 64 && !fmt_latched) begin
+            // Single-precision in 64-bit register (NaN-boxed)
+            // Extract 23-bit mantissa from sum[54:32]
+            if (round_up_comb) begin
+              result <= {32'hFFFFFFFF, sign_result, exp_result[7:0],
+                         sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5+29)] + 1'b1};
+            end else begin
+              result <= {32'hFFFFFFFF, sign_result, exp_result[7:0],
+                         sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5+29)]};
+            end
+          end else if (FLEN == 64 && fmt_latched) begin
+            // Double-precision in 64-bit register
+            // Extract 52-bit mantissa from sum[54:3]
+            if (round_up_comb) begin
+              result <= {sign_result, exp_result[10:0],
+                         sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)] + 1'b1};
+            end else begin
+              result <= {sign_result, exp_result[10:0],
+                         sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)]};
+            end
           end else begin
-            result <= {sign_result, exp_result[EXP_WIDTH-1:0],
-                       sum[(2*MAN_WIDTH+4):(MAN_WIDTH+5)]};
+            // FLEN=32: single-precision in 32-bit register
+            // Extract 23-bit mantissa
+            if (round_up_comb) begin
+              result <= {sign_result, exp_result[7:0],
+                         sum[25:3] + 1'b1};
+            end else begin
+              result <= {sign_result, exp_result[7:0],
+                         sum[25:3]};
+            end
           end
 
           // Set inexact flag

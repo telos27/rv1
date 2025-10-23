@@ -11,6 +11,7 @@ module fp_divider #(
 
   // Control
   input  wire              start,          // Start operation
+  input  wire              fmt,            // Format: 0=single, 1=double
   input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
   output reg               busy,           // Operation in progress
   output reg               done,           // Operation complete (1 cycle pulse)
@@ -55,6 +56,11 @@ module fp_divider #(
   // Special value flags
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
   reg special_case_handled;  // Track if special case was processed
+  reg fmt_latched;  // Latched format signal
+
+  // Format-aware BIAS for exponent arithmetic
+  wire [10:0] bias_val;
+  assign bias_val = (FLEN == 64 && !fmt_latched) ? 11'd127 : 11'd1023;
 
   // Division computation (SRT radix-2)
   reg [MAN_WIDTH+3:0] quotient;        // Quotient result (27 bits)
@@ -67,6 +73,12 @@ module fp_divider #(
   // Rounding
   reg guard, round, sticky;
   reg round_up;
+
+  // LSB for RNE tie-breaking (format-aware)
+  wire lsb_bit_div;
+  // For single-precision in FLEN=64: quotient mantissa at [MAN_WIDTH+3:32], LSB at bit 32
+  // For double-precision: quotient mantissa at [MAN_WIDTH+3:3], LSB at bit 3
+  assign lsb_bit_div = (FLEN == 64 && !fmt_latched) ? quotient[32] : quotient[3];
 
   // Debug output
   `ifdef DEBUG_FPU_DIVIDER
@@ -191,35 +203,76 @@ module fp_divider #(
         // UNPACK: Extract sign, exponent, mantissa
         // ============================================================
         UNPACK: begin
-          // Extract sign (XOR for division)
-          sign_a <= operand_a[FLEN-1];
-          sign_b <= operand_b[FLEN-1];
-          sign_result <= operand_a[FLEN-1] ^ operand_b[FLEN-1];
+          // Latch format signal
+          fmt_latched <= fmt;
 
-          // Extract exponent
-          exp_a <= operand_a[FLEN-2:MAN_WIDTH];
-          exp_b <= operand_b[FLEN-2:MAN_WIDTH];
+          // Format-aware extraction for FLEN=64
+          if (FLEN == 64) begin
+            if (fmt) begin
+              // Double-precision: use bits [63:0]
+              sign_a <= operand_a[63];
+              sign_b <= operand_b[63];
+              sign_result <= operand_a[63] ^ operand_b[63];
+              exp_a  <= operand_a[62:52];
+              exp_b  <= operand_b[62:52];
 
-          // Extract mantissa with implicit leading 1 (if normalized)
-          man_a <= (operand_a[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_a[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_a[MAN_WIDTH-1:0]};
+              man_a <= (operand_a[62:52] == 0) ?
+                       {1'b0, operand_a[51:0]} :
+                       {1'b1, operand_a[51:0]};
+              man_b <= (operand_b[62:52] == 0) ?
+                       {1'b0, operand_b[51:0]} :
+                       {1'b1, operand_b[51:0]};
 
-          man_b <= (operand_b[FLEN-2:MAN_WIDTH] == 0) ?
-                   {1'b0, operand_b[MAN_WIDTH-1:0]} :
-                   {1'b1, operand_b[MAN_WIDTH-1:0]};
+              is_nan_a <= (operand_a[62:52] == 11'h7FF) && (operand_a[51:0] != 0);
+              is_nan_b <= (operand_b[62:52] == 11'h7FF) && (operand_b[51:0] != 0);
+              is_inf_a <= (operand_a[62:52] == 11'h7FF) && (operand_a[51:0] == 0);
+              is_inf_b <= (operand_b[62:52] == 11'h7FF) && (operand_b[51:0] == 0);
+              is_zero_a <= (operand_a[62:0] == 0);
+              is_zero_b <= (operand_b[62:0] == 0);
+            end else begin
+              // Single-precision: use bits [31:0] (NaN-boxed in [63:32])
+              sign_a <= operand_a[31];
+              sign_b <= operand_b[31];
+              sign_result <= operand_a[31] ^ operand_b[31];
+              exp_a  <= {3'b000, operand_a[30:23]};
+              exp_b  <= {3'b000, operand_b[30:23]};
 
-          // Detect special values
-          is_nan_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] != 0);
-          is_nan_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] != 0);
-          is_inf_a <= (operand_a[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_a[MAN_WIDTH-1:0] == 0);
-          is_inf_b <= (operand_b[FLEN-2:MAN_WIDTH] == {EXP_WIDTH{1'b1}}) &&
-                      (operand_b[MAN_WIDTH-1:0] == 0);
-          is_zero_a <= (operand_a[FLEN-2:0] == 0);
-          is_zero_b <= (operand_b[FLEN-2:0] == 0);
+              man_a <= (operand_a[30:23] == 0) ?
+                       {1'b0, operand_a[22:0], 29'b0} :
+                       {1'b1, operand_a[22:0], 29'b0};
+              man_b <= (operand_b[30:23] == 0) ?
+                       {1'b0, operand_b[22:0], 29'b0} :
+                       {1'b1, operand_b[22:0], 29'b0};
+
+              is_nan_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 0);
+              is_nan_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 0);
+              is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
+              is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
+              is_zero_a <= (operand_a[30:0] == 0);
+              is_zero_b <= (operand_b[30:0] == 0);
+            end
+          end else begin
+            // FLEN=32: always single-precision
+            sign_a <= operand_a[31];
+            sign_b <= operand_b[31];
+            sign_result <= operand_a[31] ^ operand_b[31];
+            exp_a  <= {3'b000, operand_a[30:23]};
+            exp_b  <= {3'b000, operand_b[30:23]};
+
+            man_a <= (operand_a[30:23] == 0) ?
+                     {1'b0, operand_a[22:0], 29'b0} :
+                     {1'b1, operand_a[22:0], 29'b0};
+            man_b <= (operand_b[30:23] == 0) ?
+                     {1'b0, operand_b[22:0], 29'b0} :
+                     {1'b1, operand_b[22:0], 29'b0};
+
+            is_nan_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] != 0);
+            is_nan_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] != 0);
+            is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
+            is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
+            is_zero_a <= (operand_a[30:0] == 0);
+            is_zero_b <= (operand_b[30:0] == 0);
+          end
 
           // Initialize division counter for next state
           div_counter <= DIV_CYCLES;
@@ -238,7 +291,12 @@ module fp_divider #(
             // Special case handling
             if (is_nan_a || is_nan_b) begin
               // NaN propagation
-              result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single NaN (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= 64'h7FF8000000000000;  // Double NaN
+              else
+                result <= 32'h7FC00000;  // FLEN=32 single NaN
               flag_nv <= 1'b1;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -248,7 +306,12 @@ module fp_divider #(
               state <= DONE;
             end else if ((is_inf_a && is_inf_b) || (is_zero_a && is_zero_b)) begin
               // ∞/∞ or 0/0: Invalid
-              result <= (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single NaN (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= 64'h7FF8000000000000;  // Double NaN
+              else
+                result <= 32'h7FC00000;  // FLEN=32 single NaN
               flag_nv <= 1'b1;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -258,7 +321,12 @@ module fp_divider #(
               state <= DONE;
             end else if (is_inf_a) begin
               // ∞/x: return ±∞
-              result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // Single ∞ (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= {sign_result, 11'h7FF, 52'h0};  // Double ∞
+              else
+                result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 single ∞
               flag_nv <= 1'b0;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -268,7 +336,12 @@ module fp_divider #(
               state <= DONE;
             end else if (is_inf_b) begin
               // x/∞: return ±0
-              result <= {sign_result, {FLEN-1{1'b0}}};
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, sign_result, 31'h0};  // Single 0 (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= {sign_result, 63'h0};  // Double 0
+              else
+                result <= {sign_result, 31'h0};  // FLEN=32 single 0
               flag_nv <= 1'b0;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -278,7 +351,12 @@ module fp_divider #(
               state <= DONE;
             end else if (is_zero_a) begin
               // 0/x: return ±0
-              result <= {sign_result, {FLEN-1{1'b0}}};
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, sign_result, 31'h0};  // Single 0 (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= {sign_result, 63'h0};  // Double 0
+              else
+                result <= {sign_result, 31'h0};  // FLEN=32 single 0
               flag_nv <= 1'b0;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -288,7 +366,12 @@ module fp_divider #(
               state <= DONE;
             end else if (is_zero_b) begin
               // x/0: Divide by zero, return ±∞
-              result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
+              if (FLEN == 64 && !fmt_latched)
+                result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // Single ∞ (NaN-boxed)
+              else if (FLEN == 64 && fmt_latched)
+                result <= {sign_result, 11'h7FF, 52'h0};  // Double ∞
+              else
+                result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 single ∞
               flag_nv <= 1'b0;
               flag_dz <= 1'b1;
               flag_of <= 1'b0;
@@ -298,8 +381,8 @@ module fp_divider #(
               state <= DONE;
             end else begin
               // Initialize division
-              // Compute exponent: exp_a - exp_b + BIAS
-              exp_diff <= exp_a - exp_b + BIAS;
+              // Compute exponent: exp_a - exp_b + BIAS (format-aware)
+              exp_diff <= exp_a - exp_b + bias_val;
 
               // Initialize remainder = dividend (shifted left for alignment)
               // Now using 29-bit register, add extra 0 bit at MSB
@@ -343,23 +426,44 @@ module fp_divider #(
           if (quotient[MAN_WIDTH+3]) begin
             // Already normalized
             exp_result <= exp_diff[EXP_WIDTH-1:0];
-            guard <= quotient[2];
-            round <= quotient[1];
-            sticky <= quotient[0] || (remainder != 0);
+            // Format-aware GRS extraction:
+            // - Single-precision (FLEN=64, fmt=0): GRS at bits [31:29] (padding boundary)
+            // - Double-precision or FLEN=32: GRS at bits [2:0] (normal position)
+            if (FLEN == 64 && !fmt_latched) begin
+              guard <= quotient[31];
+              round <= quotient[30];
+              sticky <= |quotient[29:0] || (remainder != 0);
+            end else begin
+              guard <= quotient[2];
+              round <= quotient[1];
+              sticky <= quotient[0] || (remainder != 0);
+            end
           end else if (quotient[MAN_WIDTH+2]) begin
             // Shift left by 1
             quotient <= quotient << 1;
             exp_result <= exp_diff - 1;
-            guard <= quotient[1];
-            round <= quotient[0];
-            sticky <= remainder != 0;
+            if (FLEN == 64 && !fmt_latched) begin
+              guard <= quotient[30];
+              round <= quotient[29];
+              sticky <= |quotient[28:0] || (remainder != 0);
+            end else begin
+              guard <= quotient[1];
+              round <= quotient[0];
+              sticky <= remainder != 0;
+            end
           end else begin
             // Larger shift needed (rare case, simplified handling)
             quotient <= quotient << 2;
             exp_result <= exp_diff - 2;
-            guard <= quotient[0];
-            round <= 1'b0;
-            sticky <= remainder != 0;
+            if (FLEN == 64 && !fmt_latched) begin
+              guard <= quotient[29];
+              round <= quotient[28];
+              sticky <= |quotient[27:0] || (remainder != 0);
+            end else begin
+              guard <= quotient[0];
+              round <= 1'b0;
+              sticky <= remainder != 0;
+            end
           end
 
           // Check for overflow
@@ -385,7 +489,7 @@ module fp_divider #(
           // Determine if we should round up
           case (rounding_mode)
             3'b000: begin  // RNE: Round to nearest, ties to even
-              round_up <= guard && (round || sticky || quotient[3]);
+              round_up <= guard && (round || sticky || lsb_bit_div);
             end
             3'b001: begin  // RTZ: Round toward zero
               round_up <= 1'b0;
@@ -405,16 +509,45 @@ module fp_divider #(
           endcase
 
           // Apply rounding with overflow handling
-          if (round_up) begin
-            // Check if rounding causes mantissa overflow
-            if (quotient[MAN_WIDTH+2:3] == {MAN_WIDTH{1'b1}}) begin
-              // Mantissa overflow: increment exponent, mantissa becomes 0
-              result <= {sign_result, exp_result + 1'b1, {MAN_WIDTH{1'b0}}};
+          if (FLEN == 64 && !fmt_latched) begin
+            // Single-precision in 64-bit register (NaN-boxed)
+            if (round_up) begin
+              // Check if rounding causes mantissa overflow (23-bit mantissa)
+              if (quotient[MAN_WIDTH+2:32] == 23'h7FFFFF) begin
+                // Mantissa overflow: increment exponent, mantissa becomes 0
+                result <= {32'hFFFFFFFF, sign_result, exp_result[7:0] + 1'b1, 23'h0};
+              end else begin
+                result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], quotient[MAN_WIDTH+2:32] + 1'b1};
+              end
             end else begin
-              result <= {sign_result, exp_result, quotient[MAN_WIDTH+2:3] + 1'b1};
+              result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], quotient[MAN_WIDTH+2:32]};
+            end
+          end else if (FLEN == 64 && fmt_latched) begin
+            // Double-precision in 64-bit register
+            if (round_up) begin
+              // Check if rounding causes mantissa overflow (52-bit mantissa)
+              if (quotient[MAN_WIDTH+2:3] == {MAN_WIDTH{1'b1}}) begin
+                // Mantissa overflow: increment exponent, mantissa becomes 0
+                result <= {sign_result, exp_result[10:0] + 1'b1, {MAN_WIDTH{1'b0}}};
+              end else begin
+                result <= {sign_result, exp_result[10:0], quotient[MAN_WIDTH+2:3] + 1'b1};
+              end
+            end else begin
+              result <= {sign_result, exp_result[10:0], quotient[MAN_WIDTH+2:3]};
             end
           end else begin
-            result <= {sign_result, exp_result, quotient[MAN_WIDTH+2:3]};
+            // FLEN=32: single-precision in 32-bit register
+            if (round_up) begin
+              // Check if rounding causes mantissa overflow (23-bit mantissa)
+              if (quotient[25:3] == 23'h7FFFFF) begin
+                // Mantissa overflow: increment exponent, mantissa becomes 0
+                result <= {sign_result, exp_result[7:0] + 1'b1, 23'h0};
+              end else begin
+                result <= {sign_result, exp_result[7:0], quotient[25:3] + 1'b1};
+              end
+            end else begin
+              result <= {sign_result, exp_result[7:0], quotient[25:3]};
+            end
           end
 
           // Set inexact flag
