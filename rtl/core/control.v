@@ -415,7 +415,7 @@ module control #(
               fp_alu_op = FP_SQRT;
               fp_use_dynamic_rm = (funct3 == 3'b111);
             end
-            5'b10000: begin  // FSGNJ.S/D, FSGNJN.S/D, FSGNJX.S/D
+            5'b00100: begin  // FSGNJ.S/D, FSGNJN.S/D, FSGNJX.S/D
               fp_reg_write = 1'b1;
               fp_alu_en = 1'b1;
               case (funct3)
