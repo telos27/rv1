@@ -81,9 +81,9 @@ module fp_fma #(
 
   // Format-aware LSB for RNE rounding (tie-breaking)
   // For single-precision in FLEN=64, mantissa is in upper bits, LSB is at sum[MAN_WIDTH+5+29]
-  // For double-precision, LSB is at sum[MAN_WIDTH+5]
+  // For double-precision, LSB is at sum[3] (mantissa at [54:3])
   wire lsb_bit_fma;
-  assign lsb_bit_fma = (FLEN == 64 && !fmt_latched) ? sum[MAN_WIDTH+5+29] : sum[MAN_WIDTH+5];
+  assign lsb_bit_fma = (FLEN == 64 && !fmt_latched) ? sum[MAN_WIDTH+5+29] : sum[3];
 
   // Compute round_up combinationally for use in same cycle
   wire round_up_comb;
@@ -333,6 +333,9 @@ module fp_fma #(
             state <= DONE;
           end else if (is_zero_a || is_zero_b) begin
             // Product is 0, return addend
+            `ifdef DEBUG_FPU
+            $display("[FMA_SPECIAL] Product is zero, returning addend: sign_c=%b exp_c=%h man_c=%h", sign_c, exp_c, man_c);
+            `endif
             if (FLEN == 64 && !fmt_latched)
               result <= {32'hFFFFFFFF, sign_c, exp_c[7:0], man_c[51:29]};
             else if (FLEN == 64 && fmt_latched)
@@ -342,6 +345,9 @@ module fp_fma #(
             state <= DONE;
           end else if (is_zero_c) begin
             // Addend is 0, return product
+            `ifdef DEBUG_FPU
+            $display("[FMA_SPECIAL] Addend is zero, computing product only");
+            `endif
             sign_prod <= sign_a ^ sign_b ^ negate_product;
             exp_prod <= exp_a + exp_b - bias_val;
             // Store 48-bit product directly - we'll position it during ADD
@@ -391,11 +397,14 @@ module fp_fma #(
               aligned_c = {1'b0, {(2*MAN_WIDTH+5){1'b0}}, 1'b1};  // Sticky bit only
             else begin
               // For FLEN=64:
-              // - Double-precision: man_c[52] is leading bit, product leading bit at 52 → shift by exp_diff
-              // - Single-precision: man_c[52] has padding, actual leading bit lower, product at 51 → shift by exp_diff+1
+              // - Double-precision: man_c[52] is leading bit, but product leading bit is at 55 after positioning
+              //   So we need to shift man_c LEFT by 3, then RIGHT by exp_diff: net = shift left by (3-exp_diff)
+              //   Actually simpler: position man_c to match product's position, then shift by exp_diff
+              //   Product positioned with leading bit at [~55], so man_c needs same positioning
+              // - Single-precision: man_c[52] has padding, product at 51 → shift by exp_diff+1
               if (FLEN == 64) begin
                 if (fmt_latched)
-                  aligned_c = (man_c >> exp_diff);  // Double-precision: same position
+                  aligned_c = ({man_c, 3'b0} >> exp_diff);  // Double-precision: shift left by 3 to align, then right by exp_diff
                 else
                   aligned_c = (man_c >> (exp_diff + 1));  // Single-precision: product 1 bit lower
               end else
@@ -412,10 +421,13 @@ module fp_fma #(
             else
               product = product >> exp_diff;
 
-            // Position man_c - for FLEN=64, it's already at the right position
-            if (FLEN == 64)
-              aligned_c = man_c;
-            else
+            // Position man_c to match product positioning
+            if (FLEN == 64) begin
+              if (fmt_latched)
+                aligned_c = {man_c, 3'b0};  // Double-precision: shift left by 3 to match product position at [55]
+              else
+                aligned_c = man_c;  // Single-precision: already aligned
+            end else
               aligned_c = {man_c, 28'b0};
           end
 
@@ -433,8 +445,9 @@ module fp_fma #(
 
           if (FLEN == 64) begin
             if (fmt_latched) begin
-              // Double-precision: Shift product right by 52 to position leading bit at [52]
-              product_positioned = product >> 52;
+              // Double-precision: Shift product right by 49 to position leading bit at [55]
+              // This leaves room for 52-bit mantissa at [54:3] and GRS bits at [2:0]
+              product_positioned = product >> 49;
             end else begin
               // Single-precision: Shift product right by 53 to position leading bit at [51]
               product_positioned = product >> 53;
@@ -488,13 +501,14 @@ module fp_fma #(
           // Check for overflow (carry out beyond normalized position)
           // For double-precision: normalized at 52, overflow at 53
           // For single-precision: normalized at 51, overflow at 52
-          else if (FLEN == 64 && fmt_latched && sum[53]) begin
+          else if (FLEN == 64 && fmt_latched && sum[56]) begin
             // Double-precision overflow
             sum <= sum >> 1;
             exp_result <= exp_result + 1;
-            guard <= sum[0];  // After shift, GRS at bits [0,-1,-2]
-            round <= 1'b0;    // (below our register - approximate)
-            sticky <= 1'b0;
+            // After shift, leading bit at [55], mantissa at [54:3], GRS at [2:0]
+            guard <= sum[2];
+            round <= sum[1];
+            sticky <= sum[0];
           end else if (FLEN == 64 && !fmt_latched && sum[52]) begin
             // Single-precision overflow
             sum <= sum >> 1;
@@ -514,13 +528,12 @@ module fp_fma #(
           // Check if leading 1 is at normalized position
           // Double-precision: leading bit at 52
           // Single-precision: leading bit at 51
-          else if (FLEN == 64 && fmt_latched && sum[52]) begin
-            // Double-precision already normalized - leading 1 at bit 52
-            // Mantissa is at [51:0], GRS below bit 0 (not captured in register)
-            // For now, approximate GRS as 0 (will cause slight rounding errors)
-            guard <= 1'b0;
-            round <= 1'b0;
-            sticky <= 1'b0;
+          else if (FLEN == 64 && fmt_latched && sum[55]) begin
+            // Double-precision already normalized - leading 1 at bit 55
+            // Mantissa is at [54:3], GRS at [2:0]
+            guard <= sum[2];
+            round <= sum[1];
+            sticky <= sum[0];
             state <= ROUND;
           end else if (FLEN == 64 && !fmt_latched && sum[51]) begin
             // Single-precision already normalized - leading 1 at bit 51
@@ -568,8 +581,8 @@ module fp_fma #(
 
           `ifdef DEBUG_FPU
           if (FLEN == 64 && fmt_latched)
-            $display("[FMA_ROUND] sign=%b exp_result=%d sum=%h mantissa_extract=%h (bits [51:0])",
-                     sign_result, exp_result, sum, sum[51:0]);
+            $display("[FMA_ROUND] sign=%b exp_result=%d sum=%h mantissa_extract=%h (bits [54:3])",
+                     sign_result, exp_result, sum, sum[54:3]);
           else if (FLEN == 64 && !fmt_latched)
             $display("[FMA_ROUND] sign=%b exp_result=%d sum=%h mantissa_extract=%h (bits [50:28])",
                      sign_result, exp_result, sum, sum[50:28]);
@@ -597,12 +610,12 @@ module fp_fma #(
             end
           end else if (FLEN == 64 && fmt_latched) begin
             // Double-precision in 64-bit register
-            // Extract 52-bit mantissa from sum[51:0]
-            // Leading bit is implicit 1 at position 52
+            // Extract 52-bit mantissa from sum[54:3]
+            // Leading bit is implicit 1 at position 55
             if (round_up_comb) begin
-              result <= {sign_result, exp_result[10:0], sum[51:0] + 1'b1};
+              result <= {sign_result, exp_result[10:0], sum[54:3] + 1'b1};
             end else begin
-              result <= {sign_result, exp_result[10:0], sum[51:0]};
+              result <= {sign_result, exp_result[10:0], sum[54:3]};
             end
           end else begin
             // FLEN=32: single-precision in 32-bit register
