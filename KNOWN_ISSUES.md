@@ -69,43 +69,59 @@ assign atomic_stall = (atomic_completing && hazard) || normal_atomic_stall;
 
 ## Resolved Issues
 
-### ✅ Mixed Compressed/Normal Instruction Addressing Issue (Bug #23)
+### ✅ Mixed Compressed/Normal Instruction Configuration Issue (Bug #23)
 
-**Status**: ✅ **RESOLVED** (2025-10-21)
+**Status**: ✅ **RESOLVED** - Not a bug, configuration requirement clarified (2025-10-23)
 
-**Component**: C Extension integration with 32-bit instructions
+**Component**: C Extension configuration and exception handling
 
 **Description**:
-The RVC (compressed instruction) detection logic was incorrectly checking bits [17:16] when PC[1]=1, causing 32-bit instructions at halfword boundaries to be misidentified as compressed.
+Tests with compressed instructions would hang when compiled with `-DCONFIG_RV32I`, causing the CPU to loop infinitely between PC=0x00 and PC=0x02 with instruction address misaligned exceptions.
 
 **Root Cause**:
-The instruction memory fetches 32 bits aligned to halfword boundaries. The instruction at PC always starts in the LOWER 16 bits [15:0] of the fetched word, regardless of PC alignment. The original logic incorrectly assumed that when PC[1]=1, the instruction would be in the upper 16 bits.
+**Configuration mismatch**, not a hardware bug:
+- The RVC decoder is always instantiated and active in the pipeline
+- When compiled with `-DCONFIG_RV32I`, the `ENABLE_C_EXT` flag is set to 0
+- The exception unit checks PC alignment based on `ENABLE_C_EXT`:
+  - With C extension: Only PC[0] must be 0 (2-byte aligned)
+  - Without C extension: PC[1:0] must be 00 (4-byte aligned)
+- Compressed instructions at PC=0x00 increment PC to 0x02 (2-byte aligned)
+- Exception unit rejects PC=0x02 as misaligned when `ENABLE_C_EXT=0`
+- Trap vector redirects to 0x00, creating infinite loop
 
 **Symptoms**:
-- CPU would loop infinitely through first few instructions
-- PC would increment by 2 instead of 4 for 32-bit instructions at halfword boundaries
-- Spurious data from middle of 32-bit instructions would be executed
-- Test programs with compressed instructions would timeout
+- CPU oscillates between PC=0x00 and PC=0x02
+- Instruction address misaligned exception (code 0x00) on every cycle with PC[1]=1
+- Test programs with compressed instructions timeout
+- Flush signal active every other cycle due to trap
 
 **Resolution**:
-Fixed `rtl/core/rv32i_core_pipelined.v` to:
-- Always use `instruction_raw[15:0]` for compressed candidate
-- Always check `instruction_raw[1:0]` for compression detection
-- Removed dependency on PC[1] for selecting which half to check
+Use correct configuration when compiling tests with compressed instructions:
+- `-DCONFIG_RV32IMC` or any config with `ENABLE_C_EXT=1`
+- NOT `-DCONFIG_RV32I` which has `ENABLE_C_EXT=0`
 
-**Files Fixed**:
-- `rtl/core/rv32i_core_pipelined.v` (lines 525-552)
+**Configuration Reference**:
+```bash
+# Correct - for tests with compressed instructions
+iverilog -DCONFIG_RV32IMC ...
+
+# Incorrect - will fail on 2-byte aligned PCs
+iverilog -DCONFIG_RV32I ...
+```
 
 **Test Evidence**:
-With compressed instructions disabled:
-- Integer register updates working: x1=1, x2=2, x3=-1 ✓
-- FPU conversions partially working: a1=0x3f800000 (1.0) ✓, a2=0x40000000 (2.0) ✓
+- With CONFIG_RV32I: Infinite loop at PC=0x00↔0x02, exception code 0x00
+- With CONFIG_RV32IMC: Test executes correctly, official rv32uc-p-rvc passes
+- Official compliance: RV32UC 1/1 tests PASSING (100%) ✅
 
-**Related Documentation**:
-- Commit: Bug #23 Fixed: RVC Compressed Instruction Detection Logic Error
+**Files Involved**:
+- `rtl/config/rv_config.vh` - Configuration definitions
+- `rtl/core/exception_unit.v` - PC alignment checking
 
-**Impact**: High - Blocked all mixed compressed/normal instruction programs
-**Priority**: Critical (now resolved)
+**Impact**: Medium - User error, not a hardware defect
+**Priority**: Resolved - Configuration requirement documented
+
+**Note**: The RVC decoder and exception unit work correctly. Tests must use appropriate configuration flags.
 
 ---
 

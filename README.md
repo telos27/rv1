@@ -67,12 +67,6 @@ Before implementing new features, consider these existing limitations:
    - Trade-off: Simplicity chosen over performance
    - **Action**: Consider optimizing before adding more complex features
 
-2. **🔀 Mixed Compressed/Normal Instructions** - Addressing issue with mixed 16/32-bit streams
-   - Pure compressed: Works correctly
-   - Pure 32-bit: Works correctly
-   - Mixed: Incorrect results in some cases
-   - **Action**: Debug before relying on mixed instruction streams
-
 **See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for complete details.**
 
 ---

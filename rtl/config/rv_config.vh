@@ -2,9 +2,28 @@
 // Central configuration file for parameterizing core variants
 // Author: RV1 Project
 // Date: 2025-10-10
+// Updated: 2025-10-23 - Added C extension configuration note
 
 `ifndef RV_CONFIG_VH
 `define RV_CONFIG_VH
+
+// ============================================================================
+// IMPORTANT: C Extension Configuration Requirement
+// ============================================================================
+//
+// When running tests with COMPRESSED INSTRUCTIONS, you MUST use a
+// configuration that has ENABLE_C_EXT=1:
+//
+//   ✅ CORRECT:   -DCONFIG_RV32IMC, -DCONFIG_RV32IMAFC, -DCONFIG_RV32IMAFDC
+//   ❌ INCORRECT: -DCONFIG_RV32I, -DCONFIG_RV32IM, -DCONFIG_RV32IMA
+//
+// WHY: The exception unit checks PC alignment based on ENABLE_C_EXT.
+//      Without C extension enabled, 2-byte aligned PCs (0x02, 0x06, etc.)
+//      trigger "instruction address misaligned" exceptions, causing infinite
+//      trap loops at address 0x00.
+//
+// See KNOWN_ISSUES.md for detailed analysis.
+// ============================================================================
 
 // ============================================================================
 // Architecture Width Configuration

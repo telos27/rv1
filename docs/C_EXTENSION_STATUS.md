@@ -1,12 +1,31 @@
 # C Extension Integration Status
 
-**Date**: 2025-10-12
+**Date**: 2025-10-23
 **Status**: ✅ **COMPLETE - VALIDATED AND WORKING**
-**Latest Update**: Icarus hang resolved, ebreak handling implemented, test_rvc_minimal PASSING
+**Latest Update**: Configuration requirement clarified, official compliance test passing
 
 ## Summary
 
 The RISC-V C (Compressed) Extension is **COMPLETE, VALIDATED, AND WORKING**.
+
+### ⚠️ **IMPORTANT CONFIGURATION REQUIREMENT**
+
+Tests with compressed instructions **MUST** be compiled with C extension enabled:
+
+```bash
+# ✅ CORRECT - Use CONFIG with C extension enabled
+iverilog -DCONFIG_RV32IMC ...
+iverilog -DCONFIG_RV32IMAFC ...
+iverilog -DCONFIG_RV32IMAFDC ...
+
+# ❌ WRONG - Will cause instruction address misaligned exceptions
+iverilog -DCONFIG_RV32I ...
+iverilog -DCONFIG_RV32IM ...
+```
+
+**Why**: The exception unit checks PC alignment based on `ENABLE_C_EXT`. Without the C extension enabled, 2-byte aligned PCs (e.g., 0x02, 0x06) are rejected as misaligned, causing infinite trap loops.
+
+**See**: [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) Bug #23 for detailed analysis.
 
 ### Latest Achievements (2025-10-12):
 - ✅ **Icarus Verilog hang**: RESOLVED - simulation runs without freezing

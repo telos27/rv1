@@ -14,9 +14,7 @@ sim/*.out
 *.elf
 *.bin
 *.dump
-tests/vectors/*.o
-tests/vectors/*.elf
-tests/vectors/*.dump
+tests/vectors/
 
 # RISC-V compliance tests (auto-generated, can be regenerated)
 tests/riscv-compliance/
