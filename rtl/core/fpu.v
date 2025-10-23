@@ -519,10 +519,17 @@ module fpu #(
 
       FP_MV_WX: begin
         // Bitcast INT→FP (no conversion, just reinterpret bits)
-        if (FLEN == 32) begin
-          fp_result = {{(FLEN-32){1'b1}}, int_operand[31:0]};  // NaN-box for single-precision
+        // For RV32: Always NaN-box (upper 32 bits = 1) since we're moving a 32-bit value
+        // For RV64: If FLEN=64, just copy; if FLEN=32, impossible (D requires RV64)
+        if (XLEN == 32) begin
+          // RV32: int_operand is 32 bits, always NaN-box to FLEN bits
+          fp_result = {{(FLEN-32){1'b1}}, int_operand[31:0]};
         end else begin
-          fp_result = int_operand[FLEN-1:0];
+          // RV64: int_operand is 64 bits
+          if (FLEN == 64)
+            fp_result = int_operand[63:0];
+          else
+            fp_result = {{32{1'b1}}, int_operand[31:0]};  // NaN-box if FLEN=32
         end
         // No exceptions
       end
