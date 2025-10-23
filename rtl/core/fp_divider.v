@@ -72,9 +72,22 @@ module fp_divider #(
 
   // Rounding
   reg guard, round, sticky;
-  reg round_up;
+  reg lsb_bit;  // Latched LSB bit for RNE tie-breaking
 
-  // LSB for RNE tie-breaking (format-aware)
+  // Combinational round_up computation (used within ROUND state)
+  reg round_up_comb;
+  always @(*) begin
+    case (rounding_mode)
+      3'b000: round_up_comb = guard && (round || sticky || lsb_bit);  // RNE
+      3'b001: round_up_comb = 1'b0;                                    // RTZ
+      3'b010: round_up_comb = sign_result && (guard || round || sticky);  // RDN
+      3'b011: round_up_comb = !sign_result && (guard || round || sticky); // RUP
+      3'b100: round_up_comb = guard;                                   // RMM
+      default: round_up_comb = 1'b0;
+    endcase
+  end
+
+  // LSB for RNE tie-breaking (format-aware) - only used during NORMALIZE to latch value
   wire lsb_bit_div;
   // For single-precision in FLEN=64: quotient mantissa at [MAN_WIDTH+3:32], LSB at bit 32
   // For double-precision: quotient mantissa at [MAN_WIDTH+3:3], LSB at bit 3
@@ -121,8 +134,8 @@ module fp_divider #(
     end
 
     if (state == ROUND) begin
-      $display("[FDIV_ROUND] t=%0t quo[bits]=0x%h g=%b r=%b s=%b round_up=%b",
-               $time, quotient[MAN_WIDTH+2:3], guard, round, sticky, round_up);
+      $display("[FDIV_ROUND] t=%0t quo[bits]=0x%h g=%b r=%b s=%b lsb=%b rm=%d round_up=%b",
+               $time, quotient[MAN_WIDTH+2:3], guard, round, sticky, lsb_bit, rounding_mode, round_up_comb);
     end
 
     if (state == DONE) begin
@@ -195,7 +208,7 @@ module fp_divider #(
       guard <= 1'b0;
       round <= 1'b0;
       sticky <= 1'b0;
-      round_up <= 1'b0;
+      lsb_bit <= 1'b0;
     end else begin
       case (state)
 
@@ -426,6 +439,7 @@ module fp_divider #(
           if (quotient[MAN_WIDTH+3]) begin
             // Already normalized
             exp_result <= exp_diff[EXP_WIDTH-1:0];
+            lsb_bit <= lsb_bit_div;  // Latch LSB for RNE rounding
             // Format-aware GRS extraction:
             // - Single-precision (FLEN=64, fmt=0): GRS at bits [31:29] (padding boundary)
             // - Double-precision or FLEN=32: GRS at bits [2:0] (normal position)
@@ -442,6 +456,8 @@ module fp_divider #(
             // Shift left by 1
             quotient <= quotient << 1;
             exp_result <= exp_diff - 1;
+            // LSB after shift will be at the position of current bit 1 (for double) or 30 (for single in FLEN=64)
+            lsb_bit <= (FLEN == 64 && !fmt_latched) ? quotient[29] : quotient[1];
             if (FLEN == 64 && !fmt_latched) begin
               guard <= quotient[30];
               round <= quotient[29];
@@ -449,12 +465,14 @@ module fp_divider #(
             end else begin
               guard <= quotient[1];
               round <= quotient[0];
-              sticky <= remainder != 0;
+              sticky <= (remainder != 0);  // quotient[0] is moved to round, no bits lost
             end
           end else begin
             // Larger shift needed (rare case, simplified handling)
             quotient <= quotient << 2;
             exp_result <= exp_diff - 2;
+            // LSB after 2-bit shift
+            lsb_bit <= (FLEN == 64 && !fmt_latched) ? quotient[28] : quotient[0];
             if (FLEN == 64 && !fmt_latched) begin
               guard <= quotient[29];
               round <= quotient[28];
@@ -486,32 +504,13 @@ module fp_divider #(
         // ROUND: Apply rounding mode
         // ============================================================
         ROUND: begin
-          // Determine if we should round up
-          case (rounding_mode)
-            3'b000: begin  // RNE: Round to nearest, ties to even
-              round_up <= guard && (round || sticky || lsb_bit_div);
-            end
-            3'b001: begin  // RTZ: Round toward zero
-              round_up <= 1'b0;
-            end
-            3'b010: begin  // RDN: Round down (toward -∞)
-              round_up <= sign_result && (guard || round || sticky);
-            end
-            3'b011: begin  // RUP: Round up (toward +∞)
-              round_up <= !sign_result && (guard || round || sticky);
-            end
-            3'b100: begin  // RMM: Round to nearest, ties to max magnitude
-              round_up <= guard;
-            end
-            default: begin
-              round_up <= 1'b0;
-            end
-          endcase
+          // round_up_comb is computed combinationally from guard, round, sticky, lsb_bit
+          // No need to assign it here - it's already computed
 
           // Apply rounding with overflow handling
           if (FLEN == 64 && !fmt_latched) begin
             // Single-precision in 64-bit register (NaN-boxed)
-            if (round_up) begin
+            if (round_up_comb) begin
               // Check if rounding causes mantissa overflow (23-bit mantissa)
               if (quotient[MAN_WIDTH+2:32] == 23'h7FFFFF) begin
                 // Mantissa overflow: increment exponent, mantissa becomes 0
@@ -524,7 +523,7 @@ module fp_divider #(
             end
           end else if (FLEN == 64 && fmt_latched) begin
             // Double-precision in 64-bit register
-            if (round_up) begin
+            if (round_up_comb) begin
               // Check if rounding causes mantissa overflow (52-bit mantissa)
               if (quotient[MAN_WIDTH+2:3] == {MAN_WIDTH{1'b1}}) begin
                 // Mantissa overflow: increment exponent, mantissa becomes 0
@@ -537,7 +536,7 @@ module fp_divider #(
             end
           end else begin
             // FLEN=32: single-precision in 32-bit register
-            if (round_up) begin
+            if (round_up_comb) begin
               // Check if rounding causes mantissa overflow (23-bit mantissa)
               if (quotient[25:3] == 23'h7FFFFF) begin
                 // Mantissa overflow: increment exponent, mantissa becomes 0
