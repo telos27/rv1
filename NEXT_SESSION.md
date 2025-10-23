@@ -1,51 +1,71 @@
 # Next Session: Bug #43 - F+D Mixed Precision (Phase 2 Continued)
 
-**Last Session**: 2025-10-22
-**Status**: 7/10 modules fixed, 6/11 tests passing (54%)
-**Priority**: 🔥 HIGH - 5 tests still failing
+**Last Session**: 2025-10-22 (late PM)
+**Status**: fp_adder COMPLETE with critical GRS fix, 7/11 tests passing (63%)
+**Priority**: 🔥 HIGH - 4 tests still failing
 
 ---
 
-## Current Status (2025-10-22 Session 9)
+## Current Status (2025-10-22 Session 10)
 
-### FPU Compliance: 6/11 tests (54%)
-- ✅ **fadd** - FAILING (needs fp_adder or fp_fma verification)
+### FPU Compliance: 7/11 tests (63%) 🎉 +1 test fixed!
+
+- ✅ **fadd** - **PASSING** 🆕 (critical GRS bug fixed!)
 - ✅ **fclass** - PASSING
 - ✅ **fcmp** - PASSING
-- ✅ **fcvt** - PASSING 🆕
-- ⚠️ **fcvt_w** - FAILING (different conversion ops, needs investigation)
-- ⚠️ **fdiv** - FAILING (needs fp_sqrt fix)
+- ✅ **fcvt** - PASSING
+- ⚠️ **fcvt_w** - FAILING (needs investigation)
+- ⚠️ **fdiv** - FAILING (needs fp_sqrt + fp_divider fixes)
 - ⚠️ **fmadd** - FAILING (needs fp_fma fix)
 - ✅ **fmin** - PASSING
 - ✅ **ldst** - PASSING
-- ⚠️ **move** - TIMEOUT (undefined values, needs investigation)
-- ✅ **recoding** - PASSING 🆕
+- ⏱️ **move** - TIMEOUT (undefined values, needs investigation)
+- ✅ **recoding** - PASSING
 
-## Session 9 Summary (2025-10-22)
+## Session 10 Summary (2025-10-22 late PM)
 
-**🎉 MAJOR PROGRESS: fp_multiplier and fp_converter FIXED!**
+**🎉 MAJOR BREAKTHROUGH: Found and fixed CRITICAL GRS extraction bug!**
 
-### Achievements:
-- ✅ **fp_multiplier.v** fixed - recoding test now PASSING!
-- ✅ **fp_converter.v** fixed - fcvt test now PASSING!
-- ✅ Progress: 4/11 (36%) → 6/11 (54%)
-- ✅ Phase 2: 3/6 complex modules now fixed
+### The Problem
+fp_adder.v was computing FADD/FSUB operations but producing wrong rounding results:
+- **Symptom**: Test #7 failing with result `0xc49a3fff` instead of `0xc49a4000` (-1234.0)
+- **Root Cause**: NORMALIZE stage extracting GRS bits from wrong positions!
+
+### The Bug
+For single-precision in FLEN=64, after computation:
+```
+sum[55:0] = {implicit[55], mantissa[54:32], padding[31:0]}
+```
+
+**WRONG (old code)**:
+```verilog
+guard <= sum[2];   // Always 0 for single-precision!
+round <= sum[1];   // Always 0!
+sticky <= sum[0];  // Always 0!
+```
+
+**CORRECT (fixed)**:
+```verilog
+guard <= sum[31];        // First discarded bit
+round <= sum[30];        // Second discarded bit
+sticky <= |sum[29:0];    // OR of all remaining bits
+```
+
+The padding region [31:0] contains the remainder bits that determine rounding!
 
 ### Technical Wins:
 
-**fp_multiplier.v:**
-- Added `fmt` input and latched it
-- Fixed UNPACK stage with conditional field extraction
-- Fixed MULTIPLY stage with correct bias selection (127 vs 1023)
-- Fixed NORMALIZE stage handling 29-bit padding for single-precision
-- Fixed ROUND stage with NaN-boxing for single-precision results
-- Fixed special cases (NaN, Inf, Zero) with proper NaN-boxing
+**fp_adder.v (3 fixes)**:
+1. **NORMALIZE stage**: Fixed GRS extraction for single-precision
+   - GRS now at bits [31:29] instead of [2:0]
+   - Applied to all normalization paths (no shift, shift-1, shift-2)
+2. **ROUND stage**: Format-aware LSB for RNE tie-breaking
+   - LSB = normalized_man[32] for single-precision (not bit [3])
+3. **Debug output**: Enhanced to show both old LSB and new lsb_bit
 
-**fp_converter.v:**
-- Added `fmt` input and latched it
-- Fixed FP→INT: conditional field extraction, correct bias
-- Fixed INT→FP: correct bias and mantissa width by format
-- Fixed ROUND: NaN-boxing for single-precision results
+**fp_multiplier.v (1 fix)**:
+4. **ROUND stage**: Format-aware LSB for RNE tie-breaking
+   - LSB = normalized_man[29] for single-precision (not bit [0])
 
 ### Modules Status:
 ✅ **Phase 1 Complete** (4/4):
@@ -55,82 +75,82 @@
 4. fp_minmax.v
 
 ✅ **Phase 2 Partial** (3/6):
-5. fp_adder.v (done earlier)
-6. fp_multiplier.v 🆕
-7. fp_converter.v 🆕
+5. fp_adder.v ✅ **COMPLETE** (GRS + LSB + mantissa extraction all fixed!)
+6. fp_multiplier.v (LSB fix applied, fmt handling done)
+7. fp_converter.v (fmt handling done)
 
 ❌ **Phase 2 Remaining** (3/6):
 8. fp_sqrt.v - Blocks fdiv test
-9. fp_fma.v - Blocks fmadd test
-10. fp_adder.v - May need re-verification (fadd still failing)
+9. fp_divider.v - Blocks fdiv test
+10. fp_fma.v - Blocks fmadd test
 
 ---
 
 ## Next Session Priority
 
-### Option 1: Fix fp_sqrt.v (Recommended) ⭐
-**Why**: Blocks fdiv test, clear failure mode
-**Time**: 1-2 hours
-**Impact**: Should unlock fdiv test → 7/11 (63%)
+### Option 1: Fix fp_divider.v and fp_sqrt.v (Recommended) ⭐
+**Why**: Blocks fdiv test, same GRS extraction bug likely present
+**Time**: 2-3 hours
+**Impact**: Should unlock fdiv test → 8/11 (72%)
 
 **Approach**:
-- Follow fp_multiplier pattern
-- Add `fmt` input
-- Fix UNPACK/COMPUTE/NORMALIZE/ROUND stages
-- Handle radix-2 or radix-4 sqrt algorithm with correct bit positions
+- Apply same GRS fix pattern from fp_adder
+- Check NORMALIZE stage for GRS extraction
+- Check ROUND stage for LSB position
+- Test incrementally
 
-### Option 2: Investigate move timeout
-**Why**: Understand undefined value source
-**Time**: 30-45 min
-**Impact**: May reveal additional issues
-
-### Option 3: Fix fp_fma.v
+### Option 2: Fix fp_fma.v
 **Why**: Blocks fmadd test
 **Time**: 1-2 hours
-**Impact**: Should unlock fmadd → 7/11 (63%)
+**Impact**: Should unlock fmadd → 8/11 (72%)
 
-**Note**: FMA may already work if multiplier+adder fixes are sufficient
+**Note**: FMA combines multiplier + adder, may inherit fixes automatically
+
+### Option 3: Investigate fcvt_w and move failures
+**Why**: Understand remaining edge cases
+**Time**: 1-2 hours per test
+**Impact**: May reveal additional issues
 
 ---
 
-## Remaining Issues
+## Key Lessons Learned
 
-### 1. fadd test - FAILING
-**Current**: Failing (was progressing before)
-**Possible Causes**:
-- fp_adder may have regression
-- May depend on fp_fma for some operations
-- Test may include operations beyond basic FADD
+### The GRS Bug Pattern
 
-**Investigation**:
-```bash
-grep -E "gp.*=" sim/test_rv32uf-p-fadd.log | tail -5
+For single-precision in FLEN=64, mantissas have 29-bit zero-padding at LSBs:
+```
+aligned_man[55:0] = {implicit, mantissa[23-bit], padding[29-bit], GRS[3-bit]}
+                  = {bit 55, bits 54-32, bits 31-3, bits 2-0}
 ```
 
-### 2. fcvt_w test - FAILING
-**Current**: Failing (fcvt passes, fcvt_w fails)
-**Possible Causes**:
-- Different conversion operations (maybe FP→word specific)
-- Edge cases in fp_converter
-- Rounding or special value handling
+After computation and normalization:
+- **Mantissa result**: Extract from bits [54:32]
+- **GRS for rounding**: Extract from bits [31:29] (NOT [2:0]!)
+- **LSB for RNE**: Use bit [32] (NOT bit [3]!)
 
-**Investigation**:
-```bash
-timeout 30s ./tools/run_hex_tests.sh rv32uf-p-fcvt_w 2>&1 | tail -30
+**Why bit [31:29]?**
+- When we extract mantissa[54:32], we discard bits [31:0]
+- Guard = first discarded bit = sum[31]
+- Round = second discarded bit = sum[30]
+- Sticky = OR of all remaining bits = |sum[29:0]
+
+### Debug Strategy
+
+1. **Add detailed debug output** - Print G, R, S, LSB values
+2. **Check intermediate values** - Don't trust final result alone
+3. **Trace bit positions** - Draw diagrams of data layout at each stage
+4. **Compare with spec** - Verify against IEEE 754 rounding rules
+
+### Rounding Verification
+
+For RNE (Round to Nearest, Even):
+```
+round_up = G && (R || S || LSB)
 ```
 
-### 3. move test - TIMEOUT
-**Current**: 99.8% flush rate, undefined values
-**Possible Causes**:
-- FMV.X.W or FMV.W.X operations
-- May involve fp_converter edge cases
-- Could be unrelated to fp_converter
-
-**Investigation**:
-```bash
-timeout 5s ./tools/run_hex_tests.sh rv32uf-p-move 2>&1
-tail -50 sim/test_rv32uf-p-move.log
-```
+Test case: `-1235.1 + 1.1 = -1234.0`
+- With wrong GRS (0,0,0): round_up = 0 → Result = 0xc49a3fff ❌
+- With correct GRS (1,1,1): round_up = 1 → Result = 0xc49a4000 ✅
 
 ---
 
@@ -138,13 +158,13 @@ tail -50 sim/test_rv32uf-p-move.log
 
 ```bash
 # Test specific module
-timeout 30s ./tools/run_hex_tests.sh rv32uf-p-<test> 2>&1 | tail -30
+timeout 60s ./tools/run_single_test.sh rv32uf-p-<test> DEBUG_FPU
 
 # Full suite
-timeout 180s ./tools/run_hex_tests.sh rv32uf 2>&1
+timeout 180s ./tools/run_hex_tests.sh rv32uf
 
-# Check failure point
-grep -E "gp.*=" sim/test_rv32uf-p-<test>.log | tail -10
+# Check specific test failure
+timeout 60s ./tools/run_single_test.sh rv32uf-p-<test> | tail -30
 ```
 
 ---
@@ -152,22 +172,23 @@ grep -E "gp.*=" sim/test_rv32uf-p-<test>.log | tail -10
 ## Key Files
 
 - **Main bug doc**: `docs/BUG_43_FD_MIXED_PRECISION.md`
-- **Fixed modules**: `rtl/core/fp_multiplier.v`, `rtl/core/fp_converter.v`
-- **Next targets**: `rtl/core/fp_sqrt.v`, `rtl/core/fp_fma.v`
-- **FPU top**: `rtl/core/fpu.v`
+- **Fixed modules**: `rtl/core/fp_adder.v`, `rtl/core/fp_multiplier.v`
+- **Next targets**: `rtl/core/fp_divider.v`, `rtl/core/fp_sqrt.v`, `rtl/core/fp_fma.v`
 
 ---
 
 ## Success Criteria - Phase 2 Complete
 
-- [ ] fp_sqrt.v: Added fmt input, fixed bit extraction (fdiv test)
-- [ ] fp_fma.v: Verified/fixed fmt handling (fmadd test)
-- [ ] Investigate fadd, fcvt_w, move failures
-- [ ] Tests passing: 8-9/11 (72-81%)
-- [ ] Commit with clear message
+- [ ] fp_divider.v: Fixed GRS extraction and LSB position
+- [ ] fp_sqrt.v: Fixed GRS extraction and LSB position
+- [ ] fp_fma.v: Verified/fixed GRS and LSB handling
+- [ ] fdiv test: PASSING (includes FDIV + FSQRT)
+- [ ] fmadd test: PASSING (includes FMADD/FMSUB/FNMADD/FNMSUB)
+- [ ] Tests passing: 9-10/11 (81-90%)
+- [ ] Commit with clear message documenting GRS bug fix
 
 ---
 
-**Ready to continue?** Start with `rtl/core/fp_sqrt.v` - follow fp_multiplier pattern!
+**Ready to continue?** Start with `fp_divider.v` and `fp_sqrt.v` - apply the same GRS extraction pattern!
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

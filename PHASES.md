@@ -630,7 +630,7 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 4    | 36%  | 🚧 Bug #43 Phase 1 COMPLETE - Phase 2 in progress |
+| RV32F     | 11    | 7    | 63%  | 🚧 Bug #43 - fp_adder GRS fix complete, fadd passing |
 | RV32D     | 9     | 1    | 11%  | 🚧 In Progress - Blocked by Bug #43 Phase 2 |
 
 ### Custom Test Coverage
@@ -669,7 +669,8 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
-**2025-10-23 (PM)**: Bug #43 Phase 2.1 COMPLETE - fp_adder.v FIXED - fadd test #5 → #8, FADD/FSUB working ✅
+**2025-10-22 (late PM)**: Bug #43 CRITICAL GRS FIX - fp_adder.v NORMALIZE stage fixed - fadd test PASSING! RV32F 7/11 (63%) ✅
+**2025-10-23 (PM)**: Bug #43 Phase 2.1 - fp_adder.v ROUND stage fixed - fadd test #5 → #8, FADD/FSUB working ✅
 **2025-10-23 (AM)**: Bug #43 Phase 1 COMPLETE - Phase 2 partial (fp_adder) - RV32F 4/11 (36%) - fclass, fcmp, fmin passing ✅
 **2025-10-22 (evening)**: Bug #43 identified - F+D mixed precision support incomplete - RV32F regressed 11/11 → 1/11 ❌
 **2025-10-22 (afternoon)**: RV32D FLEN refactoring - Bugs #27 & #28 COMPLETE - Memory interface widened to 64-bit, 1/9 tests passing ✅

@@ -1,9 +1,9 @@
 # Bug #43: F+D Mixed Precision Support Incomplete
 
-**Status**: 🚧 PHASE 2 IN PROGRESS - 7/10 modules fixed (fp_multiplier, fp_converter done)
-**Severity**: HIGH (blocks 5 RV32F tests)
+**Status**: 🚧 PHASE 2 IN PROGRESS - fp_adder COMPLETE with critical GRS fix
+**Severity**: HIGH (blocks 4 RV32F tests)
 **Discovered**: 2025-10-22
-**Progress**: Phase 1 complete (4/4 simple modules) + Phase 2 partial (3/6 complex modules fixed)
+**Progress**: Phase 1 complete (4/4) + Phase 2: fp_adder fully fixed (7/11 tests passing, 63%)
 
 ---
 
@@ -16,6 +16,7 @@ The RV32D refactoring (Bugs #27 & #28) successfully widened the FP register file
 - **After RV32D refactoring** (commit 747a716): RV32UF 1/11 (9%) ❌ - only ldst passes
 - **After Phase 1 fixes** (2025-10-23): RV32UF 4/11 (36%) 🚧 - ldst, fclass, fcmp, fmin passing
 - **After Phase 2 partial** (2025-10-22): RV32UF 6/11 (54%) 🚧 - +recoding, +fcvt now passing
+- **After fp_adder GRS fix** (2025-10-22): RV32UF 7/11 (63%) 🚧 - +fadd now PASSING ✅
 
 ---
 
@@ -95,19 +96,26 @@ Some tests timeout with 99.8% pipeline flush rate, indicating undefined (X) valu
 
 ### Phase 2: Complex Modules (Multi-cycle State Machines) 🚧 IN PROGRESS
 
-5. **fp_adder.v** ✅ **FIXED** (2025-10-23)
-   - **Issue**: ROUND stage extracted mantissa from wrong bit positions
+5. **fp_adder.v** ✅ **FIXED** (2025-10-22) - **CRITICAL GRS BUG**
+   - **Issue 1**: ROUND stage extracted mantissa from wrong bit positions
+   - **Issue 2**: **CRITICAL** - NORMALIZE stage extracted GRS bits from wrong positions
    - **Root Cause**: After FLEN=64 refactoring, single-precision mantissas stored as:
      - `man_a[52:0] = {implicit_1[52], mantissa[51:29], padding[28:0]}`
      - After ALIGN: `aligned_man_a[55:0] = {implicit_1[55], mantissa[54:32], padding[31:3], GRS[2:0]}`
      - ROUND was extracting `normalized_man[25:3]` (from padding!) instead of `[54:32]` (actual mantissa)
-   - **Fix**: Changed ROUND stage to extract `normalized_man[54:32]` for single-precision
-   - **Also Fixed**: Zero-return cases in ALIGN stage to use correct bit ranges
-   - **Status**: ✅ **WORKING** - fadd test progressed from test #5 → test #8 (now failing on FMUL)
-   - **Impact**: FADD.S, FSUB.S now working correctly!
+   - **Fix 1**: Changed ROUND stage to extract `normalized_man[54:32]` for single-precision
+   - **Fix 2**: **CRITICAL** - Fixed NORMALIZE stage GRS extraction:
+     - **Problem**: GRS extracted from bits [2:0], but for single-precision those are all zeros!
+     - **Solution**: Extract GRS from bits [31:29] for single-precision (padding boundary)
+     - Guard = sum[31], Round = sum[30], Sticky = |sum[29:0]
+   - **Fix 3**: Added format-aware LSB selection for RNE tie-breaking:
+     - LSB = normalized_man[32] for single-precision (not bit [3])
+   - **Status**: ✅ **COMPLETE** - fadd test now PASSING (all FADD/FSUB operations correct)
+   - **Impact**: FADD.S, FSUB.S, FMUL.S now working correctly! → **fadd test PASSING** ✅
 
 6. **fp_multiplier.v** ✅ **FIXED** (2025-10-22)
-   - **Issue**: UNPACK/NORMALIZE/ROUND extracted fields from FLEN-relative positions
+   - **Issue 1**: UNPACK/NORMALIZE/ROUND extracted fields from FLEN-relative positions
+   - **Issue 2**: LSB position for RNE tie-breaking used bit [0] instead of bit [29]
    - **Root Cause**: No fmt-based field extraction, used compile-time MAN_WIDTH/EXP_WIDTH
    - **Fix**:
      - Added `fmt` input and latched it
@@ -115,6 +123,7 @@ Some tests timeout with 99.8% pipeline flush rate, indicating undefined (X) valu
      - MULTIPLY: Correct bias selection (127 vs 1023)
      - NORMALIZE: Handle 29-bit padding in single-precision product
      - ROUND: NaN-boxing for single-precision results
+     - Added format-aware LSB selection: normalized_man[29] for single-precision
      - Special cases: Proper NaN/Inf/Zero handling with NaN-boxing
    - **Status**: ✅ **WORKING** - recoding test now PASSING!
    - **Impact**: FMUL.S now working, recoding test fixed

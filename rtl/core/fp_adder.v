@@ -72,11 +72,18 @@ module fp_adder #(
 
   // Combinational rounding decision
   wire round_up_comb;
+  wire lsb_bit;  // LSB of mantissa for tie-breaking (format-aware)
+
+  // Format-aware LSB selection for rounding
+  // For single-precision in FLEN=64: mantissa is [54:32], so LSB is bit 32
+  // For double-precision: mantissa is [54:3], so LSB is bit 3
+  // For FLEN=32: mantissa is [25:3], so LSB is bit 3
+  assign lsb_bit = (FLEN == 64 && !fmt_latched) ? normalized_man[32] : normalized_man[3];
 
   // Combinational rounding logic
   assign round_up_comb = (state == ROUND) ? (
-    (rounding_mode == 3'b000) ? (guard && (round || sticky || normalized_man[3])) :  // RNE
-    (rounding_mode == 3'b001) ? 1'b0 :                                                // RTZ
+    (rounding_mode == 3'b000) ? (guard && (round || sticky || lsb_bit)) :  // RNE
+    (rounding_mode == 3'b001) ? 1'b0 :                                      // RTZ
     (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :        // RDN
     (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :       // RUP
     (rounding_mode == 3'b100) ? guard :                                               // RMM
@@ -437,40 +444,74 @@ module fp_adder #(
               // Already normalized - bit 26 is set
               normalized_man <= sum;
               adjusted_exp <= exp_result;
-              guard <= sum[2];
-              round <= sum[1];
-              sticky <= sum[0];
+              // Format-aware GRS extraction:
+              // - Single-precision (FLEN=64, fmt=0): GRS at bits [31:29] (padding boundary)
+              // - Double-precision or FLEN=32: GRS at bits [2:0] (normal position)
+              if (FLEN == 64 && !fmt_latched) begin
+                guard <= sum[31];
+                round <= sum[30];
+                sticky <= |sum[29:0];  // OR of all remaining bits
+              end else begin
+                guard <= sum[2];
+                round <= sum[1];
+                sticky <= sum[0];
+              end
               `ifdef DEBUG_FPU
-              $display("[FP_ADDER] NORMALIZE: already normalized, normalized_man=%h adj_exp=%h GRS=%b%b%b",
-                       sum, exp_result, sum[2], sum[1], sum[0]);
+              if (FLEN == 64 && !fmt_latched)
+                $display("[FP_ADDER] NORMALIZE: already normalized (SP), normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                         sum, exp_result, sum[31], sum[30], |sum[29:0]);
+              else
+                $display("[FP_ADDER] NORMALIZE: already normalized, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                         sum, exp_result, sum[2], sum[1], sum[0]);
               `endif
             end else if (sum[MAN_WIDTH+2]) begin
               // Shift left by 1
               normalized_man <= sum << 1;
               adjusted_exp <= exp_result - 1;
-              guard <= sum[1];
-              round <= sum[0];
-              sticky <= 1'b0;
+              if (FLEN == 64 && !fmt_latched) begin
+                guard <= sum[30];
+                round <= sum[29];
+                sticky <= |sum[28:0];
+              end else begin
+                guard <= sum[1];
+                round <= sum[0];
+                sticky <= 1'b0;
+              end
               `ifdef DEBUG_FPU
-              $display("[FP_ADDER] NORMALIZE: shifted left 1, normalized_man=%h adj_exp=%h GRS=%b%b%b",
-                       sum << 1, exp_result - 1, sum[1], sum[0], 1'b0);
+              if (FLEN == 64 && !fmt_latched)
+                $display("[FP_ADDER] NORMALIZE: shifted left 1 (SP), normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                         sum << 1, exp_result - 1, sum[30], sum[29], |sum[28:0]);
+              else
+                $display("[FP_ADDER] NORMALIZE: shifted left 1, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                         sum << 1, exp_result - 1, sum[1], sum[0], 1'b0);
               `endif
             end else if (sum[MAN_WIDTH+1]) begin
               // Shift left by 2
               normalized_man <= sum << 2;
               adjusted_exp <= exp_result - 2;
-              guard <= sum[0];
-              round <= 1'b0;
-              sticky <= 1'b0;
+              if (FLEN == 64 && !fmt_latched) begin
+                guard <= sum[29];
+                round <= sum[28];
+                sticky <= |sum[27:0];
+              end else begin
+                guard <= sum[0];
+                round <= 1'b0;
+                sticky <= 1'b0;
+              end
               `ifdef DEBUG_FPU
-              $display("[FP_ADDER] NORMALIZE: shifted left 2, normalized_man=%h adj_exp=%h GRS=%b%b%b",
-                       sum << 2, exp_result - 2, sum[0], 1'b0, 1'b0);
+              if (FLEN == 64 && !fmt_latched)
+                $display("[FP_ADDER] NORMALIZE: shifted left 2 (SP), normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                         sum << 2, exp_result - 2, sum[29], sum[28], |sum[27:0]);
+              else
+                $display("[FP_ADDER] NORMALIZE: shifted left 2, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                         sum << 2, exp_result - 2, sum[0], 1'b0, 1'b0);
               `endif
             end else begin
               // Need to shift by more than 2 (rare case - very small result)
               // For now, shift by 3 and handle larger shifts in future
               normalized_man <= sum << 3;
               adjusted_exp <= exp_result - 3;
+              // After 3+ shifts, precision is lost - GRS become 0
               guard <= 1'b0;
               round <= 1'b0;
               sticky <= 1'b0;
@@ -506,8 +547,8 @@ module fp_adder #(
           // Only process normal cases - special cases already handled in ALIGN
           if (!special_case_handled) begin
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] ROUND inputs: G=%b R=%b S=%b LSB=%b rmode=%d",
-                     guard, round, sticky, normalized_man[3], rounding_mode);
+            $display("[FP_ADDER] ROUND inputs: G=%b R=%b S=%b LSB=%b (lsb_bit=%b) rmode=%d",
+                     guard, round, sticky, normalized_man[3], lsb_bit, rounding_mode);
             `endif
 
             // Apply rounding (using combinational round_up_comb)

@@ -78,6 +78,10 @@ module fp_multiplier #(
   reg guard, round, sticky;
   reg round_up;
 
+  // LSB for RNE tie-breaking (format-aware)
+  wire lsb_bit_mul;
+  assign lsb_bit_mul = fmt_latched ? normalized_man[0] : normalized_man[29];
+
   // State machine
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
@@ -400,7 +404,7 @@ module fp_multiplier #(
             // Determine if we should round up
             case (rounding_mode)
               3'b000: begin  // RNE: Round to nearest, ties to even
-                round_up <= guard && (round || sticky || normalized_man[0]);
+                round_up <= guard && (round || sticky || lsb_bit_mul);
               end
               3'b001: begin  // RTZ: Round toward zero
                 round_up <= 1'b0;
