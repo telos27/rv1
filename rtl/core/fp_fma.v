@@ -390,10 +390,11 @@ module fp_fma #(
             if (exp_diff > (2*MAN_WIDTH + 6))
               aligned_c = {1'b0, {(2*MAN_WIDTH+5){1'b0}}, 1'b1};  // Sticky bit only
             else begin
-              // For FLEN=64: man_c[52] is leading bit, shift LEFT by (51-52)=-1 is shift RIGHT by 1
-              // But man_c is already in the right position! Just shift by exp_diff
+              // For FLEN=64: man_c[52] is leading bit, product leading bit at 51
+              // Need to shift man_c right by (exp_diff + 1) to align values correctly
+              // The +1 accounts for the fact that product is already positioned 1 bit lower
               if (FLEN == 64)
-                aligned_c = (man_c >> exp_diff);  // man_c already has leading bit near position 52
+                aligned_c = (man_c >> (exp_diff + 1));  // Shift by exp_diff+1 to preserve value
               else
                 aligned_c = ({man_c[MAN_WIDTH:0], 28'b0} >> exp_diff);  // FLEN=32 case
             end
