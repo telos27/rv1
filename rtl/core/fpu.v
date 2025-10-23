@@ -365,8 +365,9 @@ module fpu #(
   // funct7[3]: direction (0=FP→INT, 1=INT→FP) - BUG #17 FIX: was incorrectly using bit[6]
   // rs2[1:0]: 00=W(signed int32), 01=WU(unsigned int32), 10=L(signed int64), 11=LU(unsigned int64)
   // For FP↔FP: funct7 determines direction, rs2 determines source format
-  assign cvt_op = funct7[5] ?
-                    // INT↔FP conversions (funct7 = 0x60-0x6F have bit 5 set)
+  // Bug #52 continued: Check funct7[6], not funct7[5] to distinguish FP↔FP vs FP↔INT
+  assign cvt_op = funct7[6] ?
+                    // INT↔FP conversions (funct7 = 0x60-0x6F have bit 6 set)
                     (funct7[3] ? {2'b01, rs2[1:0]} : {2'b00, rs2[1:0]}) :
                     // FP↔FP conversions (FCVT.S.D = 1000, FCVT.D.S = 1001)
                     (funct7[0] ? 4'b1001 : 4'b1000);

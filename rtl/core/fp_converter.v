@@ -738,10 +738,19 @@ module fp_converter #(
               exp_s = fp_operand_latched[30:23];
               man_s = fp_operand_latched[22:0];
 
+              `ifdef DEBUG_FCVT_TRACE
+              $display("[FCVT_D_S] fp_operand=%h", fp_operand_latched);
+              $display("[FCVT_D_S] sign=%b, exp=%h, man=%h", sign_s, exp_s, man_s);
+              `endif
+
               // Check for special values
               is_nan_s = (exp_s == 8'hFF) && (man_s != 0);
               is_inf_s = (exp_s == 8'hFF) && (man_s == 0);
               is_zero_s = (fp_operand_latched[30:0] == 0);
+
+              `ifdef DEBUG_FCVT_TRACE
+              $display("[FCVT_D_S] is_nan=%b, is_inf=%b, is_zero=%b", is_nan_s, is_inf_s, is_zero_s);
+              `endif
 
               if (is_nan_s) begin
                 fp_result <= 64'h7FF8000000000000;  // Canonical NaN
@@ -753,6 +762,11 @@ module fp_converter #(
                 // Normal conversion: adjust exponent bias (127 → 1023)
                 reg [10:0] adjusted_exp;
                 adjusted_exp = exp_s + 1023 - 127;
+
+                `ifdef DEBUG_FCVT_TRACE
+                $display("[FCVT_D_S] adjusted_exp=%h", adjusted_exp);
+                $display("[FCVT_D_S] result={%b, %h, %h, 29'b0}", sign_s, adjusted_exp, man_s);
+                `endif
 
                 // Extend mantissa (23 bits → 52 bits, zero-pad)
                 fp_result <= {sign_s, adjusted_exp, man_s, 29'b0};
