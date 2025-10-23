@@ -259,6 +259,7 @@ module fpu #(
     .operand_a      (operand_a),
     .operand_b      (operand_b),
     .operation      (sign_op),
+    .fmt            (fmt),
     .result         (sign_result)
   );
 

@@ -15,17 +15,33 @@ module fp_sign #(
 
   // Control (operation select)
   input  wire [1:0]        operation,   // 00: FSGNJ, 01: FSGNJN, 10: FSGNJX
+  input  wire              fmt,          // 0: single-precision, 1: double-precision
 
   // Result
   output wire [FLEN-1:0]   result
 );
 
-  // Extract signs
-  wire sign_a = operand_a[FLEN-1];
-  wire sign_b = operand_b[FLEN-1];
+  // Extract signs and magnitudes based on format
+  // Single-precision: sign at bit [31], double-precision: sign at bit [FLEN-1]
+  wire sign_a;
+  wire sign_b;
+  wire [FLEN-1:0] magnitude_a;
 
-  // Extract magnitude (exponent + mantissa)
-  wire [FLEN-2:0] magnitude_a = operand_a[FLEN-2:0];
+  generate
+    if (FLEN == 64) begin : g_flen64
+      // For FLEN=64, support both single and double precision
+      assign sign_a = fmt ? operand_a[63] : operand_a[31];
+      assign sign_b = fmt ? operand_b[63] : operand_b[31];
+      // For single-precision, preserve NaN-boxing [63:32] and magnitude [30:0]
+      // For double-precision, use full magnitude [62:0]
+      assign magnitude_a = fmt ? operand_a[62:0] : {operand_a[63:32], operand_a[30:0]};
+    end else begin : g_flen32
+      // For FLEN=32, only single-precision supported
+      assign sign_a = operand_a[31];
+      assign sign_b = operand_b[31];
+      assign magnitude_a = operand_a[30:0];
+    end
+  endgenerate
 
   // Compute result sign based on operation
   reg result_sign;

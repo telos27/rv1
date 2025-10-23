@@ -630,8 +630,8 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 11   | 100% | ✅ Complete |
-| RV32D     | 9     | 1    | 11%  | 🚧 In Progress - Memory interface complete |
+| RV32F     | 11    | 1    | 9%   | ❌ REGRESSION - Bug #43: F+D mixed precision support needed |
+| RV32D     | 9     | 1    | 11%  | 🚧 In Progress - Blocked by Bug #43 |
 
 ### Custom Test Coverage
 - **Unit tests**: All modules have dedicated unit tests
@@ -669,7 +669,8 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
-**2025-10-22**: RV32D FLEN refactoring - Bugs #27 & #28 COMPLETE - Memory interface widened to 64-bit, 1/9 tests passing ✅
+**2025-10-22 (evening)**: Bug #43 identified - F+D mixed precision support incomplete - RV32F regressed 11/11 → 1/11 ❌
+**2025-10-22 (afternoon)**: RV32D FLEN refactoring - Bugs #27 & #28 COMPLETE - Memory interface widened to 64-bit, 1/9 tests passing ✅
 **2025-10-21 (late PM)**: RV32F completion - All remaining FPU tests passing! RV32UF 11/11 (100%) ✅
 **2025-10-21 (PM session 4)**: FPU NaN conversion - Fixed Bug #26 (NaN→INT sign bit handling) - fcvt_w 100% PASSING! RV32UF 7/11 (63.6%) ✅
 **2025-10-21 (PM session 3)**: FPU unsigned word overflow - Fixed Bugs #24-#25 (operation signal, overflow logic) - fcvt_w test #39 → #85 (98.8%!)
