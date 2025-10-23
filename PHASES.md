@@ -630,7 +630,7 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 9    | 81%  | 🚧 Bugs #44 & #45 FIXED - 2 tests remaining (fcvt_w, move) |
+| RV32F     | 11    | 10   | 90%  | 🚧 Bug #47 FIXED - 1 test remaining (fcvt_w memory load) |
 | RV32D     | 9     | 1    | 11%  | 🚧 In Progress - fdiv passing, other issues remain |
 
 ### Custom Test Coverage
@@ -669,11 +669,16 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-23 (Session 14)**: Bug #47 FIXED - FSGNJ NaN-Boxing Issue - RV32F 10/11 (90%) ✅
+  - Bug #47 COMPLETE: Fixed fp_sign.v single-precision result assembly with FLEN=64
+  - Root cause: magnitude_a construction {operand_a[63:32], operand_a[30:0]} shifted bits by 1
+  - Fix: Changed to {operand_a[63:32], result_sign, operand_a[30:0]} to preserve NaN-boxing
+  - move test now PASSING (was failing at test #21 with wrong sign bit)
+  - Remaining: fcvt_w test #5 (memory load issue - separate from FSGNJ)
 **2025-10-23 (Session 13)**: Bugs #44 & #45 FIXED - FMA positioning and FMV.W.X width mismatch - RV32F 9/11 (81%) ✅
   - Bug #44 COMPLETE: Fixed FMA aligned_c shift amount (exp_diff → exp_diff+1) - fmadd now PASSING!
   - Bug #45 FIXED: FMV.W.X undefined value bug (RV32D with FLEN=64 accessing 64-bit from 32-bit signal)
   - move test no longer times out (was 49,999 cycles with X values, now 138 cycles)
-  - Remaining: fcvt_w (memory load issue), move test #21 (FSGNJN sign bit)
 **2025-10-22 (Session 11)**: Bug #43 PHASE 2 COMPLETE - All 10 FPU modules support F+D mixed precision - RV32F 8/11 (72%) ✅
   - Fixed fp_divider.v, fp_sqrt.v, fp_fma.v with format-aware UNPACK, PACKING, GRS, and BIAS
   - fdiv test now PASSING (includes FDIV + FSQRT operations)
