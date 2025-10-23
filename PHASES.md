@@ -630,8 +630,8 @@ Before adding new features, consider fixing these existing issues:
 | RV32M     | 8     | 8    | 100% | ✅ Complete |
 | RV32A     | 10    | 10   | 100% | ✅ Complete |
 | RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 10   | 90%  | 🚧 Bug #47 FIXED - 1 test remaining (fcvt_w memory load) |
-| RV32D     | 9     | 1    | 11%  | 🚧 In Progress - fdiv passing, other issues remain |
+| RV32F     | 11    | 11   | 100% | ✅ Complete |
+| RV32D     | 9     | 0    | 0%   | 🚧 Bug #49 - MISA fixed, investigating FLD/double-precision FPU |
 
 ### Custom Test Coverage
 - **Unit tests**: All modules have dedicated unit tests
@@ -669,6 +669,17 @@ Before adding new features, consider fixing these existing issues:
 
 ## Project History
 
+**2025-10-23 (Session 16)**: Bug #49 - MISA Register Fixed - RV32F 100%! 🎉
+  - **RV32F COMPLETE**: Bug #48 fixed (FCVT mantissa padding) - ALL 11/11 tests PASSING! ✅
+  - Bug #49 Phase 1: Fixed MISA register to advertise M/A/F/D extensions (was only I)
+  - Root cause: MISA extensions 0x100 → 0x1129 (added bits 0,3,5,12 for A,D,F,M)
+  - Fixed test runner to support rv32ud/rv64ud test configuration
+  - **RV32D Status**: 0/9 tests passing - infrastructure ready, debugging FLD/double-precision ops
+  - See: docs/SESSION_2025-10-23_BUG49_RV32D_INVESTIGATION.md
+**2025-10-23 (Session 15)**: Bug #48 FIXED - FCVT Mantissa Padding - RV32F progress continues
+  - Bug #48: Fixed FCVT.S.W mantissa padding when converting to double-precision format
+  - Root cause: Single-precision result (23-bit mantissa) needs zero-padding to 52 bits for FLEN=64
+  - Impact: fcvt_w test now closer to passing
 **2025-10-23 (Session 14)**: Bug #47 FIXED - FSGNJ NaN-Boxing Issue - RV32F 10/11 (90%) ✅
   - Bug #47 COMPLETE: Fixed fp_sign.v single-precision result assembly with FLEN=64
   - Root cause: magnitude_a construction {operand_a[63:32], operand_a[30:0]} shifted bits by 1
