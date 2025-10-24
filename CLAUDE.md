@@ -171,6 +171,7 @@ rv1/
   - Stalling for load-use hazards
   - Branch prediction and flushing
   - LR/SC reservation tracking
+  - CSR Read-After-Write (RAW) hazard detection (EX/MEM stages)
 
 ### Privilege Architecture
 - **Modes**: Machine (M), Supervisor (S), User (U)
@@ -240,33 +241,38 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
 **Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (1/5 tests implemented)**
-- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (implemented, needs CSR fix)
+- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (implemented, debugging in progress)
 - ⏳ `test_mstatus_state_sret.s` - SRET state transitions (pending)
 - ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Current Session)**:
-- ✅ **Fixed**: CSR read hazard - `wb_sel` comparison bug (2'b11 → 3'b011)
-- ✅ **Implemented**: CSR RAW hazard detection in pipeline
-  - Modified: `hazard_detection_unit.v`, `memwb_register.v`, `rv32i_core_pipelined.v`
-  - Added: CSR write enable tracking through EX/MEM/WB stages
-  - Status: Hazard detection active (6 stall cycles observed), needs refinement
-- ✅ **Enhanced**: Macro library with MPIE/SPIE control macros
-- ✅ **Verified**: Quick regression passes (14/14 tests: ✅)
+**Recent Work (Latest Session - 2025-10-24)**:
+- ✅ **Fixed**: CSR Read-After-Write (RAW) hazard detection
+  - **Root Cause**: Hazard detection included WB stage, which is too late (CSR writes commit on clock edge)
+  - **Fix**: Removed `memwb_csr_we` from hazard condition in `hazard_detection_unit.v:273`
+  - **Impact**: Only stall for CSR writes in EX/MEM stages; WB writes commit before next instruction reads
+  - **Files Modified**: `rtl/core/hazard_detection_unit.v`
+
+- ✅ **Fixed**: MRET MPP field update bug
+  - **Root Cause**: MRET was setting MPP to M-mode (2'b11) instead of least privileged mode
+  - **Fix**: Changed MPP to U-mode (2'b00) per RISC-V Privileged Spec Section 3.3.1
+  - **Impact**: MRET now correctly sets MPP to least privileged supported mode
+  - **Files Modified**: `rtl/core/csr_file.v:422`
+
+- ✅ **Fixed**: Test assembly compressed instruction issue
+  - **Root Cause**: Assembler generated compressed instructions but C extension disabled in RTL
+  - **Fix**: Added `.option norvc` directive to disable compressed instructions
+  - **Impact**: Test now runs without PC misalignment exceptions
+  - **Files Modified**: `tests/asm/test_mstatus_state_mret.s:8`
+
+- ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from fixes
 
 **Known Issues**:
-- 🔧 **IN PROGRESS**: CSR Read-After-Write (RAW) hazard partially fixed
-  - **Root Cause Found**: Pipeline had no hazard detection for back-to-back CSR instructions
-  - **Fix Status**: Hazard detection implemented and active, but some edge cases remain
-  - **Symptom**: CSR reads after CSR writes sometimes return stale values
-  - **Implementation**: `rtl/core/hazard_detection_unit.v` lines 232-289
-  - **Evidence**: Stall cycles now occur (6 observed), indicating hazard detection works
-  - **Next Steps**:
-    1. Debug timing of CSR write commit vs. subsequent read
-    2. Verify stall logic properly delays CSR reads until writes complete
-    3. Test with mstatus-specific write-then-read patterns
-  - **Impact**: Phase 2 tests blocked until fully resolved
+- 🔧 **IN PROGRESS**: Phase 2 test `test_mstatus_state_mret.s` partially working
+  - **Status**: Test progresses to stage 2 (30 instructions) vs. previous failure at stage 1 (6 instructions)
+  - **Remaining Work**: Debug why test fails at stage 2 (PC 0x1c8) - likely CSR value verification issue
+  - **Impact**: Phase 2 test completion blocked pending further debugging
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**

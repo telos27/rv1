@@ -417,7 +417,9 @@ module csr_file #(
         // MRET: Return from machine-mode trap
         mstatus_r[MSTATUS_MIE_BIT]  <= mstatus_mpie_w;  // Restore interrupt enable
         mstatus_r[MSTATUS_MPIE_BIT] <= 1'b1;          // Set MPIE to 1
-        mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= 2'b11; // Set MPP to M-mode
+        // Per RISC-V spec: MPP is set to least privileged mode (U if implemented, else M)
+        // This implementation supports U-mode, so set MPP to U-mode (2'b00)
+        mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= 2'b00; // Set MPP to U-mode
       end else if (sret) begin
         // SRET: Return from supervisor-mode trap
         mstatus_r[MSTATUS_SIE_BIT]  <= mstatus_spie_w;  // Restore supervisor interrupt enable

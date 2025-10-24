@@ -4,6 +4,9 @@
 
 .include "tests/asm/include/priv_test_macros.s"
 
+# Disable compressed instructions to avoid PC misalignment issues
+.option norvc
+
 .section .text
 .globl _start
 

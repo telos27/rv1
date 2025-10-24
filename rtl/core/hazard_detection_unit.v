@@ -262,10 +262,16 @@ module hazard_detection_unit (
 
   // Detect if ID stage has any CSR instruction (uses signal from decoder)
   // All CSR instructions (read or write) must stall if there's a pending CSR write
-  // Stall if ID has CSR instruction AND there's a CSR write in EX, MEM, or WB stage
-  // We check all three stages to ensure proper data propagation through the pipeline
+  // Stall if ID has CSR instruction AND there's a CSR write in EX or MEM stage
+  //
+  // IMPORTANT: We do NOT check memwb_csr_we because:
+  //   - CSR writes commit on posedge clk when in WB stage
+  //   - CSR reads happen combinationally in EX stage
+  //   - By the time the write reaches WB, it commits before the next cycle
+  //   - Stalling for WB writes is too late - the read already happened
+  //   - We only need to stall for writes in EX and MEM stages
   assign csr_raw_hazard = id_is_csr &&
-                          (idex_csr_we || exmem_csr_we || memwb_csr_we);
+                          (idex_csr_we || exmem_csr_we);
 
   // Debug: Print CSR hazard information
   `ifdef DEBUG_CSR_HAZARD
