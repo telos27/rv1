@@ -1,4 +1,4 @@
-# Minimal SRET test to debug SIE/SPIE behavior
+# Test SRET SIE/SPIE updates
 .include "tests/asm/include/priv_test_macros.s"
 .option norvc
 
@@ -17,16 +17,14 @@ _start:
     ENTER_SMODE_M smode_code
 
 smode_code:
-    TEST_STAGE 1
-
     # Setup: SPIE=1, SIE=0
     li t0, MSTATUS_SPIE
-    csrrs zero, sstatus, t0         # Set SPIE=1
+    csrrs zero, sstatus, t0         # Set SPIE
     li t0, MSTATUS_SIE
-    csrrc zero, sstatus, t0         # Clear SIE=0
+    csrrc zero, sstatus, t0         # Clear SIE
 
     # Read sstatus before SRET
-    csrr t3, sstatus
+    csrr a0, sstatus                # Save to a0
 
     # Set SPP=S to stay in S-mode
     li t0, MSTATUS_SPP
@@ -41,30 +39,17 @@ smode_code:
 
 after_sret:
     # Read sstatus after SRET
-    csrr t4, sstatus
+    csrr a1, sstatus                # Save to a1
 
-    # Extract SIE (bit 1)
+    # Check SIE bit (should be 1, from SPIE)
     li t0, MSTATUS_SIE
-    and t5, t4, t0
-    srli t5, t5, 1              # Shift to bit 0
+    and t1, a1, t0
+    beqz t1, test_fail              # Fail if SIE=0
 
-    # Extract SPIE (bit 5)
+    # Check SPIE bit (should be 1, set by SRET)
     li t0, MSTATUS_SPIE
-    and t6, t4, t0
-    srli t6, t6, 5              # Shift to bit 0
-
-    # Store for inspection
-    # t3 = sstatus before SRET
-    # t4 = sstatus after SRET
-    # t5 = SIE after SRET (should be 1, from SPIE)
-    # t6 = SPIE after SRET (should be 1)
-
-    # Check: SIE should be 1 (from SPIE=1)
-    li t0, 1
-    bne t5, t0, test_fail
-
-    # Check: SPIE should be 1
-    bne t6, t0, test_fail
+    and t1, a1, t0
+    beqz t1, test_fail              # Fail if SPIE=0
 
     TEST_PASS
 

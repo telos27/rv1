@@ -248,7 +248,30 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-24 Part 2)**:
+**Recent Work (Latest Session - 2025-10-24 Part 3)**:
+- ✅ **CRITICAL FIX**: sstatus_mask bug - SPIE and SPP bits now visible
+  - **Root Cause**: sstatus_mask was incorrectly excluding bits 5 (SPIE) and 8 (SPP) from sstatus reads
+  - **Symptom**: Reading sstatus in S-mode returned 0 for SPIE/SPP bits even when set in mstatus
+  - **Fix**: Updated sstatus_mask from `0x00060022` to `0x000c0162` to include all S-mode visible bits
+  - **Impact**: sstatus now correctly shows SIE(1), SPIE(5), UBE(6), SPP(8), SUM(18), MXR(19)
+  - **Files Modified**:
+    - `rtl/core/csr_file.v:223` - Fixed sstatus_mask value
+  - **Result**: SRET with SPIE=1 now works correctly (verified: sstatus=0x22 after SRET)
+  - **Test Files Created**:
+    - `tests/asm/test_sret_simple.s` - Basic SRET debugging
+    - `tests/asm/test_sret_debug2.s` - Step-by-step SRET trace
+    - `tests/asm/test_sret_debug3.s` - SRET state transition test
+    - `tests/asm/test_smode_entry.s` - S-mode entry and CSR access verification
+    - `tests/asm/test_sret_mstatus_trace.s` - Detailed mstatus tracing through SRET
+    - `tests/asm/test_stage1_and_2.s` - Combined stage testing
+    - `tests/asm/test_stage1_only.s` - Stage 1 isolation test
+    - `tests/asm/test_sret_stage2_only.s` - Stage 2 isolation test
+    - `tests/asm/test_smode_priv_check.s` - Privilege mode verification
+    - `tests/asm/test_sret_minimal.s` - Minimal SRET test case
+
+- ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from sstatus_mask fix
+
+**Recent Work (Previous Session - 2025-10-24 Part 2)**:
 - ✅ **CRITICAL FIX**: Precise exception handling - instructions before exception now complete
   - **Root Cause**: Pipeline was invalidating MEM stage instructions when exceptions occurred in EX stage
   - **Symptom**: Register writes immediately before EBREAK/ECALL were being dropped (TEST_PASS markers not visible)
@@ -289,10 +312,18 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from fixes
 
 **Known Issues**:
-- 🔧 **INVESTIGATING**: SRET SIE/SPIE state transitions
-  - **Status**: `test_sret_debug.s` shows SRET not properly updating SIE←SPIE and SPIE←1
-  - **Observation**: After SRET, both SIE and SPIE are 0 (expected: SIE=0, SPIE=1)
-  - **Next Steps**: Debug SRET implementation in CSR file, verify sstatus read/write behavior
+- 🔧 **INVESTIGATING**: SRET SPIE update when SPIE=0 before SRET
+  - **Status**: SRET works correctly when SPIE=1 before SRET, but fails when SPIE=0
+  - **Observation**:
+    - When SPIE=1 before SRET: sstatus=0x22 after SRET (SIE=1, SPIE=1) ✅ Correct
+    - When SPIE=0 before SRET: sstatus=0x00 after SRET (SIE=0, SPIE=0) ❌ Wrong - SPIE should be 1
+  - **Code Location**: `rtl/core/csr_file.v:442-444` - SRET implementation
+  - **Expected Behavior**: `mstatus_r[MSTATUS_SPIE_BIT] <= 1'b1` should always set SPIE=1 regardless of previous value
+  - **Next Steps**:
+    - Investigate why bit assignment fails when SPIE was previously 0
+    - Check for conflicts with concurrent CSR operations
+    - Consider rewriting SRET to update entire mstatus register at once
+  - **Impact**: Blocks `test_mstatus_state_sret.s` from passing (fails at stage 1)
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**

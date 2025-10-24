@@ -219,7 +219,8 @@ module csr_file #(
   // Construct sstatus as read-only subset of mstatus
   // SSTATUS provides restricted view: only S-mode relevant fields visible
   // Mask out M-mode only fields (MPP, MPIE, MIE)
-  wire [XLEN-1:0] sstatus_mask = {{(XLEN-20){1'b0}}, 2'b11, 5'b0, 1'b0, 2'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0};
+  // Visible bits: SIE(1), SPIE(5), UBE(6), SPP(8), SUM(18), MXR(19)
+  wire [XLEN-1:0] sstatus_mask = {{(XLEN-20){1'b0}}, 2'b11, 9'b000000000, 1'b1, 1'b0, 2'b11, 3'b000, 1'b1, 1'b0};
   wire [XLEN-1:0] sstatus_value = mstatus_r & sstatus_mask;
 
   // SIE and SIP are subsets of MIE and MIP
@@ -356,6 +357,20 @@ module csr_file #(
   // because CSR instructions that read also write (even CSRRS/CSRRC with rs1=x0).
   // The control unit sets csr_we=1 for all CSR instructions, so privilege is always checked.
   assign illegal_csr = csr_we && ((!csr_exists) || (!csr_priv_ok) || csr_read_only);
+
+  `ifdef DEBUG_CSR
+  always @(posedge clk) begin
+    if (csr_we) begin
+      $display("[CSR] Time=%0t addr=0x%03x priv=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x",
+               $time, csr_addr, current_priv, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata);
+    end
+    if (sret) begin
+      $display("[CSR] Time=%0t SRET: SIE=%b->%b SPIE=%b->1 SPP=%b->0 mstatus_r=0x%08x",
+               $time, mstatus_r[MSTATUS_SIE_BIT], mstatus_spie_w, mstatus_r[MSTATUS_SPIE_BIT],
+               mstatus_r[MSTATUS_SPP_BIT], mstatus_r);
+    end
+  end
+  `endif
 
   // Compute CSR write value based on operation
   reg [XLEN-1:0] csr_write_value;
