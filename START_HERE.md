@@ -38,7 +38,7 @@ make catalog
 
 ### Key Resources (Read These!)
 
-📋 **Test Catalog** - `docs/TEST_CATALOG.md`
+📋 **Test Catalog** - `docs/reference/TEST_CATALOG.md`
 - Auto-generated index of ALL tests
 - Categorized by extension (I/M/A/F/D/C/etc.)
 - Searchable descriptions
@@ -49,10 +49,14 @@ make catalog
 - Shows main vs. legacy scripts
 - Usage examples
 
-📖 **Infrastructure Docs** - `docs/TEST_INFRASTRUCTURE_IMPROVEMENTS_COMPLETED.md`
-- What tools are available
-- How to use Makefile targets
+📖 **Quick Regression** - `docs/guides/QUICK_REGRESSION_SUITE.md`
+- 7-second test suite documentation
+- Development workflow
 - Time-saving automation
+
+📖 **Documentation Index** - `docs/README.md`
+- Complete documentation map
+- Find any document quickly
 
 ---
 
@@ -123,9 +127,9 @@ make clean-hex
 
 **Don't search manually!** Use the catalog:
 ```bash
-cat docs/TEST_CATALOG.md
+cat docs/reference/TEST_CATALOG.md
 # or search within it:
-grep "floating" docs/TEST_CATALOG.md
+grep "floating" docs/reference/TEST_CATALOG.md
 ```
 
 ---
@@ -134,15 +138,31 @@ grep "floating" docs/TEST_CATALOG.md
 
 ```
 docs/
-├── TEST_CATALOG.md                          # ⭐ START HERE - All tests indexed
-├── TEST_INFRASTRUCTURE_IMPROVEMENTS_COMPLETED.md  # What's available
-├── OFFICIAL_COMPLIANCE_TESTING.md           # Compliance test setup
-├── ARCHITECTURE.md                          # CPU architecture
-├── PHASES.md                                # Development history
-└── [extension docs...]                      # M/A/F/D/C extension docs
+├── README.md                           # ⭐ Documentation index - START HERE
+├── guides/                             # How-to guides
+│   ├── QUICK_REGRESSION_SUITE.md      # ⚡ 7-second test suite
+│   ├── OFFICIAL_COMPLIANCE_TESTING.md # Full compliance testing
+│   ├── TEST_STANDARD.md               # How to write tests
+│   └── PARAMETERIZATION_GUIDE.md      # RV32/RV64 configuration
+├── reference/                          # Reference docs
+│   ├── TEST_CATALOG.md                # ⭐ All 208 tests indexed
+│   ├── PHASE3_DATAPATH_DIAGRAM.md     # Datapath diagrams
+│   └── PHASE3_PIPELINE_ARCHITECTURE.md  # Pipeline specs
+├── design/                             # Architecture docs
+│   ├── M_EXTENSION_DESIGN.md          # Multiply/Divide
+│   ├── A_EXTENSION_DESIGN.md          # Atomic operations
+│   ├── FD_EXTENSION_DESIGN.md         # Floating-point
+│   ├── C_EXTENSION_DESIGN.md          # Compressed instructions
+│   └── [more...]
+├── bugs/                               # Bug documentation
+│   ├── CRITICAL_BUGS.md               # Top 10 critical bugs
+│   └── BUG_FIXES_SUMMARY.md           # All 54+ bugs fixed
+├── sessions/                           # Recent work
+│   └── SESSION*.md                     # Latest 3 sessions
+└── archive/                            # Historical docs (145+ files)
 
 tools/
-└── README.md                                # ⭐ Script reference guide
+└── README.md                           # ⭐ Script reference guide
 ```
 
 ---
@@ -169,7 +189,7 @@ Choose your path:
 - Boot ROM and bootloader
 - Run Linux or xv6-riscv
 
-See `docs/TEST_INFRASTRUCTURE_CLEANUP_REPORT.md` for detailed improvement suggestions.
+See `docs/test-infrastructure/TEST_INFRASTRUCTURE_CLEANUP_REPORT.md` for detailed improvement suggestions.
 
 ---
 
@@ -188,8 +208,9 @@ See `docs/TEST_INFRASTRUCTURE_CLEANUP_REPORT.md` for detailed improvement sugges
 **Before doing ANYTHING with tests:**
 
 1. Run `make help` - See available commands
-2. Read `docs/TEST_CATALOG.md` - See all tests
-3. Check `tools/README.md` - Understand scripts
+2. Read `docs/README.md` - Documentation index
+3. Browse `docs/reference/TEST_CATALOG.md` - See all tests
+4. Check `tools/README.md` - Understand scripts
 
 **Don't:**
 - ❌ Search for test files manually
@@ -205,10 +226,12 @@ See `docs/TEST_INFRASTRUCTURE_CLEANUP_REPORT.md` for detailed improvement sugges
 
 ## 📞 Help & Feedback
 
+- Documentation index: See `docs/README.md`
 - Run tests: See `tools/README.md`
-- Architecture: See `docs/ARCHITECTURE.md`
+- Architecture: See `ARCHITECTURE.md`
 - Development history: See `PHASES.md`
 - Project context: See `CLAUDE.md`
+- Bug history: See `docs/bugs/CRITICAL_BUGS.md`
 
 ---
 
