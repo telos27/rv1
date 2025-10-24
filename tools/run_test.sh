@@ -42,6 +42,7 @@ echo ""
 # Compile
 echo "Compiling..."
 iverilog -g2012 \
+    -I rtl/ \
     -DMEM_FILE=\"$HEX_FILE\" \
     -DTIMEOUT=$TIMEOUT \
     -o "$VVP_FILE" \
