@@ -73,7 +73,15 @@ help:
 	@echo "  make test-alu       - Run ALU unit test"
 	@echo "  make asm-tests      - Assemble all test programs"
 	@echo ""
-	@echo "Test Infrastructure (New!):"
+	@echo "Custom Test Management:"
+	@echo "  make test-quick                  - Quick regression (15 tests in ~20s) ⚡"
+	@echo "  make test-custom-all             - Run all custom tests"
+	@echo "  make rebuild-hex                 - Rebuild all .hex files from .s sources"
+	@echo "  make check-hex                   - Check for missing hex files"
+	@echo "  make clean-hex                   - Remove all generated hex/object files"
+	@echo "  make catalog                     - Generate test catalog documentation"
+	@echo ""
+	@echo "Test Infrastructure (Extension-Specific):"
 	@echo "  make test-one TEST=<name>        - Run individual test by name"
 	@echo "  make test-m                      - Run M extension tests"
 	@echo "  make test-a                      - Run A extension tests"
@@ -333,6 +341,114 @@ info:
 	@echo ""
 	@echo "Build with: make <config>    (e.g., make rv32i)"
 	@echo "Run with:   make run-<config> (e.g., make run-rv32i)"
+
+#==============================================================================
+# Assembly Test Hex File Management
+#==============================================================================
+
+# Rebuild all hex files from assembly sources
+.PHONY: rebuild-hex
+rebuild-hex:
+	@echo "Rebuilding all hex files from assembly sources..."
+	@mkdir -p tests/asm
+	@count=0; \
+	failed=0; \
+	for s in tests/asm/*.s; do \
+		if [ -f "$$s" ]; then \
+			base=$$(basename $$s .s); \
+			hex="tests/asm/$$base.hex"; \
+			echo "  $$base.s → $$base.hex"; \
+			./tools/assemble.sh "$$s" "$$hex" 2>/dev/null && count=$$((count + 1)) || { \
+				echo "    ⚠️  Warning: Failed to assemble $$base.s"; \
+				failed=$$((failed + 1)); \
+			}; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "✓ Hex rebuild complete: $$count files generated, $$failed failed"
+
+# Check for missing hex files
+.PHONY: check-hex
+check-hex:
+	@echo "Checking for missing hex files..."
+	@missing=0; \
+	total=0; \
+	for s in tests/asm/*.s; do \
+		if [ -f "$$s" ]; then \
+			base=$$(basename $$s .s); \
+			hex="tests/asm/$$base.hex"; \
+			total=$$((total + 1)); \
+			if [ ! -f "$$hex" ]; then \
+				echo "  ⚠️  Missing: $$base.hex (from $$base.s)"; \
+				missing=$$((missing + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	if [ $$missing -eq 0 ]; then \
+		echo "✓ All $$total assembly files have corresponding hex files"; \
+	else \
+		echo "⚠️  $$missing of $$total assembly files are missing hex files"; \
+		echo "   Run 'make rebuild-hex' to generate missing files"; \
+	fi
+
+# Clean all generated hex files and object files
+.PHONY: clean-hex
+clean-hex:
+	@echo "Cleaning generated hex and object files..."
+	@rm -f tests/asm/*.hex tests/asm/*.o tests/asm/*.elf tests/asm/*.dump
+	@rm -f tests/vectors/*.hex tests/vectors/*.o tests/vectors/*.elf tests/vectors/*.dump
+	@rm -f tests/bin/*.hex tests/bin/*.o tests/bin/*.elf tests/bin/*.dump
+	@echo "✓ Hex and object files cleaned"
+
+# Generate test catalog documentation
+.PHONY: catalog
+catalog:
+	@echo "Generating test catalog..."
+	@./tools/generate_test_catalog.sh > docs/TEST_CATALOG.md
+	@echo "✓ Test catalog generated: docs/TEST_CATALOG.md"
+	@echo ""
+	@echo "Summary:"
+	@tail -20 docs/TEST_CATALOG.md | grep -A 10 "Overall Summary" || true
+
+# Quick regression test suite (15 essential tests in ~20 seconds)
+.PHONY: test-quick
+test-quick:
+	@env XLEN=32 ./tools/run_quick_regression.sh
+
+# Run all custom (non-official) tests
+.PHONY: test-custom-all
+test-custom-all:
+	@echo "Running all custom test programs..."
+	@count=0; \
+	passed=0; \
+	failed=0; \
+	for hex in tests/asm/*.hex; do \
+		if [ -f "$$hex" ]; then \
+			test=$$(basename $$hex .hex); \
+			echo "Testing $$test..."; \
+			if env XLEN=32 timeout 5s ./tools/test_pipelined.sh "$$test" >/dev/null 2>&1; then \
+				echo "  ✓ $$test PASSED"; \
+				passed=$$((passed + 1)); \
+			else \
+				echo "  ✗ $$test FAILED"; \
+				failed=$$((failed + 1)); \
+			fi; \
+			count=$$((count + 1)); \
+		fi; \
+	done; \
+	echo ""; \
+	echo "========================================"; \
+	echo "Custom Test Summary"; \
+	echo "========================================"; \
+	echo "Total:  $$count"; \
+	echo "Passed: $$passed"; \
+	echo "Failed: $$failed"; \
+	if [ $$failed -eq 0 ]; then \
+		echo "Pass rate: 100%"; \
+	else \
+		echo "Pass rate: $$((passed * 100 / count))%"; \
+	fi
 
 #==============================================================================
 # Test Infrastructure (New Scripts)

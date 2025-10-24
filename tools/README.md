@@ -1,52 +1,33 @@
-# RV1 Tools Directory
+# Tools Directory - Script Reference
 
-This directory contains scripts for building, testing, and debugging the RV1 RISC-V processor.
+Quick reference for all RV1 test and build scripts.
 
-## Quick Reference
+## Main Scripts (Use These)
 
-### Assembly to Hex Conversion
+**Assembly & Build**:
+- `assemble.sh` - Convert .s → .hex
+- `build_riscv_tests.sh` - Build official tests (one-time setup)
 
-**Recommended: Use `asm_to_hex.sh`**
+**Test Runners**:
+- `test_pipelined.sh` - Run custom tests
+- `run_official_tests.sh` - Run compliance tests
+
+**Utilities**:
+- `run_test_by_name.sh` - Run test by name
+- `run_tests_by_category.sh` - Run by extension (m/a/f/d)
+- `check_env.sh` - Verify toolchain
+
+## Quick Examples
+
 ```bash
-./tools/asm_to_hex.sh tests/asm/my_test.s
+# Run custom test
+env XLEN=32 ./tools/test_pipelined.sh fibonacci
+
+# Run all official tests
+env XLEN=32 ./tools/run_official_tests.sh all
+
+# Run M extension tests
+./tools/run_tests_by_category.sh m
 ```
 
-### Running Tests
-
-```bash
-./tools/test_pipelined.sh test_name
-```
-
-### Complete Workflow
-
-```bash
-# 1. Write assembly
-vim tests/asm/my_test.s
-
-# 2. Convert to hex
-./tools/asm_to_hex.sh tests/asm/my_test.s
-
-# 3. Run test
-./tools/test_pipelined.sh my_test
-```
-
-## Important: Hex File Format
-
-Hex files MUST be **one byte per line**:
-```
-53
-75
-00
-d0
-```
-
-See `docs/HEX_FILE_FORMAT.md` for details.
-
-## Tools Summary
-
-- `asm_to_hex.sh` - Assembly to hex (recommended)
-- `elf_to_hex.sh` - ELF to hex
-- `test_pipelined.sh` - Run simulations
-- `run_hex_tests.sh` - Run compliance tests
-
-See docs/HEX_FILE_FORMAT.md for complete documentation.
+See full documentation at: `docs/TESTING_GUIDE.md`
