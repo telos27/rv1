@@ -242,7 +242,9 @@ module csr_file #(
   always @(*) begin
     case (csr_addr)
       // Machine-mode CSRs
-      CSR_MSTATUS:   csr_rdata = mstatus_value;
+      CSR_MSTATUS: begin
+        csr_rdata = mstatus_value;
+      end
       CSR_MISA:      csr_rdata = misa_value;
       CSR_MEDELEG:   csr_rdata = medeleg_r;
       CSR_MIDELEG:   csr_rdata = mideleg_r;
@@ -429,10 +431,6 @@ module csr_file #(
         // Normal CSR write
         case (csr_addr)
           CSR_MSTATUS: begin
-            `ifdef DEBUG_XRET_PRIV
-            $display("[CSR_DEBUG] Time=%0t MSTATUS write: value=%h MPP[12:11]=%b->%b",
-                     $time, csr_write_value, mstatus_mpp_w, csr_write_value[12:11]);
-            `endif
             // Write individual fields
             mstatus_r[MSTATUS_SIE_BIT]  <= csr_write_value[MSTATUS_SIE_BIT];
             mstatus_r[MSTATUS_MIE_BIT]  <= csr_write_value[MSTATUS_MIE_BIT];

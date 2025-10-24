@@ -903,6 +903,9 @@ module rv_core_pipelined #(
     .idex_csr_we(idex_csr_we),
     .exmem_csr_we(exmem_csr_we),
     .memwb_csr_we(memwb_csr_we),
+    // xRET signals (MRET/SRET modify CSRs)
+    .exmem_is_mret(exmem_is_mret),
+    .exmem_is_sret(exmem_is_sret),
     // MMU
     .mmu_busy(mmu_busy),
     // Outputs
@@ -1417,9 +1420,9 @@ module rv_core_pipelined #(
     .trap_cause(exception_code),
     .trap_val(exception_val),
     .trap_vector(trap_vector),
-    .mret(idex_is_mret && idex_valid),
+    .mret(exmem_is_mret && exmem_valid && !exception),
     .mepc_out(mepc),
-    .sret(idex_is_sret && idex_valid),
+    .sret(exmem_is_sret && exmem_valid && !exception),
     .sepc_out(sepc),
     .mstatus_mie(mstatus_mie),
     .illegal_csr(ex_illegal_csr),

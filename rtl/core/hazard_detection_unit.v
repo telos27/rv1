@@ -47,6 +47,10 @@ module hazard_detection_unit (
   input  wire        exmem_csr_we,     // CSR write enable in MEM stage
   input  wire        memwb_csr_we,     // CSR write enable in WB stage
 
+  // xRET signals (MRET/SRET modify CSRs)
+  input  wire        exmem_is_mret,    // MRET in MEM stage (modifies mstatus)
+  input  wire        exmem_is_sret,    // SRET in MEM stage (modifies mstatus)
+
   // MMU signals
   input  wire        mmu_busy,         // MMU is busy (page table walk in progress)
 
@@ -270,15 +274,16 @@ module hazard_detection_unit (
   //   - By the time the write reaches WB, it commits before the next cycle
   //   - Stalling for WB writes is too late - the read already happened
   //   - We only need to stall for writes in EX and MEM stages
+  //   - MRET/SRET also modify CSRs (mstatus), so treat them as CSR writes
   assign csr_raw_hazard = id_is_csr &&
-                          (idex_csr_we || exmem_csr_we);
+                          (idex_csr_we || exmem_csr_we || exmem_is_mret || exmem_is_sret);
 
   // Debug: Print CSR hazard information
   `ifdef DEBUG_CSR_HAZARD
   always @(posedge clk) begin
-    if (id_is_csr || idex_csr_we || exmem_csr_we || memwb_csr_we) begin
-      $display("[CSR_HAZARD] Time=%0t id_is_csr=%b idex_we=%b exmem_we=%b memwb_we=%b hazard=%b",
-               $time, id_is_csr, idex_csr_we, exmem_csr_we, memwb_csr_we, csr_raw_hazard);
+    if (id_is_csr || idex_csr_we || exmem_csr_we || memwb_csr_we || exmem_is_mret || exmem_is_sret) begin
+      $display("[CSR_HAZARD] Time=%0t id_is_csr=%b idex_we=%b exmem_we=%b exmem_mret=%b exmem_sret=%b hazard=%b",
+               $time, id_is_csr, idex_csr_we, exmem_csr_we, exmem_is_mret, exmem_is_sret, csr_raw_hazard);
     end
   end
   `endif

@@ -241,38 +241,36 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
 **Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (1/5 tests implemented)**
-- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (implemented, debugging in progress)
+- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (implemented, stages 1-2 passing)
 - ⏳ `test_mstatus_state_sret.s` - SRET state transitions (pending)
 - ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
 **Recent Work (Latest Session - 2025-10-24)**:
-- ✅ **Fixed**: CSR Read-After-Write (RAW) hazard detection
-  - **Root Cause**: Hazard detection included WB stage, which is too late (CSR writes commit on clock edge)
-  - **Fix**: Removed `memwb_csr_we` from hazard condition in `hazard_detection_unit.v:273`
-  - **Impact**: Only stall for CSR writes in EX/MEM stages; WB writes commit before next instruction reads
+- ✅ **CRITICAL FIX**: MRET/SRET executing multiple times during pipeline stalls
+  - **Root Cause**: CSR file was called with EX stage signals (`idex_is_mret`), causing MRET to execute every cycle it remained in EX during stalls
+  - **Symptom**: mstatus_r was being overwritten multiple times, losing non-MPIE bits (MPP cleared to 0)
+  - **Fix**: Changed CSR file to use MEM stage signals (`exmem_is_mret && exmem_valid && !exception`)
+  - **Impact**: MRET/SRET now execute exactly once when reaching MEM stage, correctly updating mstatus
+  - **Files Modified**:
+    - `rtl/core/rv32i_core_pipelined.v:1423,1425` - Changed MRET/SRET signals from EX to MEM stage
+    - `rtl/core/hazard_detection_unit.v:50-52,278-279,285-286,907-908` - Added xRET hazard detection
+  - **Result**: Stages 1-2 of `test_mstatus_state_mret.s` now pass (MPIE/MIE updates work correctly)
+
+- ✅ **Enhanced**: CSR RAW hazard detection for MRET/SRET
+  - **Issue**: MRET/SRET modify mstatus but weren't triggering hazard stalls for subsequent CSR reads
+  - **Fix**: Added `exmem_is_mret` and `exmem_is_sret` to CSR RAW hazard condition
+  - **Impact**: Pipeline correctly stalls when CSR read follows MRET/SRET
   - **Files Modified**: `rtl/core/hazard_detection_unit.v`
-
-- ✅ **Fixed**: MRET MPP field update bug
-  - **Root Cause**: MRET was setting MPP to M-mode (2'b11) instead of least privileged mode
-  - **Fix**: Changed MPP to U-mode (2'b00) per RISC-V Privileged Spec Section 3.3.1
-  - **Impact**: MRET now correctly sets MPP to least privileged supported mode
-  - **Files Modified**: `rtl/core/csr_file.v:422`
-
-- ✅ **Fixed**: Test assembly compressed instruction issue
-  - **Root Cause**: Assembler generated compressed instructions but C extension disabled in RTL
-  - **Fix**: Added `.option norvc` directive to disable compressed instructions
-  - **Impact**: Test now runs without PC misalignment exceptions
-  - **Files Modified**: `tests/asm/test_mstatus_state_mret.s:8`
 
 - ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from fixes
 
 **Known Issues**:
-- 🔧 **IN PROGRESS**: Phase 2 test `test_mstatus_state_mret.s` partially working
-  - **Status**: Test progresses to stage 2 (30 instructions) vs. previous failure at stage 1 (6 instructions)
-  - **Remaining Work**: Debug why test fails at stage 2 (PC 0x1c8) - likely CSR value verification issue
-  - **Impact**: Phase 2 test completion blocked pending further debugging
+- 🔧 **MINOR**: Phase 2 test `test_mstatus_state_mret.s` stage 3 fails
+  - **Status**: Stages 1-2 pass (MPIE/MIE updates correct), stage 3 fails (MPP handling)
+  - **Root Cause**: Test expects MPP to remain M-mode, but RISC-V spec requires MPP←U after MRET
+  - **Impact**: Test may need adjustment or spec clarification; core behavior is correct per RISC-V spec
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**
