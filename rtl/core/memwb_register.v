@@ -45,6 +45,7 @@ module memwb_register #(
 
   // CSR signals from MEM stage
   input  wire [XLEN-1:0] csr_rdata_in,       // CSR read data
+  input  wire            csr_we_in,          // CSR write enable
 
   // Outputs to WB stage
   output reg  [XLEN-1:0]  alu_result_out,
@@ -78,7 +79,8 @@ module memwb_register #(
   output reg              fp_fmt_out,            // FP format: 0=single, 1=double
 
   // CSR signals to WB stage
-  output reg  [XLEN-1:0] csr_rdata_out
+  output reg  [XLEN-1:0] csr_rdata_out,
+  output reg             csr_we_out
 );
 
   always @(posedge clk or negedge reset_n) begin
@@ -111,6 +113,7 @@ module memwb_register #(
       fp_fmt_out         <= 1'b0;
 
       csr_rdata_out      <= {XLEN{1'b0}};
+      csr_we_out         <= 1'b0;
     end else begin
       // Normal operation: latch all values
       alu_result_out        <= alu_result_in;
@@ -140,6 +143,7 @@ module memwb_register #(
       fp_fmt_out         <= fp_fmt_in;
 
       csr_rdata_out      <= csr_rdata_in;
+      csr_we_out         <= csr_we_in;
     end
   end
 

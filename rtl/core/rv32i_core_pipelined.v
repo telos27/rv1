@@ -425,6 +425,7 @@ module rv_core_pipelined #(
   wire            memwb_fp_flag_uf;
   wire            memwb_fp_flag_nx;
   wire [XLEN-1:0] memwb_csr_rdata;
+  wire            memwb_csr_we;
 
   //==========================================================================
   // CSR and Exception Signals
@@ -895,9 +896,13 @@ module rv_core_pipelined #(
     .idex_fp_alu_en(idex_fp_alu_en),
     .exmem_fp_reg_write(exmem_fp_reg_write),
     .memwb_fp_reg_write(memwb_fp_reg_write),
-    // CSR signals (for FFLAGS/FCSR dependency checking)
+    // CSR signals (for FFLAGS/FCSR dependency checking and RAW hazards)
     .id_csr_addr(id_csr_addr),
     .id_csr_we(id_csr_we),
+    .id_is_csr(id_is_csr_dec),
+    .idex_csr_we(idex_csr_we),
+    .exmem_csr_we(exmem_csr_we),
+    .memwb_csr_we(memwb_csr_we),
     // MMU
     .mmu_busy(mmu_busy),
     // Outputs
@@ -1390,7 +1395,7 @@ module rv_core_pipelined #(
   // Need to forward from EX/MEM or MEM/WB stages to handle RAW hazards
   // Only forward for register-form CSR instructions (funct3[2] = 0)
   wire ex_csr_uses_rs1;
-  assign ex_csr_uses_rs1 = (idex_wb_sel == 2'b11) && !idex_csr_src;  // CSR instruction using rs1
+  assign ex_csr_uses_rs1 = (idex_wb_sel == 3'b011) && !idex_csr_src;  // CSR instruction using rs1
 
   wire [XLEN-1:0] ex_csr_wdata_forwarded;
   assign ex_csr_wdata_forwarded = (ex_csr_uses_rs1 && forward_a == 2'b10) ? exmem_alu_result :  // EX-to-EX forward
@@ -1867,6 +1872,7 @@ module rv_core_pipelined #(
     .fp_flag_nx_in(exmem_fp_flag_nx),
     // CSR input
     .csr_rdata_in(exmem_csr_rdata),
+    .csr_we_in(exmem_csr_we),
     // Outputs
     .alu_result_out(memwb_alu_result),
     .mem_read_data_out(memwb_mem_read_data),       // Integer load data
@@ -1891,7 +1897,8 @@ module rv_core_pipelined #(
     .fp_flag_uf_out(memwb_fp_flag_uf),
     .fp_flag_nx_out(memwb_fp_flag_nx),
     // CSR output
-    .csr_rdata_out(memwb_csr_rdata)
+    .csr_rdata_out(memwb_csr_rdata),
+    .csr_we_out(memwb_csr_we)
   );
 
   // Debug: MEM/WB FP register transfers

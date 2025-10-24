@@ -239,24 +239,34 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
+**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (1/5 tests implemented)**
+- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (implemented, needs CSR fix)
+- ⏳ `test_mstatus_state_sret.s` - SRET state transitions (pending)
+- ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
+- ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
+- ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
+
+**Recent Work (Current Session)**:
+- ✅ **Fixed**: CSR read hazard - `wb_sel` comparison bug (2'b11 → 3'b011)
+- ✅ **Implemented**: CSR RAW hazard detection in pipeline
+  - Modified: `hazard_detection_unit.v`, `memwb_register.v`, `rv32i_core_pipelined.v`
+  - Added: CSR write enable tracking through EX/MEM/WB stages
+  - Status: Hazard detection active (6 stall cycles observed), needs refinement
+- ✅ **Enhanced**: Macro library with MPIE/SPIE control macros
+- ✅ **Verified**: Quick regression passes (14/14 tests: ✅)
+
 **Known Issues**:
-- 🔧 **CRITICAL**: mstatus CSR reads always return 0
-  - **Status**: Under investigation - blocking Phase 2 tests
-  - **Symptom**: `csrr` of mstatus returns 0x00000000 even after writes
-  - **Confirmed Working**: All other CSRs work (mscratch tested: ✅)
-  - **Confirmed Working**: Quick regression passes (14/14 tests: ✅)
-  - **Confirmed Working**: Trap handling works (Phase 1 tests: ✅)
-  - **Recent Change**: Refactored from individual bit registers to hybrid approach
-    - Old: `reg mstatus_mie_r`, `reg mstatus_mpie_r`, etc. (separate registers)
-    - New: `reg [XLEN-1:0] mstatus_r` (single register with bit extraction)
-    - Why: Original approach had Icarus Verilog wire concatenation issues
-  - **Implementation**: `rtl/core/csr_file.v` lines 120-132, 206-217
-  - **Next Steps for Debug**:
-    1. Add `$display` statements to trace mstatus writes/reads
-    2. Check if writes are reaching register in simulation
-    3. Verify wire extraction logic is correct
-    4. Compare with working CSR (mscratch) behavior
-  - **Workaround**: Phase 2 tests temporarily blocked until resolved
+- 🔧 **IN PROGRESS**: CSR Read-After-Write (RAW) hazard partially fixed
+  - **Root Cause Found**: Pipeline had no hazard detection for back-to-back CSR instructions
+  - **Fix Status**: Hazard detection implemented and active, but some edge cases remain
+  - **Symptom**: CSR reads after CSR writes sometimes return stale values
+  - **Implementation**: `rtl/core/hazard_detection_unit.v` lines 232-289
+  - **Evidence**: Stall cycles now occur (6 observed), indicating hazard detection works
+  - **Next Steps**:
+    1. Debug timing of CSR write commit vs. subsequent read
+    2. Verify stall logic properly delays CSR reads until writes complete
+    3. Test with mstatus-specific write-then-read patterns
+  - **Impact**: Phase 2 tests blocked until fully resolved
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**

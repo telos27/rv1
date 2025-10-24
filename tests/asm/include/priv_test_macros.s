@@ -221,6 +221,34 @@
     csrrc   zero, mstatus, t0
 .endm
 
+# Enable machine previous interrupt enable (set MPIE)
+# Usage: ENABLE_MPIE
+.macro ENABLE_MPIE
+    li      t0, MSTATUS_MPIE
+    csrrs   zero, mstatus, t0
+.endm
+
+# Disable machine previous interrupt enable (clear MPIE)
+# Usage: DISABLE_MPIE
+.macro DISABLE_MPIE
+    li      t0, MSTATUS_MPIE
+    csrrc   zero, mstatus, t0
+.endm
+
+# Enable supervisor previous interrupt enable (set SPIE)
+# Usage: ENABLE_SPIE
+.macro ENABLE_SPIE
+    li      t0, MSTATUS_SPIE
+    csrrs   zero, mstatus, t0
+.endm
+
+# Disable supervisor previous interrupt enable (clear SPIE)
+# Usage: DISABLE_SPIE
+.macro DISABLE_SPIE
+    li      t0, MSTATUS_SPIE
+    csrrc   zero, mstatus, t0
+.endm
+
 # Set SUM bit (Supervisor User Memory access)
 # Usage: ENABLE_SUM
 .macro ENABLE_SUM

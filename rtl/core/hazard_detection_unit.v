@@ -39,9 +39,13 @@ module hazard_detection_unit (
   input  wire        exmem_fp_reg_write, // FP instruction in MEM stage
   input  wire        memwb_fp_reg_write, // FP instruction in WB stage
 
-  // CSR signals (for FFLAGS/FCSR dependency checking)
+  // CSR signals (for FFLAGS/FCSR dependency checking and RAW hazards)
   input  wire [11:0] id_csr_addr,      // CSR address in ID stage
   input  wire        id_csr_we,        // CSR write enable in ID stage
+  input  wire        id_is_csr,        // CSR instruction in ID stage
+  input  wire        idex_csr_we,      // CSR write enable in EX stage
+  input  wire        exmem_csr_we,     // CSR write enable in MEM stage
+  input  wire        memwb_csr_we,     // CSR write enable in WB stage
 
   // MMU signals
   input  wire        mmu_busy,         // MMU is busy (page table walk in progress)
@@ -226,14 +230,61 @@ module hazard_detection_unit (
   end
   `endif
 
+  // ==============================================================================
+  // CSR READ-AFTER-WRITE (RAW) HAZARD DETECTION
+  // ==============================================================================
+  // Bug Fix: CSR read-after-write hazards were not handled, causing reads to
+  // return stale/zero values after CSR writes.
+  //
+  // Problem: Back-to-back CSR instructions create RAW hazards:
+  //   csrw mstatus, t0    # Cycle N: Write in EX stage
+  //   csrr a1, mstatus    # Cycle N+1: Read in EX stage (before write commits!)
+  //
+  // The CSR file is written synchronously on clock edge, but reads happen
+  // combinationally in the same cycle, reading stale data.
+  //
+  // Solution: Stall the pipeline when:
+  //   - ID stage has ANY CSR instruction (read or write)
+  //   - AND there's a pending CSR write in EX, MEM, or WB stages
+  //
+  // Note: We conservatively stall for ANY CSR write, not just matching addresses.
+  // This is simpler and avoids missing dependencies on CSR aliases (e.g., sstatus
+  // is a subset view of mstatus). The performance impact is minimal since CSR
+  // instructions are rare in typical code.
+  //
+  // Conservative approach rationale:
+  //   1. CSR instructions are infrequent (< 1% of instructions)
+  //   2. Checking address matches is complex (aliasing, side effects)
+  //   3. Stalling 1-3 cycles per CSR instruction is acceptable overhead
+  // ==============================================================================
+
+  wire csr_raw_hazard;
+
+  // Detect if ID stage has any CSR instruction (uses signal from decoder)
+  // All CSR instructions (read or write) must stall if there's a pending CSR write
+  // Stall if ID has CSR instruction AND there's a CSR write in EX, MEM, or WB stage
+  // We check all three stages to ensure proper data propagation through the pipeline
+  assign csr_raw_hazard = id_is_csr &&
+                          (idex_csr_we || exmem_csr_we || memwb_csr_we);
+
+  // Debug: Print CSR hazard information
+  `ifdef DEBUG_CSR_HAZARD
+  always @(posedge clk) begin
+    if (id_is_csr || idex_csr_we || exmem_csr_we || memwb_csr_we) begin
+      $display("[CSR_HAZARD] Time=%0t id_is_csr=%b idex_we=%b exmem_we=%b memwb_we=%b hazard=%b",
+               $time, id_is_csr, idex_csr_we, exmem_csr_we, memwb_csr_we, csr_raw_hazard);
+    end
+  end
+  `endif
+
   // Generate control signals
   // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency,
-  // A extension forwarding hazard, FP extension dependency, CSR-FPU dependency, or MMU dependency
-  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || mmu_stall;
-  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || mmu_stall;
-  // Note: Bubble for load-use hazards, atomic forwarding hazards, AND CSR-FPU dependency stalls
+  // A extension forwarding hazard, FP extension dependency, CSR-FPU dependency, CSR RAW hazard, or MMU dependency
+  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || csr_raw_hazard || mmu_stall;
+  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || csr_raw_hazard || mmu_stall;
+  // Note: Bubble for load-use hazards, atomic forwarding hazards, CSR-FPU dependency stalls, AND CSR RAW hazards
   // (M/A/FP/MMU stalls use hold signals on IDEX and EXMEM to keep instruction in place)
-  // CSR-FPU stall needs bubble because it's a RAW hazard between FP op in EX and CSR in ID
-  assign bubble_idex = load_use_hazard || fp_load_use_hazard || atomic_forward_hazard || csr_fpu_dependency_stall;
+  // CSR-FPU and CSR RAW stalls need bubbles because they're RAW hazards between operations in EX and instructions in ID
+  assign bubble_idex = load_use_hazard || fp_load_use_hazard || atomic_forward_hazard || csr_fpu_dependency_stall || csr_raw_hazard;
 
 endmodule

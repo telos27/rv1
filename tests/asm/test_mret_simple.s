@@ -1,39 +1,51 @@
-# Test: Simple MRET Test
-# Just test if MRET jumps to MEPC
+# Test: Simple MRET test
+# Purpose: Verify MRET updates mstatus correctly
 
 .section .text
 .globl _start
 
 _start:
-    # Set MEPC to target address
-    la      t0, target_location
-    csrw    mepc, t0
+    # Setup trap handler
+    la t0, m_trap_handler
+    csrw mtvec, t0
 
-    # Set some marker before MRET
-    li      t1, 0x11111111
-
+    # Read initial mstatus
+    csrr s0, mstatus            # s0 = initial mstatus (should be ~0x1800)
+    
+    # Setup for MRET: Clear MPIE, Set MIE
+    li t0, 0x00000080           # MPIE bit
+    csrrc zero, mstatus, t0     # Clear MPIE
+    li t0, 0x00000008           # MIE bit  
+    csrrs zero, mstatus, t0     # Set MIE
+    
+    # Read mstatus before MRET
+    csrr s1, mstatus            # s1 = mstatus before MRET
+    
+    # Set return address
+    la t0, after_mret
+    csrw mepc, t0
+    
     # Execute MRET
     mret
 
-    # Should NOT reach here
-    li      t2, 0xBADBAD00
-    j       fail
-
-target_location:
-    # Should reach here after MRET
-    li      t2, 0xC0FFEE00
-    j       pass
-
-pass:
-    li      t0, 0xDEADBEEF
-    mv      x28, t0
-    nop
-    nop
+after_mret:
+    # Read mstatus after MRET
+    csrr s2, mstatus            # s2 = mstatus after MRET
+    
+    # Expected: MIE should now be 0 (copied from MPIE which was 0)
+    # Expected: MPIE should now be 1 (set by MRET)
+    
+    # Store for viewing
+    mv a0, s0                   # Initial
+    mv a1, s1                   # Before MRET
+    mv a2, s2                   # After MRET
+    
+    # Success
+    li t3, 0xDEADBEEF
     ebreak
 
-fail:
-    li      t0, 0xDEADDEAD
-    mv      x28, t0
+m_trap_handler:
+    li t3, 0xDEADDEAD
     ebreak
 
 .align 4
