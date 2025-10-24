@@ -73,6 +73,15 @@ help:
 	@echo "  make test-alu       - Run ALU unit test"
 	@echo "  make asm-tests      - Assemble all test programs"
 	@echo ""
+	@echo "Test Infrastructure (New!):"
+	@echo "  make test-one TEST=<name>        - Run individual test by name"
+	@echo "  make test-m                      - Run M extension tests"
+	@echo "  make test-a                      - Run A extension tests"
+	@echo "  make test-f                      - Run F extension tests"
+	@echo "  make test-d                      - Run D extension tests"
+	@echo "  make test-official EXT=<ext>     - Run official tests (e.g., rv32um)"
+	@echo "  make test-all-official           - Run all official compliance tests"
+	@echo ""
 	@echo "Utility Targets:"
 	@echo "  make clean          - Clean all generated files"
 	@echo "  make waves          - Open waveform viewer"
@@ -324,6 +333,109 @@ info:
 	@echo ""
 	@echo "Build with: make <config>    (e.g., make rv32i)"
 	@echo "Run with:   make run-<config> (e.g., make run-rv32i)"
+
+#==============================================================================
+# Test Infrastructure (New Scripts)
+#==============================================================================
+
+# Run individual test by name
+.PHONY: test-one
+test-one:
+ifndef TEST
+	@echo "Error: Please specify TEST=<name>"
+	@echo "Example: make test-one TEST=fibonacci"
+	@echo "         make test-one TEST=rv32ui-p-add OFFICIAL=1"
+	@exit 1
+endif
+ifdef OFFICIAL
+	@$(SCRIPT_DIR)/run_test_by_name.sh $(TEST) --official --timeout 10
+else
+	@$(SCRIPT_DIR)/run_test_by_name.sh $(TEST) --timeout 10
+endif
+
+# Run M extension tests
+.PHONY: test-m
+test-m:
+	@echo "Running M extension tests..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh m --timeout 10 --continue
+
+# Run A extension tests
+.PHONY: test-a
+test-a:
+	@echo "Running A extension tests..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh a --timeout 10 --continue
+
+# Run F extension tests
+.PHONY: test-f
+test-f:
+	@echo "Running F extension tests..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh f --timeout 10 --continue
+
+# Run D extension tests
+.PHONY: test-d
+test-d:
+	@echo "Running D extension tests..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh d --timeout 10 --continue
+
+# Run C extension tests
+.PHONY: test-c
+test-c:
+	@echo "Running C extension tests..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh c --timeout 10 --continue
+
+# Run all floating-point tests (F+D)
+.PHONY: test-fp
+test-fp:
+	@echo "Running all floating-point tests..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh fp --timeout 10 --continue
+
+# Run privilege/supervisor mode tests
+.PHONY: test-priv
+test-priv:
+	@echo "Running privilege mode tests..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh privilege --timeout 10 --continue
+
+# Run official tests by extension
+.PHONY: test-official
+test-official:
+ifndef EXT
+	@echo "Error: Please specify EXT=<extension>"
+	@echo "Examples:"
+	@echo "  make test-official EXT=rv32ui"
+	@echo "  make test-official EXT=rv32um"
+	@echo "  make test-official EXT=rv32ua"
+	@echo "  make test-official EXT=rv32uf"
+	@echo "  make test-official EXT=rv32ud"
+	@exit 1
+endif
+	@$(SCRIPT_DIR)/run_tests_by_category.sh official --extension $(EXT) --timeout 10
+
+# Run all official compliance tests
+.PHONY: test-all-official
+test-all-official:
+	@echo "Running all official RISC-V compliance tests..."
+	@echo ""
+	@echo "RV32I Base Integer (42 tests)..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh official --extension rv32ui --timeout 10 --continue
+	@echo ""
+	@echo "RV32M Multiply/Divide (8 tests)..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh official --extension rv32um --timeout 10 --continue
+	@echo ""
+	@echo "RV32A Atomics (10 tests)..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh official --extension rv32ua --timeout 10 --continue
+	@echo ""
+	@echo "RV32F Single-Precision FP (11 tests)..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh official --extension rv32uf --timeout 10 --continue
+	@echo ""
+	@echo "RV32D Double-Precision FP (9 tests)..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh official --extension rv32ud --timeout 10 --continue
+	@echo ""
+	@echo "RV32C Compressed (1 test)..."
+	@$(SCRIPT_DIR)/run_tests_by_category.sh official --extension rv32uc --timeout 10 --continue
+	@echo ""
+	@echo "=========================================="
+	@echo "All official compliance tests complete!"
+	@echo "=========================================="
 
 .PHONY: .FORCE
 .FORCE:

@@ -1,194 +1,256 @@
-# Next Steps - FPU Conversion Testing (Phase 2)
+# Next Steps - Future Development
 
-**Last Updated**: 2025-10-21 (after Bug #24 fix)
-**Current Status**: ✅ Phase 1 Complete - Basic INT→FP working
-**Progress**: ~20-25% through FPU conversion testing
+**Last Updated**: 2025-10-23 (100% Compliance Achieved!)
+**Current Status**: ✅ **ALL EXTENSIONS COMPLETE** - RV32IMAFDC 100%
+**Achievement**: 81/81 official tests PASSING (100%)
 
 ---
 
 ## Quick Summary
 
 **What Just Happened**:
-- ✅ **Bug #24 FIXED**: FCVT.S.W negative integer conversions now working
-- ✅ All basic INT→FP tests passing (0, ±1, ±2, ±127, ±128, ±256, ±1000)
-- ✅ Phase 1 complete!
+- ✅ **100% RV32D Compliance Achieved!** All 9/9 tests passing
+- ✅ **Bug #54 FIXED**: FMA double-precision GRS bits
+- ✅ **All Extensions Complete**: I, M, A, F, D, C at 100%
+- ✅ **Total**: 81/81 official RISC-V tests passing
 
-**What's Next**:
-- Test edge cases (INT_MIN, INT_MAX, powers of 2)
-- Test unsigned conversions (FCVT.S.WU)
-- Test FP→INT conversions (FCVT.W.S, FCVT.WU.S)
-- Run official compliance tests
-
----
-
-## Immediate Next Tasks (Priority Order)
-
-### 1. Test INT→FP Edge Cases (1-2 hours)
-
-Create `tests/asm/test_fcvt_edges.s`:
-```assembly
-# Test INT32_MAX (0x7FFFFFFF = 2147483647)
-li x5, 0x7FFFFFFF
-fcvt.s.w f5, x5
-fmv.x.w a0, f5
-# Expected: 0x4F000000 (2147483648.0, rounded up!)
-
-# Test INT32_MIN (0x80000000 = -2147483648)
-li x6, 0x80000000
-fcvt.s.w f6, x6
-fmv.x.w a1, f6
-# Expected: 0xCF000000 (-2147483648.0)
-
-# Test powers of 2: 4, 8, 16, 32, 64, 128, 256, 512, 1024
-# ...
-```
-
-**Commands**:
-```bash
-./tools/asm_to_hex.sh tests/asm/test_fcvt_edges.s
-XLEN=32 timeout 15s ./tools/test_pipelined.sh test_fcvt_edges
-```
-
-### 2. Test Unsigned Conversions (1-2 hours)
-
-Create `tests/asm/test_fcvt_unsigned.s`:
-```assembly
-# FCVT.S.WU: Unsigned int → float
-
-# Test 0xFFFFFFFF (should be 4294967295.0, NOT -1.0!)
-li x5, -1  # 0xFFFFFFFF
-fcvt.s.wu f5, x5
-fmv.x.w a0, f5
-# Expected: 0x4F800000 (4294967296.0, rounded)
-
-# Test 0x80000000 (should be 2147483648.0, NOT INT_MIN!)
-li x6, 0x80000000
-fcvt.s.wu f6, x6
-fmv.x.w a1, f6
-# Expected: 0x4F000000 (2147483648.0)
-```
-
-### 3. Begin FP→INT Testing (2-3 hours)
-
-Create `tests/asm/test_fcvt_fp2int.s`:
-```assembly
-# FCVT.W.S: Float → signed int
-
-# Load 1.0 and convert back to int
-li x5, 0x3F800000  # 1.0
-fmv.w.x f5, x5
-fcvt.w.s x6, f5
-# Expected: x6 = 1
-
-# Load -1.0 and convert
-li x7, 0xBF800000  # -1.0
-fmv.w.x f7, x7
-fcvt.w.s x8, f7
-# Expected: x8 = -1 (0xFFFFFFFF)
-
-# Test rounding: 1.5
-li x9, 0x3FC00000  # 1.5
-fmv.w.x f9, x9
-fcvt.w.s x10, f9
-# Expected: x10 = 2 (round to nearest even)
-```
-
-**Warning**: FP→INT likely has bugs! Expect failures.
-
-### 4. Run Official Compliance Test (30 minutes)
-
-```bash
-# If riscv-tests is already cloned:
-cd riscv-tests
-make rv32uf-p-fcvt
-
-# Run the test (expect failures initially)
-./tools/run_official_tests.sh rv32uf-p-fcvt
-
-# Debug failures one by one
-```
+**Current Implementation**:
+- RV32IMAFDC / RV64IMAFDC fully implemented
+- 5-stage pipelined architecture
+- Full privilege modes (M/S/U)
+- Virtual memory with Sv32/Sv39
+- 184+ instructions implemented
 
 ---
 
-## Expected Issues
+## Future Development Paths
 
-### High Probability Bugs (>50% chance)
+With 100% compliance achieved on all implemented extensions (I, M, A, F, D, C), here are potential next directions:
 
-1. **Rounding modes**: Only tested RNE (round to nearest, ties to even) so far
-   - RTZ (round toward zero)
-   - RDN (round down)
-   - RUP (round up)
-   - RMM (round to nearest, ties away from zero)
+### Path 1: Additional RISC-V Extensions
 
-2. **FP→INT conversions**: Completely untested
-   - Overflow handling (float too large for int)
-   - Rounding behavior
-   - Special value handling (NaN, Inf)
+#### 1A. Bit Manipulation Extension (B)
+**Effort**: Medium (2-4 weeks)
+**Subextensions**:
+- Zba: Address generation (sh1add, sh2add, sh3add)
+- Zbb: Basic bit manipulation (clz, ctz, cpop, min, max, etc.)
+- Zbc: Carry-less multiplication (clmul, clmulh, clmulr)
+- Zbs: Single-bit operations (bset, bclr, binv, bext)
 
-3. **Unsigned edge cases**: Different behavior than signed
-   - 0xFFFFFFFF as unsigned should be ~4.3e9, not -1.0
-   - 0x80000000 as unsigned should be ~2.1e9, not -2.1e9
+**Benefits**:
+- Improved performance for crypto, compression, hashing
+- Efficient bit-level operations
+- Widely used in modern RISC-V cores
 
-### Medium Probability Bugs (20-50% chance)
+**Implementation**:
+- New ALU operations
+- Minimal pipeline changes
+- Good test coverage available
 
-4. **INT_MAX/INT_MIN**: May have precision/rounding issues
-5. **Denormal numbers**: Often mishandled
-6. **Inexact flag**: May not be set correctly
+#### 1B. Vector Extension (V)
+**Effort**: High (3-6 months)
+**Features**:
+- SIMD vector operations
+- 32 vector registers (configurable VLEN)
+- Vector load/store unit
+- Vector ALU with masking
 
-### Low Probability Bugs (<20% chance)
+**Benefits**:
+- Massive performance boost for data-parallel workloads
+- ML/AI acceleration
+- Signal processing, multimedia
 
-7. **Basic arithmetic**: Likely working after Bug #24 fix
-8. **Zero handling**: Fixed in Bug #21
+**Challenges**:
+- Major architectural changes
+- Complex implementation
+- Significant verification effort
+
+#### 1C. Cryptography Extension (K)
+**Effort**: Medium (1-3 months)
+**Features**:
+- AES encryption/decryption
+- SHA-2 hashing
+- SM3/SM4 (Chinese standards)
+- Scalar crypto operations
+
+**Benefits**:
+- Hardware acceleration for crypto
+- Security applications
+- Low area overhead
+
+### Path 2: Performance Enhancements
+
+#### 2A. Advanced Branch Prediction
+**Effort**: Medium (2-4 weeks)
+**Features**:
+- Two-level adaptive predictor
+- Branch Target Buffer (BTB)
+- Return Address Stack (RAS)
+
+**Benefits**:
+- Reduced branch misprediction penalty
+- 10-20% performance improvement on typical workloads
+- Minimal area increase
+
+#### 2B. Multi-Level Caching
+**Effort**: Medium-High (1-2 months)
+**Features**:
+- L1 I-cache and D-cache (currently no cache)
+- Optional L2 unified cache
+- Cache coherency protocol (if multi-core)
+
+**Benefits**:
+- Dramatic performance improvement (2-5x on memory-bound workloads)
+- Essential for real-world systems
+- Standard in modern processors
+
+#### 2C. Out-of-Order Execution
+**Effort**: Very High (6+ months)
+**Features**:
+- Register renaming
+- Reservation stations
+- Reorder buffer
+- Superscalar dispatch
+
+**Benefits**:
+- Maximum IPC (instructions per cycle)
+- Hides memory latency
+- Top-tier performance
+
+**Challenges**:
+- Extremely complex
+- Large area overhead
+- Difficult verification
+
+### Path 3: System Features
+
+#### 3A. Debug Module (RISC-V Debug Spec)
+**Effort**: Medium (1-2 months)
+**Features**:
+- JTAG interface
+- Hardware breakpoints/watchpoints
+- Single-step execution
+- Debug CSRs
+
+**Benefits**:
+- Essential for real silicon
+- Industry-standard debug support
+- GDB integration
+
+#### 3B. Performance Counters
+**Effort**: Low (1-2 weeks)
+**Features**:
+- Cycle counter
+- Instruction retired counter
+- Cache miss counters
+- Branch prediction stats
+
+**Benefits**:
+- Profiling and optimization
+- Benchmarking
+- Minimal implementation effort
+
+#### 3C. Physical Memory Protection (PMP)
+**Effort**: Low-Medium (2-3 weeks)
+**Features**:
+- Region-based access control
+- Configurable memory regions
+- Privilege enforcement
+
+**Benefits**:
+- Security isolation
+- Fault containment
+- Required for some embedded use cases
+
+### Path 4: Verification & Deployment
+
+#### 4A. Formal Verification
+**Effort**: Medium-High (1-3 months)
+**Tools**: Symbiyosys, JasperGold
+**Scope**:
+- ALU correctness
+- Pipeline hazard detection
+- CSR operations
+- FPU arithmetic (IEEE 754)
+
+**Benefits**:
+- Mathematical proof of correctness
+- Find corner-case bugs
+- Industry best practice
+
+#### 4B. FPGA Synthesis & Optimization
+**Effort**: Medium (3-6 weeks)
+**Target**: Xilinx, Intel, Lattice FPGAs
+**Tasks**:
+- Timing closure
+- Resource optimization
+- Block RAM inference
+- DSP slice utilization
+
+**Benefits**:
+- Real hardware validation
+- Performance measurement
+- Demonstration platform
+
+#### 4C. ASIC Tape-Out Preparation
+**Effort**: Very High (3-6 months)
+**Tasks**:
+- Technology library mapping
+- Timing analysis
+- Power optimization
+- Physical design constraints
+- Manufacturing test (DFT)
+
+**Benefits**:
+- Production-ready design
+- Ultimate performance goal
+- Real-world deployment
 
 ---
 
-## Reference Documentation
+## Recommended Next Steps (Priority Order)
 
-- **docs/SESSION_HANDOFF_BUG24.md**: Detailed session summary
-- **docs/FPU_CONVERSION_STATUS.md**: Overall testing roadmap
-- **docs/BUG_24_FCVT_NEGATIVE_FIX.md**: Bug #24 analysis
-- **rtl/core/fp_converter.v**: Implementation (lines 250-410)
+Based on impact vs. effort:
 
----
+### Short-Term (1-2 months)
+1. **Performance Counters** - Low effort, high utility
+2. **Branch Prediction** - Medium effort, good performance boost
+3. **PMP Support** - Security feature, relatively simple
 
-## Quick Commands
+### Medium-Term (3-6 months)
+4. **L1 Caching** - Major performance improvement
+5. **Bit Manipulation (B extension)** - Useful modern extension
+6. **Debug Module** - Essential for real hardware
 
-```bash
-# Compile assembly test
-./tools/asm_to_hex.sh tests/asm/<test>.s
-
-# Run test (with timeout to avoid hangs)
-XLEN=32 timeout 15s ./tools/test_pipelined.sh <test>
-
-# Check register values
-# Look for "Final Register State" in output
-
-# View waveform (if test fails)
-gtkwave sim/waves/core_pipelined.vcd
-
-# Verify IEEE 754 values manually (Python)
-python3 -c "import struct; print(hex(struct.unpack('>I', struct.pack('>f', -1.0))[0]))"
-```
+### Long-Term (6+ months)
+7. **Vector Extension (V)** - Huge performance for parallel workloads
+8. **FPGA Synthesis** - Hardware validation
+9. **Out-of-Order Execution** - Maximum performance (if desired)
 
 ---
 
-## Success Criteria for Next Session
+## Quick Reference: Current System
 
-**Minimum** (1-2 hours):
-- [ ] Test INT_MIN and INT_MAX
-- [ ] Test 3-5 powers of 2
-- [ ] Document any bugs found
+**Implemented Extensions**:
+- ✅ RV32I/RV64I: Base integer (47 instructions)
+- ✅ M: Multiply/divide (13 instructions)
+- ✅ A: Atomics (22 instructions)
+- ✅ F: Single-precision FP (26 instructions)
+- ✅ D: Double-precision FP (26 instructions)
+- ✅ C: Compressed (40 instructions)
+- ✅ Zicsr: CSR instructions (6 instructions)
+- ✅ Zifencei: FENCE.I (partial)
 
-**Good** (2-4 hours):
-- [ ] All edge cases tested
-- [ ] Unsigned conversions tested
-- [ ] Any bugs found are fixed
+**Architecture Features**:
+- 5-stage pipeline (IF, ID, EX, MEM, WB)
+- Full hazard detection and forwarding
+- M/S/U privilege modes
+- Virtual memory (Sv32/Sv39)
+- 16-entry TLB
+- Comprehensive FPU
 
-**Excellent** (4-6 hours):
-- [ ] Edge cases passing
-- [ ] Unsigned conversions passing
-- [ ] FP→INT basic tests created and debugged
-- [ ] Official test suite run (even if failing)
+**Compliance**:
+- 81/81 official tests (100%) ✅
 
 ---
 
@@ -196,23 +258,23 @@ python3 -c "import struct; print(hex(struct.unpack('>I', struct.pack('>f', -1.0)
 
 ```
 Branch: main
-Last commit: 72ad997 Documentation: Update FPU testing status after Bug #24 fix
-Pushed: Yes ✅
+Last commits:
+- af47178 Documentation: Clarify C Extension Configuration Requirement (Bug #23)
+- 0347b46 Documentation: Update README with 100% compliance status
+- 9212bb8 Documentation: Session 23 - 100% RV32D Compliance Achieved!
+- 2c199cc Bug #54 FIXED: FMA Double-Precision GRS Bits - 100% RV32D!
 
-Recent commits:
-- 72ad997 Documentation update
-- e348c94 Bug #24 Fixed
-- 13485d0 FPU status documentation
+Clean working tree
 ```
 
 ---
 
-**🎯 START HERE**: Create and run `test_fcvt_edges.s` to test INT_MIN and INT_MAX!
+**🎯 Choose Your Path**: Select based on your goals (performance, features, or deployment)
 
-**⚠️ GOTCHA**: Use `-march=rv32ifd` (no 'c') to avoid compressed instructions
+**💡 Suggestion**: Start with performance counters → branch prediction → L1 cache for maximum impact
 
-**📚 NEED HELP?**: See docs/SESSION_HANDOFF_BUG24.md for detailed context
+**📚 Resources**: See CLAUDE.md for implementation philosophy and coding standards
 
 ---
 
-Good luck! 🚀
+Congratulations on achieving 100% compliance! 🎉
