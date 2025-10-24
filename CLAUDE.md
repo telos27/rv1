@@ -7,6 +7,7 @@ This project implements a RISC-V CPU core in Verilog, starting from a simple sin
 **Phase**: Complete - Production Ready ✅
 **Achievement**: 🎉 **100% COMPLIANCE - 81/81 TESTS PASSING** 🎉
 **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
+**Next Phase**: Enhanced Privilege Mode Testing (34 new tests planned)
 
 ## 🔍 IMPORTANT: Test Infrastructure Reference (USE THIS!)
 
@@ -211,9 +212,40 @@ rv1/
 ## Testing Strategy
 1. **Unit Tests**: Each module tested independently
 2. **Instruction Tests**: Each instruction verified with known results
-3. **Compliance Tests**: RISC-V official test suite
+3. **Compliance Tests**: RISC-V official test suite (81/81 passing ✅)
 4. **Program Tests**: Small assembly programs (Fibonacci, sorting, etc.)
 5. **Random Tests**: Constrained random instruction sequences
+6. **Privilege Mode Tests**: Comprehensive M/S/U mode testing (See `docs/PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md`)
+
+## 🆕 Privilege Mode Test Suite (In Progress)
+
+A comprehensive privilege mode testing framework has been created:
+
+**Documentation**:
+- `docs/PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md` - Complete implementation plan (34 tests)
+- `docs/PRIVILEGE_TEST_ANALYSIS.md` - Gap analysis and coverage assessment
+- `docs/PRIVILEGE_MACRO_LIBRARY.md` - Macro library overview
+- `tests/asm/include/README.md` - Macro quick reference
+
+**Infrastructure**:
+- **Macro Library**: `tests/asm/include/priv_test_macros.s` (520+ lines, 50+ macros)
+- **Demo Test**: `tests/asm/test_priv_macros_demo.s` (working example)
+
+**Planned Tests** (7 Phases, 34 tests total):
+- Phase 1: U-Mode Fundamentals (6 tests) - 🔴 CRITICAL
+- Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH
+- Phase 3: Interrupt Handling (6 tests) - 🟠 HIGH
+- Phase 4: Exception Coverage (8 tests) - 🟡 MEDIUM
+- Phase 5: CSR Edge Cases (4 tests) - 🟡 MEDIUM
+- Phase 6: Delegation Edge Cases (3 tests) - 🟢 LOW
+- Phase 7: Stress & Regression (2 tests) - 🟢 LOW
+
+**Benefits**:
+- 88% code reduction for privilege tests (via macros)
+- Comprehensive M/S/U mode coverage
+- All exception cause codes tested
+- State machine verification
+- Estimated 10-15 hours implementation time
 
 ## Common RISC-V Instruction Formats
 ```
