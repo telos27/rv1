@@ -172,6 +172,7 @@ rv1/
   - Branch prediction and flushing
   - LR/SC reservation tracking
   - CSR Read-After-Write (RAW) hazard detection (EX/MEM stages)
+- **Exception Handling**: Precise exceptions (instructions before exception complete)
 
 ### Privilege Architecture
 - **Modes**: Machine (M), Supervisor (S), User (U)
@@ -240,14 +241,35 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
-**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (1/5 tests implemented)**
-- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (implemented, stages 1-2 passing)
-- ⏳ `test_mstatus_state_sret.s` - SRET state transitions (pending)
+**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (2/5 tests implemented)**
+- ✅ `test_mstatus_state_mret.s` - MRET state transitions (all stages passing)
+- 🔨 `test_mstatus_state_sret.s` - SRET state transitions (implemented, debugging in progress)
 - ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-24)**:
+**Recent Work (Latest Session - 2025-10-24 Part 2)**:
+- ✅ **CRITICAL FIX**: Precise exception handling - instructions before exception now complete
+  - **Root Cause**: Pipeline was invalidating MEM stage instructions when exceptions occurred in EX stage
+  - **Symptom**: Register writes immediately before EBREAK/ECALL were being dropped (TEST_PASS markers not visible)
+  - **Fix**: Only invalidate MEM→WB transition for MEM-stage exceptions (load/store misaligned, page faults)
+  - **Impact**: EX-stage exceptions (EBREAK, ECALL, illegal inst) now allow preceding instructions to complete
+  - **Files Modified**:
+    - `rtl/core/rv32i_core_pipelined.v:1496-1501` - Added `exception_from_mem` signal
+    - `rtl/core/rv32i_core_pipelined.v:1707-1708` - Updated `reg_write_gated` and `mem_write_gated`
+    - `rtl/core/rv32i_core_pipelined.v:1868` - Updated MEMWB `valid_in` signal
+  - **Result**: TEST_PASS/TEST_FAIL markers now work correctly, test framework operational
+  - **Test Files Created**:
+    - `tests/asm/test_x28_write.s` - Minimal reproduction case
+    - `tests/asm/test_ebreak_timing.s` - Pipeline timing verification
+    - `tests/asm/test_marker_check.s` - Marker mechanism verification
+
+- ✅ `test_mstatus_state_mret.s` - Now fully passing (updated documentation from previous session)
+- 🔨 `test_mstatus_state_sret.s` - Implemented, SRET SIE/SPIE behavior needs debugging
+
+- ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from precise exception fix
+
+**Recent Work (Previous Session - 2025-10-24 Part 1)**:
 - ✅ **CRITICAL FIX**: MRET/SRET executing multiple times during pipeline stalls
   - **Root Cause**: CSR file was called with EX stage signals (`idex_is_mret`), causing MRET to execute every cycle it remained in EX during stalls
   - **Symptom**: mstatus_r was being overwritten multiple times, losing non-MPIE bits (MPP cleared to 0)
@@ -267,10 +289,10 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from fixes
 
 **Known Issues**:
-- 🔧 **MINOR**: Phase 2 test `test_mstatus_state_mret.s` stage 3 fails
-  - **Status**: Stages 1-2 pass (MPIE/MIE updates correct), stage 3 fails (MPP handling)
-  - **Root Cause**: Test expects MPP to remain M-mode, but RISC-V spec requires MPP←U after MRET
-  - **Impact**: Test may need adjustment or spec clarification; core behavior is correct per RISC-V spec
+- 🔧 **INVESTIGATING**: SRET SIE/SPIE state transitions
+  - **Status**: `test_sret_debug.s` shows SRET not properly updating SIE←SPIE and SPIE←1
+  - **Observation**: After SRET, both SIE and SPIE are 0 (expected: SIE=0, SPIE=1)
+  - **Next Steps**: Debug SRET implementation in CSR file, verify sstatus read/write behavior
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**
@@ -281,9 +303,10 @@ A comprehensive privilege mode testing framework implementation in progress:
 - Phase 7: Stress & Regression (2 tests) - 🟢 LOW
 
 **Progress**:
-- Tests Implemented: 5/34 (15%)
-- Tests Passing: 5/5 (100%)
-- Coverage: U-mode fundamentals, CSR privilege, basic exceptions
+- Tests Implemented: 6/34 (18%)
+- Tests Passing: 5/6 (83%)
+- Coverage: U-mode fundamentals, CSR privilege, basic exceptions, MRET state machine
+- **Key Achievement**: Precise exception handling now working correctly
 
 ## Common RISC-V Instruction Formats
 ```

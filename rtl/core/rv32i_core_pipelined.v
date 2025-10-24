@@ -1493,6 +1493,13 @@ module rv_core_pipelined #(
     .exception_val(exception_val)
   );
 
+  // Determine if exception is from MEM stage (for precise exception handling)
+  // MEM-stage exceptions: Load/Store misaligned (4,6), Load/Store page faults (13,15)
+  wire exception_from_mem = exception && ((exception_code == 5'd4) ||  // Load misaligned
+                                           (exception_code == 5'd6) ||  // Store misaligned
+                                           (exception_code == 5'd13) || // Load page fault
+                                           (exception_code == 5'd15));  // Store page fault
+
   //==========================================================================
   // FPU (Floating-Point Unit) - F/D Extension
   //==========================================================================
@@ -1695,8 +1702,10 @@ module rv_core_pipelined #(
   //==========================================================================
 
   // Exception prevention: Don't write memory or registers if exception is active
-  wire mem_write_gated = exmem_mem_write && !exception;
-  wire reg_write_gated = exmem_reg_write && !exception;
+  // Gate memory and register writes only for MEM-stage exceptions (preserve precise exceptions)
+  // EX-stage exceptions (EBREAK, ECALL, illegal inst) should not prevent MEM stage from completing
+  wire mem_write_gated = exmem_mem_write && !exception_from_mem;
+  wire reg_write_gated = exmem_reg_write && !exception_from_mem;
 
   // Memory Arbitration: Atomic unit gets priority when it's active
   // When atomic operation is executing, atomic unit controls memory
@@ -1858,7 +1867,7 @@ module rv_core_pipelined #(
     .pc_plus_4_in(exmem_pc_plus_4),
     .reg_write_in(reg_write_gated),     // Gated to prevent write on exception
     .wb_sel_in(exmem_wb_sel),
-    .valid_in(exmem_valid && !exception && !hold_exmem),  // Mark invalid on exception or when EXMEM held
+    .valid_in(exmem_valid && !exception_from_mem && !hold_exmem),  // Mark invalid only on MEM-stage exception (preserve precise exceptions)
     .mul_div_result_in(exmem_mul_div_result),
     .atomic_result_in(exmem_atomic_result),
     // F/D extension inputs
