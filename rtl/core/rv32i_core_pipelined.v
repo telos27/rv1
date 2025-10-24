@@ -468,8 +468,9 @@ module rv_core_pipelined #(
 
   // Trap and xRET handling
   assign trap_flush = exception;  // Exception occurred
-  assign mret_flush = exmem_is_mret && exmem_valid;  // MRET in MEM stage
-  assign sret_flush = exmem_is_sret && exmem_valid;  // SRET in MEM stage
+  // xRET only flushes if there's no exception (exceptions take priority)
+  assign mret_flush = exmem_is_mret && exmem_valid && !exception;  // MRET in MEM stage
+  assign sret_flush = exmem_is_sret && exmem_valid && !exception;  // SRET in MEM stage
 
   // Track exception from previous cycle to prevent re-triggering
   reg exception_taken_r;
@@ -1449,6 +1450,8 @@ module rv_core_pipelined #(
     .id_illegal_inst((idex_illegal_inst | (ex_illegal_csr && idex_csr_we)) && idex_valid),
     .id_ecall(idex_is_ecall && idex_valid),
     .id_ebreak(idex_is_ebreak && idex_valid),
+    .id_mret(idex_is_mret && idex_valid),
+    .id_sret(idex_is_sret && idex_valid),
     .id_pc(idex_pc),
     .id_instruction(idex_instruction),
     .id_valid(idex_valid),
@@ -1567,8 +1570,11 @@ module rv_core_pipelined #(
     .csr_we_in(idex_csr_we),
     .csr_rdata_in(ex_csr_rdata),
     // Exception inputs
-    .is_mret_in(idex_is_mret),
-    .is_sret_in(idex_is_sret),
+    // Clear xRET signals only if the xRET itself caused an illegal instruction exception
+    // (illegal due to insufficient privilege). This prevents the xRET from propagating
+    // to MEM stage and changing the PC when it should trap instead.
+    .is_mret_in(idex_is_mret && !(exception && (exception_code == 5'd2))),
+    .is_sret_in(idex_is_sret && !(exception && (exception_code == 5'd2))),
     .is_sfence_vma_in(idex_is_sfence_vma),
     .rs1_addr_in(idex_rs1_addr),
     .rs2_addr_in(idex_rs2_addr),

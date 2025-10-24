@@ -239,8 +239,11 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
-**Known Issues Discovered**:
-- 🐛 SRET/MRET don't trap in U-mode (RTL privilege checking bug)
+**Known Issues**:
+- 🔧 SRET/MRET privilege checking - **FIX IN PROGRESS**
+  - RTL logic implemented but needs verification
+  - Test infrastructure created
+  - Debug required for next session
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**

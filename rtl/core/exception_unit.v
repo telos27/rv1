@@ -20,6 +20,8 @@ module exception_unit #(
   input  wire            id_illegal_inst,
   input  wire            id_ecall,
   input  wire            id_ebreak,
+  input  wire            id_mret,              // MRET instruction (needs privilege check)
+  input  wire            id_sret,              // SRET instruction (needs privilege check)
   input  wire [XLEN-1:0] id_pc,
   input  wire [31:0]     id_instruction,       // Instructions always 32-bit
   input  wire            id_valid,
@@ -89,6 +91,15 @@ module exception_unit #(
   // ID stage: Illegal instruction
   wire id_illegal = id_valid && id_illegal_inst;
 
+  // ID stage: Privilege violations for xRET instructions
+  // MRET: Only allowed in M-mode (priv == 2'b11)
+  // SRET: Only allowed in M-mode or S-mode (priv >= 2'b01)
+  wire id_mret_violation = id_valid && id_mret && (current_priv != 2'b11);
+  wire id_sret_violation = id_valid && id_sret && (current_priv == 2'b00);
+
+  // Combine with regular illegal instruction
+  wire id_illegal_combined = id_illegal || id_mret_violation || id_sret_violation;
+
   // ID stage: ECALL (privilege-aware exception code)
   wire id_ecall_exc = id_valid && id_ecall;
   wire [4:0] ecall_cause = (current_priv == 2'b00) ? CAUSE_ECALL_FROM_U_MODE :
@@ -135,9 +146,9 @@ module exception_unit #(
   // =========================================================================
   // Priority (highest to lowest):
   // 1. Instruction address misaligned (IF)
-  // 2. Illegal instruction (ID)
-  // 3. EBREAK (ID)
-  // 4. ECALL (ID)
+  // 2. EBREAK (ID)
+  // 3. ECALL (ID)
+  // 4. Illegal instruction (ID) - includes MRET/SRET privilege violations
   // 5. Load/Store page fault (MEM) - Phase 3
   // 6. Load address misaligned (MEM)
   // 7. Store address misaligned (MEM)
@@ -168,7 +179,7 @@ module exception_unit #(
       exception_pc = id_pc;
       exception_val = {XLEN{1'b0}};
 
-    end else if (id_illegal) begin
+    end else if (id_illegal_combined) begin
       exception = 1'b1;
       exception_code = CAUSE_ILLEGAL_INST;
       exception_pc = id_pc;
