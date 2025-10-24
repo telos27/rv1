@@ -217,9 +217,9 @@ rv1/
 5. **Random Tests**: Constrained random instruction sequences
 6. **Privilege Mode Tests**: Comprehensive M/S/U mode testing (See `docs/PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md`)
 
-## 🆕 Privilege Mode Test Suite (In Progress)
+## 🆕 Privilege Mode Test Suite (Phase 1 Complete!)
 
-A comprehensive privilege mode testing framework has been created:
+A comprehensive privilege mode testing framework implementation in progress:
 
 **Documentation**:
 - `docs/PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md` - Complete implementation plan (34 tests)
@@ -231,21 +231,29 @@ A comprehensive privilege mode testing framework has been created:
 - **Macro Library**: `tests/asm/include/priv_test_macros.s` (520+ lines, 50+ macros)
 - **Demo Test**: `tests/asm/test_priv_macros_demo.s` (working example)
 
-**Planned Tests** (7 Phases, 34 tests total):
-- Phase 1: U-Mode Fundamentals (6 tests) - 🔴 CRITICAL
-- Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH
+**Phase 1: U-Mode Fundamentals** ✅ **COMPLETE (5/5 tests passing)**
+- ✅ `test_umode_entry_from_mmode.s` - M→U transition via MRET
+- ✅ `test_umode_entry_from_smode.s` - S→U transition via SRET
+- ✅ `test_umode_ecall.s` - ECALL from U-mode (cause=8)
+- ✅ `test_umode_csr_violation.s` - CSR privilege checking
+- ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit
+- ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
+
+**Known Issues Discovered**:
+- 🐛 SRET/MRET don't trap in U-mode (RTL privilege checking bug)
+
+**Remaining Phases** (7 Phases, 29 tests remaining):
+- Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**
 - Phase 3: Interrupt Handling (6 tests) - 🟠 HIGH
 - Phase 4: Exception Coverage (8 tests) - 🟡 MEDIUM
 - Phase 5: CSR Edge Cases (4 tests) - 🟡 MEDIUM
 - Phase 6: Delegation Edge Cases (3 tests) - 🟢 LOW
 - Phase 7: Stress & Regression (2 tests) - 🟢 LOW
 
-**Benefits**:
-- 88% code reduction for privilege tests (via macros)
-- Comprehensive M/S/U mode coverage
-- All exception cause codes tested
-- State machine verification
-- Estimated 10-15 hours implementation time
+**Progress**:
+- Tests Implemented: 5/34 (15%)
+- Tests Passing: 5/5 (100%)
+- Coverage: U-mode fundamentals, CSR privilege, basic exceptions
 
 ## Common RISC-V Instruction Formats
 ```
