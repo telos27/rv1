@@ -240,10 +240,23 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
 **Known Issues**:
-- 🔧 SRET/MRET privilege checking - **FIX IN PROGRESS**
-  - RTL logic implemented but needs verification
-  - Test infrastructure created
-  - Debug required for next session
+- 🔧 **CRITICAL**: mstatus CSR reads always return 0
+  - **Status**: Under investigation - blocking Phase 2 tests
+  - **Symptom**: `csrr` of mstatus returns 0x00000000 even after writes
+  - **Confirmed Working**: All other CSRs work (mscratch tested: ✅)
+  - **Confirmed Working**: Quick regression passes (14/14 tests: ✅)
+  - **Confirmed Working**: Trap handling works (Phase 1 tests: ✅)
+  - **Recent Change**: Refactored from individual bit registers to hybrid approach
+    - Old: `reg mstatus_mie_r`, `reg mstatus_mpie_r`, etc. (separate registers)
+    - New: `reg [XLEN-1:0] mstatus_r` (single register with bit extraction)
+    - Why: Original approach had Icarus Verilog wire concatenation issues
+  - **Implementation**: `rtl/core/csr_file.v` lines 120-132, 206-217
+  - **Next Steps for Debug**:
+    1. Add `$display` statements to trace mstatus writes/reads
+    2. Check if writes are reaching register in simulation
+    3. Verify wire extraction logic is correct
+    4. Compare with working CSR (mscratch) behavior
+  - **Workaround**: Phase 2 tests temporarily blocked until resolved
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**

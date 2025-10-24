@@ -117,16 +117,19 @@ module csr_file #(
   // CSR Registers
   // =========================================================================
 
-  // Machine Status Register (mstatus)
-  // Implements fields for M-mode and S-mode
-  reg        mstatus_sie_r;   // [1] - Supervisor Interrupt Enable
-  reg        mstatus_mie_r;   // [3] - Machine Interrupt Enable
-  reg        mstatus_spie_r;  // [5] - Supervisor Previous Interrupt Enable
-  reg        mstatus_mpie_r;  // [7] - Machine Previous Interrupt Enable
-  reg        mstatus_spp_r;   // [8] - Supervisor Previous Privilege (0=U, 1=S)
-  reg [1:0]  mstatus_mpp_r;   // [12:11] - Machine Previous Privilege (00=U, 01=S, 11=M)
-  reg        mstatus_sum_r;   // [18] - Supervisor User Memory access
-  reg        mstatus_mxr_r;   // [19] - Make eXecutable Readable
+  // Machine Status Register (mstatus) - Bit Position Constants
+  localparam MSTATUS_SIE_BIT  = 1;   // Supervisor Interrupt Enable
+  localparam MSTATUS_MIE_BIT  = 3;   // Machine Interrupt Enable
+  localparam MSTATUS_SPIE_BIT = 5;   // Supervisor Previous Interrupt Enable
+  localparam MSTATUS_MPIE_BIT = 7;   // Machine Previous Interrupt Enable
+  localparam MSTATUS_SPP_BIT  = 8;   // Supervisor Previous Privilege
+  localparam MSTATUS_MPP_LSB  = 11;  // Machine Previous Privilege [11]
+  localparam MSTATUS_MPP_MSB  = 12;  // Machine Previous Privilege [12]
+  localparam MSTATUS_SUM_BIT  = 18;  // Supervisor User Memory access
+  localparam MSTATUS_MXR_BIT  = 19;  // Make eXecutable Readable
+
+  // Machine Status Register - Single register storage
+  reg [XLEN-1:0] mstatus_r;
 
   // Machine ISA Register (misa) - read-only
   // RV32: [31:30] = 2'b01 (MXL=1), [25:0] = extensions
@@ -200,90 +203,24 @@ module csr_file #(
   // CSR Read Logic
   // =========================================================================
 
-  // Construct mstatus from individual fields
-  // RV32: Standard layout with fields at [19:18], [12:11], [8], [7], [5], [3], [1]
-  // RV64: Same fields, but wider register (upper bits reserved)
-  generate
-    if (XLEN == 32) begin : gen_mstatus_rv32
-      wire [31:0] mstatus_value = {
-        12'b0,                // [31:20] Reserved
-        mstatus_mxr_r,        // [19] MXR
-        mstatus_sum_r,        // [18] SUM
-        5'b0,                 // [17:13] Reserved
-        mstatus_mpp_r,        // [12:11] MPP
-        2'b0,                 // [10:9] Reserved
-        mstatus_spp_r,        // [8] SPP
-        mstatus_mpie_r,       // [7] MPIE
-        1'b0,                 // [6] Reserved
-        mstatus_spie_r,       // [5] SPIE
-        1'b0,                 // [4] Reserved
-        mstatus_mie_r,        // [3] MIE
-        1'b0,                 // [2] Reserved
-        mstatus_sie_r,        // [1] SIE
-        1'b0                  // [0] Reserved
-      };
-    end else begin : gen_mstatus_rv64
-      wire [63:0] mstatus_value = {
-        44'b0,                // [63:20] Reserved
-        mstatus_mxr_r,        // [19] MXR
-        mstatus_sum_r,        // [18] SUM
-        5'b0,                 // [17:13] Reserved
-        mstatus_mpp_r,        // [12:11] MPP
-        2'b0,                 // [10:9] Reserved
-        mstatus_spp_r,        // [8] SPP
-        mstatus_mpie_r,       // [7] MPIE
-        1'b0,                 // [6] Reserved
-        mstatus_spie_r,       // [5] SPIE
-        1'b0,                 // [4] Reserved
-        mstatus_mie_r,        // [3] MIE
-        1'b0,                 // [2] Reserved
-        mstatus_sie_r,        // [1] SIE
-        1'b0                  // [0] Reserved
-      };
-    end
-  endgenerate
+  // Extract mstatus fields as wires for internal use
+  wire mstatus_sie_w  = mstatus_r[MSTATUS_SIE_BIT];
+  wire mstatus_mie_w  = mstatus_r[MSTATUS_MIE_BIT];
+  wire mstatus_spie_w = mstatus_r[MSTATUS_SPIE_BIT];
+  wire mstatus_mpie_w = mstatus_r[MSTATUS_MPIE_BIT];
+  wire mstatus_spp_w  = mstatus_r[MSTATUS_SPP_BIT];
+  wire [1:0] mstatus_mpp_w = mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB];
+  wire mstatus_sum_w  = mstatus_r[MSTATUS_SUM_BIT];
+  wire mstatus_mxr_w  = mstatus_r[MSTATUS_MXR_BIT];
+
+  // Read mstatus directly from register
+  wire [XLEN-1:0] mstatus_value = mstatus_r;
 
   // Construct sstatus as read-only subset of mstatus
   // SSTATUS provides restricted view: only S-mode relevant fields visible
-  generate
-    if (XLEN == 32) begin : gen_sstatus_rv32
-      wire [31:0] sstatus_value = {
-        12'b0,                // [31:20] Reserved
-        mstatus_mxr_r,        // [19] MXR
-        mstatus_sum_r,        // [18] SUM
-        5'b0,                 // [17:13] Reserved
-        2'b00,                // [12:11] Reserved (MPP not visible in S-mode)
-        2'b0,                 // [10:9] Reserved
-        mstatus_spp_r,        // [8] SPP
-        1'b0,                 // [7] Reserved (MPIE not visible in S-mode)
-        1'b0,                 // [6] Reserved
-        mstatus_spie_r,       // [5] SPIE
-        1'b0,                 // [4] Reserved
-        1'b0,                 // [3] Reserved (MIE not visible in S-mode)
-        1'b0,                 // [2] Reserved
-        mstatus_sie_r,        // [1] SIE
-        1'b0                  // [0] Reserved
-      };
-    end else begin : gen_sstatus_rv64
-      wire [63:0] sstatus_value = {
-        44'b0,                // [63:20] Reserved
-        mstatus_mxr_r,        // [19] MXR
-        mstatus_sum_r,        // [18] SUM
-        5'b0,                 // [17:13] Reserved
-        2'b00,                // [12:11] Reserved (MPP not visible)
-        2'b0,                 // [10:9] Reserved
-        mstatus_spp_r,        // [8] SPP
-        1'b0,                 // [7] Reserved (MPIE not visible)
-        1'b0,                 // [6] Reserved
-        mstatus_spie_r,       // [5] SPIE
-        1'b0,                 // [4] Reserved
-        1'b0,                 // [3] Reserved (MIE not visible)
-        1'b0,                 // [2] Reserved
-        mstatus_sie_r,        // [1] SIE
-        1'b0                  // [0] Reserved
-      };
-    end
-  endgenerate
+  // Mask out M-mode only fields (MPP, MPIE, MIE)
+  wire [XLEN-1:0] sstatus_mask = {{(XLEN-20){1'b0}}, 2'b11, 5'b0, 1'b0, 2'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0};
+  wire [XLEN-1:0] sstatus_value = mstatus_r & sstatus_mask;
 
   // SIE and SIP are subsets of MIE and MIP
   // Supervisor-level interrupts use bits: SEIP(9), STIP(5), SSIP(1)
@@ -291,18 +228,13 @@ module csr_file #(
   wire [XLEN-1:0] sip_value = mip_r & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
 
   // CSR read multiplexer
-  // Note: Access to generate block signals must be inside generate blocks for Verilator
-  wire [XLEN-1:0] mstatus_value;
-  wire [XLEN-1:0] sstatus_value;
+  // Note: mstatus_value and sstatus_value are now assigned directly above
+  // misa still needs separate wire
   wire [XLEN-1:0] misa_value;
   generate
     if (XLEN == 32) begin : gen_csr_access
-      assign mstatus_value = gen_mstatus_rv32.mstatus_value;
-      assign sstatus_value = gen_sstatus_rv32.sstatus_value;
       assign misa_value = gen_misa_rv32.misa;
     end else begin : gen_csr_access
-      assign mstatus_value = gen_mstatus_rv64.mstatus_value;
-      assign sstatus_value = gen_sstatus_rv64.sstatus_value;
       assign misa_value = gen_misa_rv64.misa;
     end
   endgenerate
@@ -438,14 +370,8 @@ module csr_file #(
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       // Reset all CSRs
-      mstatus_sie_r  <= 1'b0;           // Supervisor interrupt disabled
-      mstatus_mie_r  <= 1'b0;           // Machine interrupt disabled
-      mstatus_spie_r <= 1'b0;           // Supervisor previous IE = 0
-      mstatus_mpie_r <= 1'b0;           // Machine previous IE = 0
-      mstatus_spp_r  <= 1'b0;           // Supervisor previous privilege = U
-      mstatus_mpp_r  <= 2'b11;          // Machine previous privilege = M-mode
-      mstatus_sum_r  <= 1'b0;           // Supervisor User Memory access disabled
-      mstatus_mxr_r  <= 1'b0;           // Make eXecutable Readable disabled
+      // Initialize mstatus with MPP=11 (M-mode), all other fields = 0
+      mstatus_r      <= {{(XLEN-13){1'b0}}, 2'b11, {11{1'b0}}}; // MPP[12:11]=11, rest=0
       mie_r          <= {XLEN{1'b0}};
       mtvec_r        <= {XLEN{1'b0}};   // Trap vector at address 0
       mscratch_r     <= {XLEN{1'b0}};
@@ -475,44 +401,45 @@ module csr_file #(
           mepc_r  <= trap_pc;
           mcause_r <= {{(XLEN-5){1'b0}}, trap_cause};
           mtval_r  <= trap_val;
-          mstatus_mpie_r <= mstatus_mie_r;  // Save current MIE
-          mstatus_mie_r  <= 1'b0;           // Disable interrupts
-          mstatus_mpp_r  <= current_priv;   // Save current privilege
+          mstatus_r[MSTATUS_MPIE_BIT] <= mstatus_mie_w;         // Save current MIE
+          mstatus_r[MSTATUS_MIE_BIT]  <= 1'b0;                  // Disable interrupts
+          mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= current_priv; // Save current privilege
         end else if (trap_target_priv == 2'b01) begin
           // Supervisor-mode trap
           sepc_r  <= trap_pc;
           scause_r <= {{(XLEN-5){1'b0}}, trap_cause};
           stval_r  <= trap_val;
-          mstatus_spie_r <= mstatus_sie_r;  // Save current SIE
-          mstatus_sie_r  <= 1'b0;           // Disable supervisor interrupts
-          mstatus_spp_r  <= current_priv[0]; // Save current privilege (0=U, 1=S)
+          mstatus_r[MSTATUS_SPIE_BIT] <= mstatus_sie_w;         // Save current SIE
+          mstatus_r[MSTATUS_SIE_BIT]  <= 1'b0;                  // Disable supervisor interrupts
+          mstatus_r[MSTATUS_SPP_BIT]  <= current_priv[0];       // Save current privilege (0=U, 1=S)
         end
       end else if (mret) begin
         // MRET: Return from machine-mode trap
-        mstatus_mie_r  <= mstatus_mpie_r;   // Restore interrupt enable
-        mstatus_mpie_r <= 1'b1;             // Set MPIE to 1
-        mstatus_mpp_r  <= 2'b11;            // Set MPP to M-mode
+        mstatus_r[MSTATUS_MIE_BIT]  <= mstatus_mpie_w;  // Restore interrupt enable
+        mstatus_r[MSTATUS_MPIE_BIT] <= 1'b1;          // Set MPIE to 1
+        mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= 2'b11; // Set MPP to M-mode
       end else if (sret) begin
         // SRET: Return from supervisor-mode trap
-        mstatus_sie_r  <= mstatus_spie_r;   // Restore supervisor interrupt enable
-        mstatus_spie_r <= 1'b1;             // Set SPIE to 1
-        mstatus_spp_r  <= 1'b0;             // Set SPP to U-mode
+        mstatus_r[MSTATUS_SIE_BIT]  <= mstatus_spie_w;  // Restore supervisor interrupt enable
+        mstatus_r[MSTATUS_SPIE_BIT] <= 1'b1;          // Set SPIE to 1
+        mstatus_r[MSTATUS_SPP_BIT]  <= 1'b0;          // Set SPP to U-mode
       end else if (csr_we && !csr_read_only) begin
         // Normal CSR write
         case (csr_addr)
           CSR_MSTATUS: begin
             `ifdef DEBUG_XRET_PRIV
             $display("[CSR_DEBUG] Time=%0t MSTATUS write: value=%h MPP[12:11]=%b->%b",
-                     $time, csr_write_value, mstatus_mpp_r, csr_write_value[12:11]);
+                     $time, csr_write_value, mstatus_mpp_w, csr_write_value[12:11]);
             `endif
-            mstatus_sie_r  <= csr_write_value[1];
-            mstatus_mie_r  <= csr_write_value[3];
-            mstatus_spie_r <= csr_write_value[5];
-            mstatus_mpie_r <= csr_write_value[7];
-            mstatus_spp_r  <= csr_write_value[8];
-            mstatus_mpp_r  <= csr_write_value[12:11];
-            mstatus_sum_r  <= csr_write_value[18];
-            mstatus_mxr_r  <= csr_write_value[19];
+            // Write individual fields
+            mstatus_r[MSTATUS_SIE_BIT]  <= csr_write_value[MSTATUS_SIE_BIT];
+            mstatus_r[MSTATUS_MIE_BIT]  <= csr_write_value[MSTATUS_MIE_BIT];
+            mstatus_r[MSTATUS_SPIE_BIT] <= csr_write_value[MSTATUS_SPIE_BIT];
+            mstatus_r[MSTATUS_MPIE_BIT] <= csr_write_value[MSTATUS_MPIE_BIT];
+            mstatus_r[MSTATUS_SPP_BIT]  <= csr_write_value[MSTATUS_SPP_BIT];
+            mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= csr_write_value[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB];
+            mstatus_r[MSTATUS_SUM_BIT]  <= csr_write_value[MSTATUS_SUM_BIT];
+            mstatus_r[MSTATUS_MXR_BIT]  <= csr_write_value[MSTATUS_MXR_BIT];
           end
           CSR_MIE:      mie_r      <= csr_write_value;
           CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
@@ -528,11 +455,11 @@ module csr_file #(
           CSR_SSTATUS: begin
             // SSTATUS is a restricted view of MSTATUS
             // Only allow writes to S-mode visible fields
-            mstatus_sie_r  <= csr_write_value[1];
-            mstatus_spie_r <= csr_write_value[5];
-            mstatus_spp_r  <= csr_write_value[8];
-            mstatus_sum_r  <= csr_write_value[18];
-            mstatus_mxr_r  <= csr_write_value[19];
+            mstatus_r[MSTATUS_SIE_BIT]  <= csr_write_value[MSTATUS_SIE_BIT];
+            mstatus_r[MSTATUS_SPIE_BIT] <= csr_write_value[MSTATUS_SPIE_BIT];
+            mstatus_r[MSTATUS_SPP_BIT]  <= csr_write_value[MSTATUS_SPP_BIT];
+            mstatus_r[MSTATUS_SUM_BIT]  <= csr_write_value[MSTATUS_SUM_BIT];
+            mstatus_r[MSTATUS_MXR_BIT]  <= csr_write_value[MSTATUS_MXR_BIT];
           end
           CSR_SIE: begin
             // SIE is a subset of MIE - only write S-mode interrupt bits [9,5,1]
@@ -624,16 +551,16 @@ module csr_file #(
   assign trap_vector = (trap_target_priv == 2'b01) ? stvec_r : mtvec_r;
   assign mepc_out    = mepc_r;
   assign sepc_out    = sepc_r;
-  assign mstatus_mie = mstatus_mie_r;
+  assign mstatus_mie = mstatus_mie_w;
 
   // Privilege mode outputs
-  assign mpp_out     = mstatus_mpp_r;
-  assign spp_out     = mstatus_spp_r;
+  assign mpp_out     = mstatus_mpp_w;
+  assign spp_out     = mstatus_spp_w;
 
   // MMU-related outputs
   assign satp_out    = satp_r;
-  assign mstatus_sum = mstatus_sum_r;
-  assign mstatus_mxr = mstatus_mxr_r;
+  assign mstatus_sum = mstatus_sum_w;
+  assign mstatus_mxr = mstatus_mxr_w;
 
   // Floating-point CSR outputs
   assign frm_out     = frm_r;
