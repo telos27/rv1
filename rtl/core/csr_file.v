@@ -501,6 +501,10 @@ module csr_file #(
         // Normal CSR write
         case (csr_addr)
           CSR_MSTATUS: begin
+            `ifdef DEBUG_XRET_PRIV
+            $display("[CSR_DEBUG] Time=%0t MSTATUS write: value=%h MPP[12:11]=%b->%b",
+                     $time, csr_write_value, mstatus_mpp_r, csr_write_value[12:11]);
+            `endif
             mstatus_sie_r  <= csr_write_value[1];
             mstatus_mie_r  <= csr_write_value[3];
             mstatus_spie_r <= csr_write_value[5];

@@ -9,6 +9,9 @@
 module exception_unit #(
   parameter XLEN = `XLEN
 ) (
+  `ifdef DEBUG_XRET_PRIV
+  input  wire            clk,             // Clock for debug only
+  `endif
   // Privilege mode input (Phase 1)
   input  wire [1:0]      current_priv,    // Current privilege mode
 
@@ -97,6 +100,22 @@ module exception_unit #(
   wire id_mret_violation = id_valid && id_mret && (current_priv != 2'b11);
   wire id_sret_violation = id_valid && id_sret && (current_priv == 2'b00);
 
+  // Debug: Monitor xRET privilege violations
+  `ifdef DEBUG_XRET_PRIV
+  always @(posedge clk) begin
+    if (id_mret && id_valid) begin
+      $display("[XRET_DEBUG] Time=%0t MRET detected: priv=%b violation=%b", $time, current_priv, id_mret_violation);
+    end
+    if (id_sret && id_valid) begin
+      $display("[XRET_DEBUG] Time=%0t SRET detected: priv=%b violation=%b", $time, current_priv, id_sret_violation);
+    end
+    if (id_mret_violation || id_sret_violation) begin
+      $display("[XRET_DEBUG] Time=%0t xRET VIOLATION! mret=%b sret=%b priv=%b",
+               $time, id_mret_violation, id_sret_violation, current_priv);
+    end
+  end
+  `endif
+
   // Combine with regular illegal instruction
   wire id_illegal_combined = id_illegal || id_mret_violation || id_sret_violation;
 
@@ -181,6 +200,11 @@ module exception_unit #(
 
     end else if (id_illegal_combined) begin
       exception = 1'b1;
+      `ifdef DEBUG_XRET_PRIV
+      if (id_mret_violation || id_sret_violation) begin
+        $display("[XRET_DEBUG] Time=%0t EXCEPTION RAISED: code=2 (illegal) pc=%h", $time, id_pc);
+      end
+      `endif
       exception_code = CAUSE_ILLEGAL_INST;
       exception_pc = id_pc;
       exception_val = {{(XLEN-32){1'b0}}, id_instruction};  // Zero-extend instruction to XLEN

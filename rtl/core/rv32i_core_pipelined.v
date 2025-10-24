@@ -492,12 +492,21 @@ module rv_core_pipelined #(
       if (trap_flush) begin
         // On trap entry, move to target privilege level
         current_priv <= trap_target_priv;
+        `ifdef DEBUG_XRET_PRIV
+        $display("[PRIV_DEBUG] Time=%0t TRAP: priv %b->%b (cause=%d)", $time, current_priv, trap_target_priv, exception_code);
+        `endif
       end else if (mret_flush) begin
         // On MRET, restore privilege from MSTATUS.MPP
         current_priv <= mpp;
+        `ifdef DEBUG_XRET_PRIV
+        $display("[PRIV_DEBUG] Time=%0t MRET_FLUSH: priv %b->%b (from MPP)", $time, current_priv, mpp);
+        `endif
       end else if (sret_flush) begin
         // On SRET, restore privilege from MSTATUS.SPP
         current_priv <= {1'b0, spp};  // SPP: 0=U, 1=S -> {1'b0, spp} = 00 or 01
+        `ifdef DEBUG_XRET_PRIV
+        $display("[PRIV_DEBUG] Time=%0t SRET_FLUSH: priv %b->%b (from SPP)", $time, current_priv, {1'b0, spp});
+        `endif
       end
     end
   end
@@ -1439,6 +1448,9 @@ module rv_core_pipelined #(
   exception_unit #(
     .XLEN(XLEN)
   ) exception_unit_inst (
+    `ifdef DEBUG_XRET_PRIV
+    .clk(clk),
+    `endif
     // Privilege mode (Phase 1)
     .current_priv(current_priv),
     // IF stage - instruction fetch (check misaligned PC)
@@ -1544,6 +1556,19 @@ module rv_core_pipelined #(
   //==========================================================================
   // EX/MEM Pipeline Register
   //==========================================================================
+  `ifdef DEBUG_XRET_PRIV
+  always @(posedge clk) begin
+    if (idex_is_mret || idex_is_sret) begin
+      $display("[PIPELINE_DEBUG] Time=%0t EX stage: mret=%b sret=%b exception=%b exc_code=%d",
+               $time, idex_is_mret, idex_is_sret, exception, exception_code);
+      $display("[PIPELINE_DEBUG] Time=%0t  -> EXMEM will get: mret=%b sret=%b",
+               $time,
+               idex_is_mret && !(exception && (exception_code == 5'd2)),
+               idex_is_sret && !(exception && (exception_code == 5'd2)));
+    end
+  end
+  `endif
+
   exmem_register #(
     .XLEN(XLEN),
     .FLEN(`FLEN)
