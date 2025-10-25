@@ -248,7 +248,31 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-24 Part 7)**:
+**Recent Work (Latest Session - 2025-10-25)**:
+- 🎉 **CRITICAL FIX**: Exception signal latching to prevent mcause corruption
+  - **Symptom**: `test_umode_entry_from_mmode` failing - mcause showing 3 (breakpoint) instead of 2 (illegal instruction)
+  - **Root Cause**: Exception unit outputs are combinational and can glitch during clock cycles
+    - When illegal CSR access trapped, exception_code=2 was latched
+    - But before CSR file could process it, another exception (EBREAK from test_fail) occurred
+    - Both exceptions were being written to mcause in what appeared to be the same cycle
+    - Second write (cause=3) overwrote the first (cause=2)
+  - **Fix Applied**: Exception signal latching with controlled timing
+    - Latch exception_code/PC/val when exception first asserts
+    - Hold latched values stable for exactly ONE cycle
+    - Prevent re-arming until previous exception fully processed
+    - `exception_r` pulses for one cycle, preventing multiple trap entries
+  - **Implementation**:
+    - `exception_r` set when `exception && !exception_taken_r`
+    - Auto-clears after one cycle (simplified from 2-cycle hold)
+    - `exception_taken_r` stays high until `exception_r_hold` set
+    - CSR file receives stable `trap_cause` that can't be overwritten
+  - **Files Modified**:
+    - `rtl/core/rv32i_core_pipelined.v:439-474,512-526,1494` - Exception latching logic
+    - `rtl/core/csr_file.v:418-422` - Removed trap_taken_r (now handled at top level)
+  - **Result**: ✅ Quick regression fully passes (14/14 tests)
+  - **Status**: Core exception handling now robust against signal glitches
+
+**Recent Work (Previous Session - 2025-10-24 Part 7)**:
 - 🎉 **CRITICAL FIX**: PC stall override for control flow changes (MRET/SRET/trap/branch)
   - **Symptom**: CSR privilege checks not triggering - target instructions after MRET/SRET were invalidated
   - **Investigation Process**:

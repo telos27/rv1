@@ -184,6 +184,9 @@ module csr_file #(
   reg [XLEN-1:0] medeleg_r;    // Machine exception delegation to S-mode
   reg [XLEN-1:0] mideleg_r;    // Machine interrupt delegation to S-mode
 
+  // Trap handling state
+  reg trap_taken_r;            // Flag to prevent multiple trap entries in same cycle
+
   // =========================================================================
   // Read-Only CSRs (hardwired)
   // =========================================================================
@@ -412,8 +415,10 @@ module csr_file #(
       // Reset trap delegation registers
       medeleg_r      <= {XLEN{1'b0}};   // No delegation by default
       mideleg_r      <= {XLEN{1'b0}};   // No delegation by default
+      trap_taken_r   <= 1'b0;            // No trap taken initially
     end else begin
       // Trap entry has priority over CSR writes and SRET/MRET
+      // trap_entry is a one-shot signal from the top level (pulses for exactly one cycle)
       if (trap_entry) begin
         // Determine target privilege level
         if (trap_target_priv == 2'b11) begin

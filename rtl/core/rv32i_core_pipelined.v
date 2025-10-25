@@ -435,6 +435,41 @@ module rv_core_pipelined #(
   wire [4:0]      exception_code;     // 5-bit exception code for mcause
   wire [XLEN-1:0] exception_pc;
   wire [XLEN-1:0] exception_val;
+
+  // Registered exception signals to prevent glitches during trap handling
+  // The exception unit outputs are combinational and can glitch during the clock cycle.
+  // We register them to ensure stable values when the CSR file samples them.
+  reg             exception_r;
+  reg [4:0]       exception_code_r;
+  reg [XLEN-1:0]  exception_pc_r;
+  reg [XLEN-1:0]  exception_val_r;
+  reg             exception_r_hold;  // Hold exception_r for one extra cycle
+
+  // Exception signal registration
+  // Latch exception signals when exception first occurs, hold for one cycle
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      exception_r      <= 1'b0;
+      exception_code_r <= 5'd0;
+      exception_pc_r   <= {XLEN{1'b0}};
+      exception_val_r  <= {XLEN{1'b0}};
+      exception_r_hold <= 1'b0;
+    end else begin
+      // Latch exception info when exception FIRST asserts
+      if (exception && !exception_taken_r) begin
+        exception_r      <= 1'b1;  // Will pulse for one cycle
+        exception_code_r <= exception_code;
+        exception_pc_r   <= exception_pc;
+        exception_val_r  <= exception_val;
+        exception_r_hold <= 1'b0;
+      end else begin
+        // Clear exception_r after one cycle
+        exception_r      <= 1'b0;
+        exception_r_hold <= exception_r;  // Track previous value for clearing exception_taken_r
+      end
+    end
+  end
+
   wire [XLEN-1:0] trap_vector;
   wire [XLEN-1:0] mepc;
   wire [XLEN-1:0] sepc;
@@ -469,18 +504,22 @@ module rv_core_pipelined #(
   assign pc_increment = if_is_compressed ? pc_plus_2 : pc_plus_4;
 
   // Trap and xRET handling
-  assign trap_flush = exception;  // Exception occurred
+  // Use the combinational exception for immediate trap flush
+  assign trap_flush = exception && !exception_taken_r;  // Exception occurred (but not already taken)
   // xRET only flushes if there's no exception (exceptions take priority)
   assign mret_flush = exmem_is_mret && exmem_valid && !exception;  // MRET in MEM stage
   assign sret_flush = exmem_is_sret && exmem_valid && !exception;  // SRET in MEM stage
 
-  // Track exception from previous cycle to prevent re-triggering
+  // Track exception to prevent re-triggering
+  // Set when exception first occurs, stay high until exception_r fully processed
   reg exception_taken_r;
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
       exception_taken_r <= 1'b0;
-    else
-      exception_taken_r <= exception;
+    else if (exception && !exception_taken_r)
+      exception_taken_r <= 1'b1;  // Set on first exception
+    else if (!exception_r && exception_r_hold)
+      exception_taken_r <= 1'b0;  // Clear only after exception_r is fully done
   end
 
   //==========================================================================
@@ -1452,10 +1491,10 @@ module rv_core_pipelined #(
     .csr_we(idex_csr_we && idex_valid),
     .csr_access(idex_is_csr && idex_valid),
     .csr_rdata(ex_csr_rdata),
-    .trap_entry(exception),
-    .trap_pc(exception_pc),
-    .trap_cause(exception_code),
-    .trap_val(exception_val),
+    .trap_entry(exception_r && !exception_r_hold),  // Pulse for one cycle only
+    .trap_pc(exception_pc_r),
+    .trap_cause(exception_code_r),
+    .trap_val(exception_val_r),
     .trap_vector(trap_vector),
     .mret(exmem_is_mret && exmem_valid && !exception),
     .mepc_out(mepc),
