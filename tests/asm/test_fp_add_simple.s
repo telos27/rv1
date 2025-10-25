@@ -14,6 +14,12 @@ result:
 .globl _start
 
 _start:
+    # Initialize global pointer
+    .option push
+    .option norelax
+    la gp, __global_pointer$
+    .option pop
+
     # Load base addresses
     la x10, fp_input
     la x11, result

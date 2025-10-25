@@ -248,34 +248,40 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-24 Part 5)**:
-- 🔍 **CRITICAL BUG IDENTIFIED**: CSR privilege checking not working for read operations
+**Recent Work (Latest Session - 2025-10-24 Part 6)**:
+- 🐛 **CRITICAL REGRESSION FIX**: MMU bare mode causing pipeline stalls
+  - **Symptom**: Quick regression showed `test_fp_add_simple` timing out with infinite loop
+  - **Investigation Process**:
+    - Used `git bisect` to find breaking commit (added MMU module)
+    - Discovered `test_fp_add_simple.hex` was accidentally deleted in commit 6f54734
+    - Regenerated hex file but test still failed
+    - Found root cause: MMU `req_ready` signal pulsing instead of holding
+  - **Root Cause**: MMU bare mode (no virtual memory) had faulty handshake logic
+    - `req_ready` pulsed high for 1 cycle, then defaulted to 0 on next cycle
+    - While `req_valid` stayed high (memory op in MEM stage), `req_ready` went low
+    - Formula: `mmu_busy = req_valid && !req_ready` → stuck high, stalling pipeline
+    - Result: ALL memory operations (loads/stores) stalled indefinitely
+  - **Fix Applied**: Modified `rtl/core/mmu.v:290-296`
+    - Changed default logic to keep `req_ready=1` and `req_paddr=req_vaddr` in bare mode
+    - Removed redundant assignments in PTW_IDLE state that were overriding defaults
+    - Logic: `req_ready <= (!translation_enabled && req_valid) ? 1 : 0`
+  - **Result**: ✅ All 14 quick regression tests passing (100%)
+  - **Files Modified**:
+    - `rtl/core/mmu.v:290-296,320` - Fixed bare mode handshake
+    - `tools/asm_to_hex.sh:107` - Added `--no-relax` linker flag for better control
+    - `tests/asm/test_fp_add_simple.s:17-25` - Added gp initialization (defensive)
+
+- ✅ **Verified**: Quick regression fully passes
+  - All 14 tests: ✅ (I/M/A/F/D/C extensions + custom tests)
+  - No regressions from MMU fix or CSR privilege changes
+  - Core functionality stable and ready for continued development
+
+**Recent Work (Previous Session - 2025-10-24 Part 5)**:
+- 🔍 **BUG IDENTIFIED**: CSR privilege checking not working for read operations
   - **Root Cause**: CSR privilege checks only applied to writes (`csr_we`), not reads
-    - When `csrr t0, mstatus` (CSRRS with rs1=x0) executes in U-mode, write is suppressed
-    - With `csr_we=0`, the CSR file's privilege check was bypassed
-    - Result: U-mode could read privileged CSRs without trapping!
-  - **Symptom**: Tests entering U-mode and reading mstatus don't trap (cause incorrect test failures)
-  - **Impact**: Security vulnerability - lower privilege modes can read higher privilege CSRs
-
-- 🔧 **FIX IMPLEMENTED**: Added separate CSR access signal for privilege checking
-  - **Changes Made**:
-    1. `rtl/core/csr_file.v`: Added `csr_access` input (high for any CSR operation)
-    2. `rtl/core/csr_file.v:359`: Modified `illegal_csr` to check `csr_access` instead of only `csr_we`
-    3. `rtl/core/idex_register.v`: Added `is_csr` signal propagation through pipeline
-    4. `rtl/core/rv32i_core_pipelined.v:203`: Added `idex_is_csr` wire
-    5. `rtl/core/rv32i_core_pipelined.v:969,1031,1411`: Connected `is_csr` through pipeline
-    6. `rtl/core/rv32i_core_pipelined.v:1462`: Updated exception detection to use `idex_is_csr`
-  - **Logic**:
-    - Privilege/existence checks now apply to ALL CSR accesses (read or write)
-    - Read-only checks still only apply to writes
-    - Formula: `illegal_csr = csr_access && ((!csr_exists) || (!csr_priv_ok) || (csr_we && csr_read_only))`
-
-- ⚠️ **STATUS**: Fix implemented but tests still failing - requires further investigation
-  - Quick regression: 13/14 tests passing ✅ (no regressions introduced)
-  - Privilege tests: 2/7 passing (same as before fix - `test_umode_ecall`, `test_umode_illegal_instr`)
-  - **Key Observation**: `test_umode_ecall` PASSES, proving M→U transitions work correctly
-  - **Hypothesis**: Issue may be elsewhere in privilege checking logic or test infrastructure
-  - **Next Session**: Deep dive with waveform analysis or alternative debugging approach
+  - **Fix Implemented**: Added `csr_access` signal for privilege checking
+  - **Status**: Fix complete but privilege tests still under investigation
+  - See commit 81ae388 for details
 
 **Recent Work (Previous Session - 2025-10-24 Part 3)**:
 - ✅ **CRITICAL FIX**: sstatus_mask bug - SPIE and SPP bits now visible

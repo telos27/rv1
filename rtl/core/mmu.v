@@ -286,8 +286,14 @@ module mmu #(
         tlb_level[i] <= 0;
       end
     end else begin
-      // Default outputs
-      req_ready <= 0;
+      // Default outputs (keep req_ready and req_paddr valid in bare mode)
+      if (!translation_enabled && req_valid) begin
+        req_ready <= 1'b1;
+        req_paddr <= req_vaddr;  // Bare mode: VA == PA
+      end else begin
+        req_ready <= 1'b0;
+        req_paddr <= req_paddr;  // Hold previous value
+      end
       req_page_fault <= 0;
       ptw_req_valid <= 0;
 
@@ -309,10 +315,9 @@ module mmu #(
           if (req_valid) begin
             // Check if translation is enabled
             if (!translation_enabled) begin
-              // Bare mode: direct mapping
+              // Bare mode: direct mapping (req_ready and req_paddr already set in default)
               $display("MMU: Bare mode, VA=0x%h -> PA=0x%h", req_vaddr, req_vaddr);
-              req_paddr <= req_vaddr;
-              req_ready <= 1;
+              // Note: req_paddr and req_ready are set in the default case above
             end else begin
               // Check TLB
               $display("MMU: Translation mode, VA=0x%h, TLB hit=%b", req_vaddr, tlb_hit);

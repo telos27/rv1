@@ -104,7 +104,7 @@ ${RISCV_PREFIX}as -march=$MARCH -mabi=$MABI "$INPUT_ASM" -o "$OUTPUT_O"
 
 # Step 2: Link
 echo "[2/4] Linking..."
-${RISCV_PREFIX}ld -m elf32lriscv -Ttext=$START_ADDR "$OUTPUT_O" -o "$OUTPUT_ELF"
+${RISCV_PREFIX}ld -m elf32lriscv --no-relax -Ttext=$START_ADDR "$OUTPUT_O" -o "$OUTPUT_ELF"
 
 # Step 3: Convert to binary
 echo "[3/4] Creating binary..."
