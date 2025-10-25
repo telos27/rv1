@@ -233,22 +233,53 @@ A comprehensive privilege mode testing framework implementation in progress:
 - **Macro Library**: `tests/asm/include/priv_test_macros.s` (520+ lines, 50+ macros)
 - **Demo Test**: `tests/asm/test_priv_macros_demo.s` (working example)
 
-**Phase 1: U-Mode Fundamentals** 🚧 **PARTIAL (2/5 tests passing)**
-- 🔨 `test_umode_entry_from_mmode.s` - M→U transition via MRET (CSR privilege issue)
-- 🔨 `test_umode_entry_from_smode.s` - S→U transition via SRET (CSR privilege issue)
+**Phase 1: U-Mode Fundamentals** 🚧 **PARTIAL (3/5 tests passing)**
+- 🔨 `test_umode_entry_from_mmode.s` - M→U transition via MRET (needs investigation)
+- 🔨 `test_umode_entry_from_smode.s` - S→U transition via SRET (needs investigation)
 - ✅ `test_umode_ecall.s` - ECALL from U-mode (cause=8) **PASSING**
-- 🔨 `test_umode_csr_violation.s` - CSR privilege checking (under investigation)
+- ✅ `test_umode_csr_violation.s` - CSR privilege checking **PASSING** 🎉
 - ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit **PASSING**
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
 **Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (2/5 tests implemented, debugging)**
-- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (CSR privilege issue)
-- 🔨 `test_mstatus_state_sret.s` - SRET state transitions (CSR privilege issue)
+- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (needs investigation)
+- 🔨 `test_mstatus_state_sret.s` - SRET state transitions (needs investigation)
 - ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-24 Part 6)**:
+**Recent Work (Latest Session - 2025-10-24 Part 7)**:
+- 🎉 **CRITICAL FIX**: PC stall override for control flow changes (MRET/SRET/trap/branch)
+  - **Symptom**: CSR privilege checks not triggering - target instructions after MRET/SRET were invalidated
+  - **Investigation Process**:
+    - CSR privilege checking logic was correct (commit 81ae388)
+    - But `csrr` instructions after MRET never performed CSR access
+    - Debug showed instructions reaching EX stage with `valid=0`
+    - Root cause: CSR RAW hazard between MRET and target CSR instruction caused `stall_pc=1`
+    - Stall prevented PC from updating to mepc/sepc, breaking control flow
+  - **Root Cause**: Pipeline stall had priority over control flow changes
+    - When MRET/SRET in MEM stage, target instruction at mepc/sepc already fetched into IFID
+    - CSR RAW hazard detected between xRET and target → `stall_pc=1`
+    - Stall prevented PC from updating, so jump didn't occur
+    - Target instruction flushed but with `valid=0`, preventing CSR access
+  - **Fix Applied**: Modified `rtl/core/rv32i_core_pipelined.v:528-531`
+    - Added `pc_stall_gated` signal: `stall_pc && !(trap_flush | mret_flush | sret_flush | ex_take_branch)`
+    - Control flow changes now override pipeline stalls
+    - PC MUST update during flush regardless of hazards (wrong-path instructions being flushed anyway)
+  - **Result**: ✅ CSR privilege checking now works! `test_umode_csr_violation` PASSING 🎉
+  - **Files Modified**:
+    - `rtl/core/rv32i_core_pipelined.v:528-531,1411-1437` - PC stall gating + debug output
+    - `rtl/core/csr_file.v:364-368` - Enhanced CSR debug output
+    - `rtl/core/exception_unit.v:169-198` - Added exception debug output
+    - `tools/test_pipelined.sh:26-31` - Added DEBUG_CSR and DEBUG_PRIV support
+  - **Tests Now Passing**: `test_umode_csr_violation.s` ✅ (was failing, now passes!)
+
+- ✅ **Verified**: Quick regression fully passes
+  - All 14 tests: ✅ (I/M/A/F/D/C extensions + custom tests)
+  - No regressions from PC stall fix
+  - Core functionality stable with improved control flow handling
+
+**Recent Work (Previous Session - 2025-10-24 Part 6)**:
 - 🐛 **CRITICAL REGRESSION FIX**: MMU bare mode causing pipeline stalls
   - **Symptom**: Quick regression showed `test_fp_add_simple` timing out with infinite loop
   - **Investigation Process**:

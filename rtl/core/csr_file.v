@@ -361,8 +361,11 @@ module csr_file #(
   `ifdef DEBUG_CSR
   always @(posedge clk) begin
     if (csr_access) begin
-      $display("[CSR] Time=%0t addr=0x%03x access=%b we=%b priv=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x",
-               $time, csr_addr, csr_access, csr_we, current_priv, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata);
+      $display("[CSR] Time=%0t addr=0x%03x access=%b we=%b priv=%b priv_lvl=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x",
+               $time, csr_addr, csr_access, csr_we, current_priv, csr_priv_level, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata);
+      if (illegal_csr) begin
+        $display("[CSR] *** ILLEGAL CSR ACCESS DETECTED ***");
+      end
     end
     if (sret) begin
       $display("[CSR] Time=%0t SRET: SIE=%b->%b SPIE=%b->1 SPP=%b->0 mstatus_r=0x%08x",

@@ -23,6 +23,12 @@ fi
 if [ ! -z "$DEBUG_HAZARD" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_HAZARD"
 fi
+if [ ! -z "$DEBUG_CSR" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_CSR"
+fi
+if [ ! -z "$DEBUG_PRIV" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_PRIV"
+fi
 
 # Determine architecture
 if [ "$XLEN" = "64" ]; then

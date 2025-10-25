@@ -494,12 +494,21 @@ module rv_core_pipelined #(
       if (trap_flush) begin
         // On trap entry, move to target privilege level
         current_priv <= trap_target_priv;
+        `ifdef DEBUG_PRIV
+        $display("[PRIV] Time=%0t TRAP: priv %b -> %b", $time, current_priv, trap_target_priv);
+        `endif
       end else if (mret_flush) begin
         // On MRET, restore privilege from MSTATUS.MPP
         current_priv <= mpp;
+        `ifdef DEBUG_PRIV
+        $display("[PRIV] Time=%0t MRET: priv %b -> %b (from MPP) mepc=0x%08x", $time, current_priv, mpp, mepc);
+        `endif
       end else if (sret_flush) begin
         // On SRET, restore privilege from MSTATUS.SPP
         current_priv <= {1'b0, spp};  // SPP: 0=U, 1=S -> {1'b0, spp} = 00 or 01
+        `ifdef DEBUG_PRIV
+        $display("[PRIV] Time=%0t SRET: priv %b -> %b (from SPP=%b)", $time, current_priv, {1'b0, spp}, spp);
+        `endif
       end
     end
   end
@@ -516,6 +525,11 @@ module rv_core_pipelined #(
   assign flush_ifid = trap_flush | mret_flush | sret_flush | ex_take_branch;
   assign flush_idex = trap_flush | mret_flush | sret_flush | flush_idex_hazard | ex_take_branch;
 
+  // PC stall control: override stall on flush (trap/xRET/branch)
+  // When a control flow change occurs, PC MUST update regardless of hazards
+  wire pc_stall_gated;
+  assign pc_stall_gated = stall_pc && !(trap_flush | mret_flush | sret_flush | ex_take_branch);
+
   // Program Counter
   pc #(
     .XLEN(XLEN),
@@ -523,7 +537,7 @@ module rv_core_pipelined #(
   ) pc_inst (
     .clk(clk),
     .reset_n(reset_n),
-    .stall(stall_pc),
+    .stall(pc_stall_gated),
     .pc_next(pc_next),
     .pc_current(pc_current)
   );
@@ -1398,6 +1412,34 @@ module rv_core_pipelined #(
   assign ex_csr_wdata_forwarded = (ex_csr_uses_rs1 && forward_a == 2'b10) ? exmem_alu_result :  // EX-to-EX forward
                                   (ex_csr_uses_rs1 && forward_a == 2'b01) ? wb_data :           // MEM-to-EX forward
                                   idex_csr_wdata;                                                 // No hazard or imm form
+
+  `ifdef DEBUG_PRIV
+  reg [31:0] debug_cycle;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      debug_cycle <= 0;
+    end else begin
+      debug_cycle <= debug_cycle + 1;
+      if (mret_flush || sret_flush) begin
+        $display("[PIPE] Cycle %0d: xRET flush - PC=0x%08x->0x%08x ifid_valid=%b idex_valid=%b stall_pc=%b",
+                 debug_cycle, pc_current, pc_next, ifid_valid, idex_valid, stall_pc);
+      end
+      if (debug_cycle > 0 && pc_current >= 32'h4c && pc_current <= 32'h60) begin
+        $display("[PIPE] Cycle %0d: PC=0x%08x ifid_PC=0x%08x ifid_valid=%b idex_PC=0x%08x idex_valid=%b idex_is_csr=%b stall=%b",
+                 debug_cycle, pc_current, ifid_pc, ifid_valid, idex_pc, idex_valid, idex_is_csr, stall_pc);
+      end
+    end
+  end
+  `endif
+
+  `ifdef DEBUG_CSR
+  always @(posedge clk) begin
+    if (idex_is_csr) begin
+      $display("[CORE] Cycle %0d: CSR in EX: addr=0x%03x is_csr=%b valid=%b access=%b PC=0x%08x priv=%b",
+               debug_cycle, idex_csr_addr, idex_is_csr, idex_valid, idex_is_csr && idex_valid, idex_pc, current_priv);
+    end
+  end
+  `endif
 
   csr_file #(
     .XLEN(XLEN)
