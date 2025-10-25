@@ -70,6 +70,7 @@ module idex_register #(
   input  wire             csr_we_in,
   input  wire             csr_src_in,      // 0=rs1, 1=uimm
   input  wire [XLEN-1:0]  csr_wdata_in,    // rs1 data or uimm (XLEN-wide)
+  input  wire             is_csr_in,       // CSR instruction
 
   // Exception signals from ID stage
   input  wire        is_ecall_in,
@@ -139,6 +140,7 @@ module idex_register #(
   output reg              csr_we_out,
   output reg              csr_src_out,
   output reg  [XLEN-1:0]  csr_wdata_out,
+  output reg              is_csr_out,
 
   // Exception signals to EX stage
   output reg         is_ecall_out,
@@ -222,6 +224,7 @@ module idex_register #(
       csr_we_out      <= 1'b0;
       csr_src_out     <= 1'b0;
       csr_wdata_out   <= {XLEN{1'b0}};
+      is_csr_out      <= 1'b0;
 
       is_ecall_out    <= 1'b0;
       is_ebreak_out   <= 1'b0;
@@ -286,6 +289,7 @@ module idex_register #(
       csr_we_out      <= 1'b0;          // Critical: no CSR write
       csr_src_out     <= 1'b0;
       csr_wdata_out   <= {XLEN{1'b0}};
+      is_csr_out      <= 1'b0;
 
       is_ecall_out    <= 1'b0;          // Critical: clear exceptions
       is_ebreak_out   <= 1'b0;
@@ -348,6 +352,7 @@ module idex_register #(
       csr_we_out      <= csr_we_in;
       csr_src_out     <= csr_src_in;
       csr_wdata_out   <= csr_wdata_in;
+      is_csr_out      <= is_csr_in;
 
       is_ecall_out    <= is_ecall_in;
       is_ebreak_out   <= is_ebreak_in;

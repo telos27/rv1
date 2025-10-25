@@ -17,6 +17,7 @@ module csr_file #(
   input  wire [XLEN-1:0]  csr_wdata,      // Write data (from rs1 or uimm)
   input  wire [2:0]       csr_op,         // CSR operation (funct3)
   input  wire             csr_we,         // CSR write enable
+  input  wire             csr_access,     // CSR instruction active (read or write)
   output reg  [XLEN-1:0]  csr_rdata,      // Read data
 
   // Trap handling interface
@@ -353,16 +354,15 @@ module csr_file #(
   // 2. Privilege level too low to access CSR
   // 3. Attempting to write to read-only CSR
   //
-  // Note: We only check writes here (csr_we). Read privilege is implicitly checked
-  // because CSR instructions that read also write (even CSRRS/CSRRC with rs1=x0).
-  // The control unit sets csr_we=1 for all CSR instructions, so privilege is always checked.
-  assign illegal_csr = csr_we && ((!csr_exists) || (!csr_priv_ok) || csr_read_only);
+  // Note: Privilege and existence checks apply to both reads and writes (csr_access).
+  // Read-only check only applies to writes (csr_we).
+  assign illegal_csr = csr_access && ((!csr_exists) || (!csr_priv_ok) || (csr_we && csr_read_only));
 
   `ifdef DEBUG_CSR
   always @(posedge clk) begin
-    if (csr_we) begin
-      $display("[CSR] Time=%0t addr=0x%03x priv=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x",
-               $time, csr_addr, current_priv, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata);
+    if (csr_access) begin
+      $display("[CSR] Time=%0t addr=0x%03x access=%b we=%b priv=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x",
+               $time, csr_addr, csr_access, csr_we, current_priv, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata);
     end
     if (sret) begin
       $display("[CSR] Time=%0t SRET: SIE=%b->%b SPIE=%b->1 SPP=%b->0 mstatus_r=0x%08x",

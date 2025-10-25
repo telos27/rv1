@@ -233,49 +233,49 @@ A comprehensive privilege mode testing framework implementation in progress:
 - **Macro Library**: `tests/asm/include/priv_test_macros.s` (520+ lines, 50+ macros)
 - **Demo Test**: `tests/asm/test_priv_macros_demo.s` (working example)
 
-**Phase 1: U-Mode Fundamentals** ✅ **COMPLETE (5/5 tests passing)**
-- ✅ `test_umode_entry_from_mmode.s` - M→U transition via MRET
-- ✅ `test_umode_entry_from_smode.s` - S→U transition via SRET
-- ✅ `test_umode_ecall.s` - ECALL from U-mode (cause=8)
-- ✅ `test_umode_csr_violation.s` - CSR privilege checking
-- ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit
+**Phase 1: U-Mode Fundamentals** 🚧 **PARTIAL (2/5 tests passing)**
+- 🔨 `test_umode_entry_from_mmode.s` - M→U transition via MRET (CSR privilege issue)
+- 🔨 `test_umode_entry_from_smode.s` - S→U transition via SRET (CSR privilege issue)
+- ✅ `test_umode_ecall.s` - ECALL from U-mode (cause=8) **PASSING**
+- 🔨 `test_umode_csr_violation.s` - CSR privilege checking (under investigation)
+- ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit **PASSING**
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
-**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (2/5 tests implemented)**
-- ✅ `test_mstatus_state_mret.s` - MRET state transitions (all stages passing)
-- 🔨 `test_mstatus_state_sret.s` - SRET state transitions (implemented, debugging in progress)
+**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (2/5 tests implemented, debugging)**
+- 🔨 `test_mstatus_state_mret.s` - MRET state transitions (CSR privilege issue)
+- 🔨 `test_mstatus_state_sret.s` - SRET state transitions (CSR privilege issue)
 - ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-24 Part 4)**:
-- 🔍 **DEEP INVESTIGATION**: SRET SPIE pipeline hazard (extensive debugging session)
-  - **Root Cause Identified**: Pipeline hazard when SRET is in MEM and CSR instruction is in EX
-    - SRET (in MEM stage) sets mstatus.SPIE=1
-    - CSR read instruction (in EX stage, immediately after SRET) has already computed write value based on PRE-SRET mstatus
-    - The CSR instruction's stale data can overwrite SPIE back to 0 in the next cycle
-  - **Key Finding**: SRET works correctly when there are NOPs between SRET and subsequent CSR operations ✅
-  - **Attempted Fixes**:
-    1. Enhanced CSR RAW hazard detection in `hazard_detection_unit.v:281-282`
-       - Added condition: `(idex_csr_we && (exmem_is_mret || exmem_is_sret))`
-       - Creates bubble when CSR in EX and xRET in MEM
-       - Partially effective but not complete solution
-    2. Tried blocking CSR writes for one cycle after xRET (too aggressive, caused timeouts)
-  - **Files Modified**:
-    - `rtl/core/hazard_detection_unit.v:278-282` - Enhanced CSR-xRET hazard detection
-  - **Test Files Created for Diagnosis**:
-    - `tests/asm/test_sret_spie_debug.s` - Initial SPIE debugging
-    - `tests/asm/test_sret_spie_simple.s` - Minimal reproduction case
-    - `tests/asm/test_sret_spie_mem_dump.s` - Memory dump analysis
-    - `tests/asm/test_sret_no_csr_after.s` - Verified SRET works with NOPs (PASSES ✅)
-    - `tests/asm/test_sret_check_mmode.s` - M-mode verification attempt
-  - **Status**: Issue partially understood, requires additional pipeline work
-  - **Next Session**: Continue debugging pipeline flush/stall timing for CSR-after-xRET case
+**Recent Work (Latest Session - 2025-10-24 Part 5)**:
+- 🔍 **CRITICAL BUG IDENTIFIED**: CSR privilege checking not working for read operations
+  - **Root Cause**: CSR privilege checks only applied to writes (`csr_we`), not reads
+    - When `csrr t0, mstatus` (CSRRS with rs1=x0) executes in U-mode, write is suppressed
+    - With `csr_we=0`, the CSR file's privilege check was bypassed
+    - Result: U-mode could read privileged CSRs without trapping!
+  - **Symptom**: Tests entering U-mode and reading mstatus don't trap (cause incorrect test failures)
+  - **Impact**: Security vulnerability - lower privilege modes can read higher privilege CSRs
 
-- ⚠️ **Verified**: Quick regression mostly passes (12/14 tests: ✅)
-  - Note: 2 FP tests (`test_fp_compare_simple`, `test_fp_add_simple`) timeout - pre-existing issue
-  - Core functionality and privilege tests all pass
-  - Hazard detection changes don't introduce new failures
+- 🔧 **FIX IMPLEMENTED**: Added separate CSR access signal for privilege checking
+  - **Changes Made**:
+    1. `rtl/core/csr_file.v`: Added `csr_access` input (high for any CSR operation)
+    2. `rtl/core/csr_file.v:359`: Modified `illegal_csr` to check `csr_access` instead of only `csr_we`
+    3. `rtl/core/idex_register.v`: Added `is_csr` signal propagation through pipeline
+    4. `rtl/core/rv32i_core_pipelined.v:203`: Added `idex_is_csr` wire
+    5. `rtl/core/rv32i_core_pipelined.v:969,1031,1411`: Connected `is_csr` through pipeline
+    6. `rtl/core/rv32i_core_pipelined.v:1462`: Updated exception detection to use `idex_is_csr`
+  - **Logic**:
+    - Privilege/existence checks now apply to ALL CSR accesses (read or write)
+    - Read-only checks still only apply to writes
+    - Formula: `illegal_csr = csr_access && ((!csr_exists) || (!csr_priv_ok) || (csr_we && csr_read_only))`
+
+- ⚠️ **STATUS**: Fix implemented but tests still failing - requires further investigation
+  - Quick regression: 13/14 tests passing ✅ (no regressions introduced)
+  - Privilege tests: 2/7 passing (same as before fix - `test_umode_ecall`, `test_umode_illegal_instr`)
+  - **Key Observation**: `test_umode_ecall` PASSES, proving M→U transitions work correctly
+  - **Hypothesis**: Issue may be elsewhere in privilege checking logic or test infrastructure
+  - **Next Session**: Deep dive with waveform analysis or alternative debugging approach
 
 **Recent Work (Previous Session - 2025-10-24 Part 3)**:
 - ✅ **CRITICAL FIX**: sstatus_mask bug - SPIE and SPP bits now visible
