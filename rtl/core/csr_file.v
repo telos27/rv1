@@ -568,16 +568,29 @@ module csr_file #(
     input [1:0] curr_priv;
     input [XLEN-1:0] medeleg;
     begin
+      `ifdef DEBUG_EXCEPTION
+      $display("[CSR_DELEG] get_trap_target_priv: cause=%0d curr_priv=%b medeleg=%h medeleg[cause]=%b",
+               cause, curr_priv, medeleg, medeleg[cause]);
+      `endif
       // M-mode traps never delegate
       if (curr_priv == 2'b11) begin
         get_trap_target_priv = 2'b11;  // M-mode
+        `ifdef DEBUG_EXCEPTION
+        $display("[CSR_DELEG] -> M-mode (curr_priv==M)");
+        `endif
       end
       // Check if exception is delegated to S-mode
       else if (medeleg[cause] && (curr_priv <= 2'b01)) begin
         get_trap_target_priv = 2'b01;  // S-mode
+        `ifdef DEBUG_EXCEPTION
+        $display("[CSR_DELEG] -> S-mode (delegated)");
+        `endif
       end
       else begin
         get_trap_target_priv = 2'b11;  // M-mode (default)
+        `ifdef DEBUG_EXCEPTION
+        $display("[CSR_DELEG] -> M-mode (no delegation)");
+        `endif
       end
     end
   endfunction

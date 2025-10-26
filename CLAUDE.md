@@ -7,6 +7,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 19/34 passing (Phases 1-2-5 complete, Phases 3-4 partial)
+- **Active Issue**: Privilege mode forwarding bug (blocks Phase 6) - See `docs/KNOWN_ISSUES.md`
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -156,7 +157,18 @@ rv1/
 - Test Suite: https://github.com/riscv/riscv-tests
 - Compliance: https://github.com/riscv/riscv-compliance
 
+## Known Issues
+
+See `docs/KNOWN_ISSUES.md` for detailed tracking.
+
+**Critical:**
+- Privilege mode forwarding bug: CSR access after MRET/SRET uses stale privilege mode
+  - Impact: Phase 6 delegation tests fail (2 tests blocked)
+  - Fix required: Implement privilege mode forwarding in pipeline
+  - Workaround: Add NOP after xRET before CSR access
+
 ## Future Enhancements
+- **IMMEDIATE**: Fix privilege mode forwarding bug
 - Bit Manipulation (B), Vector (V), Crypto (K) extensions
 - Performance: Branch prediction, caching, out-of-order execution
 - System: Debug module, PMP, Hypervisor extension
