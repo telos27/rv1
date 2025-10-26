@@ -182,9 +182,16 @@ module tb_core_pipelined;
       end
       `endif
 
-      // Check for EBREAK (0x00100073) in IF stage
-      // We'll wait for it to reach WB stage before checking results
-      if (instruction == 32'h00100073) begin
+      // Check for EBREAK in ID stage (before trap)
+      // EBREAK can be either:
+      //   - Compressed: 0x9002 (C.EBREAK) - 16-bit encoding
+      //   - Uncompressed: 0x00100073 - 32-bit encoding
+      // We check ID stage instead of IF because EBREAK causes a trap,
+      // and the IF stage will immediately fetch from mtvec (trap vector)
+      if (DUT.ifid_instruction == 32'h00100073 || DUT.ifid_instruction == 32'h9002 ||
+          DUT.if_instruction == 32'h00100073 || DUT.if_instruction == 32'h9002) begin
+        $display("[%0d] EBREAK DETECTED! ifid_instr=%08h if_instr=%08h PC=%08h",
+                 cycle_count, DUT.ifid_instruction, DUT.if_instruction, pc);
         // Wait for pipeline to complete and EBREAK to reach WB stage (10 cycles)
         // This ensures all preceding instructions complete their WB
         repeat(10) @(posedge clk);

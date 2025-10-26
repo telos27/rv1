@@ -31,14 +31,16 @@ if [ ! -z "$DEBUG_PRIV" ]; then
 fi
 
 # Determine architecture
+# NOTE: We enable all extensions (IMAFDC) to match how tests are compiled
 if [ "$XLEN" = "64" ]; then
-    CONFIG_FLAG="-DCONFIG_RV64I"
+    CONFIG_FLAG="-DCONFIG_RV64I -DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_C_EXT=1"
     TESTBENCH="tb/integration/tb_core_pipelined_rv64.v"
     OUTPUT_VCD="${WAVES_DIR}/core_pipelined_rv64.vcd"
     OUTPUT_VVP="${SIM_DIR}/rv64i_pipelined.vvp"
     ARCH_NAME="RV64I"
 else
-    CONFIG_FLAG="-DCONFIG_RV32I"
+    # Enable all extensions to match test compilation (rv32imafc)
+    CONFIG_FLAG="-DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_C_EXT=1"
     TESTBENCH="tb/integration/tb_core_pipelined.v"
     OUTPUT_VCD="${WAVES_DIR}/core_pipelined.vcd"
     OUTPUT_VVP="${SIM_DIR}/rv32i_pipelined.vvp"

@@ -248,7 +248,35 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-25)**:
+**Recent Work (Latest Session - 2025-10-25 Part 2)**:
+- 🎉 **CRITICAL FIX**: Configuration mismatch causing test failures and infinite loops
+  - **Symptom**: `test_fp_compare_simple` timing out with infinite loop, all tests compiled with compressed instructions failing
+  - **Root Cause #1**: Configuration mismatch between test compilation and CPU simulation
+    - Tests compiled with `-march=rv32imafc` (includes C extension - compressed 16-bit instructions)
+    - Testbench compiled with `-DCONFIG_RV32I` which sets `ENABLE_C_EXT=0`
+    - CPU treated any 2-byte aligned PC (0x16, 0x1a, etc.) as misaligned, triggering exceptions
+    - Exception jumped to mtvec (address 0), restarting program → infinite loop
+  - **Root Cause #2**: EBREAK detection broken after exception latching fix
+    - Exception latching fix made EBREAK properly trap (correct behavior)
+    - But testbench checked for EBREAK in IF stage AFTER trap occurred
+    - After trap, IF stage fetched from trap vector (address 0 = NOPs), never seeing EBREAK again
+    - Tests ran to MAX_CYCLES timeout without detecting completion
+  - **Fix Applied**:
+    - **Configuration Fix**: Modified `tools/test_pipelined.sh` to enable all extensions
+      - Changed from `-DCONFIG_RV32I` to `-DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_C_EXT=1`
+      - Matches how tests are compiled (rv32imafc with compressed instructions)
+    - **EBREAK Detection Fix**: Updated `tb/integration/tb_core_pipelined.v`
+      - Changed from checking IF stage to checking ID stage (before trap occurs)
+      - Added support for both compressed (0x9002) and uncompressed (0x00100073) EBREAK
+      - Detection now works correctly with trapping exceptions
+  - **Files Modified**:
+    - `tools/test_pipelined.sh:33-48` - Fixed configuration flags for all extensions
+    - `tb/integration/tb_core_pipelined.v:185-194` - Fixed EBREAK detection for ID stage + compressed
+  - **Result**: ✅ Quick regression fully passes (14/14 tests - 100%)
+  - **Impact**: All tests now work correctly with proper exception handling and C extension support
+  - **Status**: Configuration mismatch resolved, testbench robust for both compressed and uncompressed code
+
+**Recent Work (Previous Session - 2025-10-25 Part 1)**:
 - 🎉 **CRITICAL FIX**: Exception signal latching to prevent mcause corruption
   - **Symptom**: `test_umode_entry_from_mmode` failing - mcause showing 3 (breakpoint) instead of 2 (illegal instruction)
   - **Root Cause**: Exception unit outputs are combinational and can glitch during clock cycles
@@ -391,7 +419,19 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from fixes
 
 **Known Issues**:
-- 🔧 **ACTIVE INVESTIGATION**: SRET/CSR pipeline hazard
+- 🔧 **ACTIVE INVESTIGATION**: U-mode entry failures (M→U and S→U transitions)
+  - **Status**: Two Phase 1 tests failing with x28=0xDEADDEAD marker
+  - **Failing Tests**:
+    - `test_umode_entry_from_mmode.s` - M→U transition via MRET ❌
+    - `test_umode_entry_from_smode.s` - S→U transition via SRET ❌
+  - **Next Steps for Next Session**:
+    1. Debug why M→U MRET transition fails
+    2. Debug why S→U SRET transition fails
+    3. Verify mstatus.MPP and mstatus.SPP updates
+    4. Check privilege mode transition logic
+  - **Impact**: Blocks Phase 1 completion (currently 3/5 tests passing)
+
+- 🔧 **KNOWN ISSUE**: SRET/CSR pipeline hazard (documented, not blocking)
   - **Status**: Pipeline hazard when CSR instruction immediately follows SRET
   - **Observation**:
     - SRET with NOPs after: SPIE correctly set to 1 ✅
@@ -399,12 +439,7 @@ A comprehensive privilege mode testing framework implementation in progress:
   - **Root Cause**: CSR instruction in EX stage computes stale write value before SRET in MEM completes
   - **Current Mitigation**: Enhanced hazard detection partially addresses issue
   - **Workaround**: Insert NOP between SRET and CSR operations (compiler hint needed)
-  - **Next Steps for Next Session**:
-    1. Investigate why hazard detection bubble isn't fully preventing stale CSR writes
-    2. Consider moving CSR operations to MEM stage (align with xRET timing)
-    3. Add EXMEM flush capability for CSR operations
-    4. Alternative: Implement CSR write value forwarding from xRET
-  - **Impact**: Blocks `test_mstatus_state_sret.s` Stage 1 from passing
+  - **Impact**: Does not block current development (tests use NOPs as workaround)
   - **Code Locations**:
     - `rtl/core/csr_file.v:441-444` - SRET implementation (correct)
     - `rtl/core/hazard_detection_unit.v:281-282` - CSR-xRET hazard detection (partial fix)
