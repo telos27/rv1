@@ -241,14 +241,39 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit **PASSING**
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
-**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (2/5 tests implemented, 2 stages passing)**
-- 🎉 `test_mstatus_state_mret.s` - MRET state transitions (stages 1-2 PASSING, stage 3 design issue)
+**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (1/5 tests complete, 5/5 stages passing)**
+- 🎉 `test_mstatus_state_mret.s` - MRET state transitions **ALL 5 STAGES PASSING** ✅
 - 🔨 `test_mstatus_state_sret.s` - SRET state transitions (needs similar fix)
 - ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-25 Part 5)**:
+**Recent Work (Latest Session - 2025-10-25 Part 6)**:
+- 🎉 **COMPLETE**: `test_mstatus_state_mret.s` - All 5 stages now passing!
+  - **Issue 1 - Stage 3**: Test expected MPP to stay M-mode (3) after MRET
+    - **Root Cause**: Test comment assumed "implementations without U-mode", but we support U-mode
+    - **RISC-V Spec**: "xPP is set to the least-privileged supported mode (U if U-mode is implemented)"
+    - **Fix**: Changed `EXPECT_MPP PRIV_M` → `EXPECT_MPP PRIV_U` (line 85)
+    - **Result**: Stage 3 now passes - MPP correctly set to U-mode (0) after MRET ✅
+  - **Issue 2 - Stage 4**: `RETURN_MMODE` macro used MRET from S-mode (illegal instruction)
+    - **Root Cause**: MRET can only execute in M-mode; from S-mode it traps with illegal instruction
+    - **Fix Applied**:
+      - Replaced `RETURN_MMODE after_smode` with `ecall` (line 116)
+      - Updated `m_trap_handler` to handle ECALL from S-mode (cause=9)
+      - Handler returns to `after_smode` via MRET from M-mode
+    - **Result**: Stage 4 now passes - proper S-mode test with ECALL return ✅
+  - **Files Modified**:
+    - `tests/asm/test_mstatus_state_mret.s:85,116,149-168` - Fixed MPP expectation and S-mode return
+    - `tests/asm/test_mstatus_state_mret.hex` - Regenerated
+  - **Test Results**: ✅ All 5 stages passing (100%)
+    - Stage 1: MRET with MPIE=0 → MIE=0 ✅
+    - Stage 2: MRET with MPIE=1 → MIE=1 ✅
+    - Stage 3: MPP set to U-mode after MRET ✅
+    - Stage 4: MRET transitions M→S correctly ✅
+    - Stage 5: MRET transitions M→U correctly ✅
+  - **Verification**: ✅ Quick regression 14/14 passing, no regressions
+
+**Recent Work (Previous Session - 2025-10-25 Part 5)**:
 - ✅ **FIXED**: MRET/SRET CSR forwarding timing issue - COMPLETE!
   - **Problem**: CSR reads immediately after MRET/SRET saw stale mstatus values
   - **Root Cause**: Stall-forwarding interaction bug

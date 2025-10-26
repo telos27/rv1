@@ -80,8 +80,9 @@ after_mret3:
     # Verify we're still in M-mode by accessing M-mode CSR
     csrr t0, mstatus                # Should succeed in M-mode
 
-    # Verify MPP is now M (stays M per spec for implementations without U-mode)
-    EXPECT_MPP PRIV_M, test_fail
+    # Verify MPP is now U (set to least privileged mode per RISC-V spec)
+    # Per spec: "xPP is set to the least-privileged supported mode (U if U-mode is implemented)"
+    EXPECT_MPP PRIV_U, test_fail
 
     #========================================================================
     # Test Case 4: MRET with MPP=S → privilege becomes S
@@ -110,7 +111,9 @@ smode_code:
     bne t0, t1, test_fail
 
     # Return to M-mode for next test
-    RETURN_MMODE after_smode
+    # Note: Can't use MRET from S-mode (would trap), so use ECALL
+    # The M-mode trap handler will check for this and continue
+    ecall
 
 after_smode:
     #========================================================================
@@ -139,7 +142,14 @@ umode_code:
     TEST_FAIL
 
 m_trap_handler:
-    # Verify cause is illegal instruction (U-mode can't access mstatus)
+    # Check trap cause
+    csrr t0, mcause
+
+    # Check if it's an ECALL from S-mode (cause = 9)
+    li t1, 9                        # CAUSE_ECALL_FROM_SMODE
+    beq t0, t1, handle_smode_ecall
+
+    # Otherwise, verify cause is illegal instruction (U-mode can't access mstatus)
     EXPECT_CSR mcause, CAUSE_ILLEGAL_INSTR, test_fail
 
     # If we got here from U-mode test, we passed
@@ -149,6 +159,13 @@ m_trap_handler:
 
     # All tests passed!
     TEST_PASS
+
+handle_smode_ecall:
+    # ECALL from S-mode (stage 4) - return to after_smode
+    # This is the normal return path from S-mode test
+    la t0, after_smode
+    csrw mepc, t0
+    mret
 
 test_fail:
     TEST_FAIL
