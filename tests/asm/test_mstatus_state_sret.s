@@ -18,10 +18,9 @@ _start:
     #========================================================================
     TEST_STAGE 1
 
-    # Delegate S-mode traps to S-mode
-    li t0, 0xFFFF
-    csrw medeleg, t0
-    csrw mideleg, t0
+    # No delegation needed for stages 1-3 (all S-mode operations)
+    csrw medeleg, zero
+    csrw mideleg, zero
 
     # Enter S-mode first
     ENTER_SMODE_M smode_test1
@@ -112,6 +111,18 @@ after_sret3:
     #========================================================================
     TEST_STAGE 4
 
+    # Need to return to M-mode to set up delegation
+    ecall
+
+mmode_stage4_setup:
+    # Delegate illegal instruction exception to S-mode for U-mode test
+    li t0, (1 << CAUSE_ILLEGAL_INSTR)
+    csrw medeleg, t0
+
+    # Enter S-mode to continue test
+    ENTER_SMODE_M smode_test4
+
+smode_test4:
     # Setup trap handler for U-mode test
     la t0, s_trap_handler_stage4
     csrw stvec, t0
@@ -146,13 +157,35 @@ s_trap_handler_stage4:
     li t1, 4
     bne t0, t1, test_fail
 
+    # Stage 4 passed - return to M-mode to start stage 5
+    # Use ECALL to get to M-mode handler which will start stage 5
+    ecall
+
     #========================================================================
     # Test Case 5: Verify SRET clears mstatus.SPP (bit 8)
     #========================================================================
+stage5_mmode_entry:
     TEST_STAGE 5
 
-    # Return to M-mode to check mstatus
-    RETURN_MMODE mmode_test5
+    # Clear delegation (stage 4 delegated illegal instruction)
+    csrw medeleg, zero
+    csrw mideleg, zero
+
+    # Initialize ECALL counter (s11) for this stage
+    li s11, 0
+
+    # Verify we're in M-mode by checking we can write mstatus
+    csrr t0, mstatus
+    csrw mstatus, t0
+
+    # Enter S-mode to start stage 5 tests
+    ENTER_SMODE_M smode_stage5_start
+
+smode_stage5_start:
+    # Verify we're in S-mode (nop for spacing)
+    nop
+    # Return to M-mode to check mstatus (use ECALL from S-mode)
+    ecall
 
 mmode_test5:
     # Enter S-mode again
@@ -163,8 +196,8 @@ smode_test5:
     li t0, MSTATUS_SPP
     csrrs zero, sstatus, t0         # Set SPP to S-mode
 
-    # Return to M-mode to inspect mstatus
-    RETURN_MMODE mmode_check5
+    # Return to M-mode to inspect mstatus (use ECALL from S-mode)
+    ecall
 
 mmode_check5:
     # Read mstatus and check that SPP bit is set
@@ -183,8 +216,8 @@ smode_sret5:
     sret
 
 after_sret5:
-    # Return to M-mode to verify SPP was cleared
-    RETURN_MMODE mmode_verify5
+    # Return to M-mode to verify SPP was cleared (use ECALL from S-mode)
+    ecall
 
 mmode_verify5:
     # Read mstatus and verify SPP is now clear (U-mode)
@@ -200,6 +233,102 @@ test_fail:
     TEST_FAIL
 
 m_trap_handler:
+    # Check trap cause
+    csrr t0, mcause
+    li t1, CAUSE_ECALL_S
+    bne t0, t1, m_trap_unexpected
+
+    # Check stage number to determine which transition
+    mv t0, x29
+    li t1, 3
+    beq t0, t1, handle_stage3_to_4_transition
+
+    li t1, 4
+    beq t0, t1, handle_stage4_to_5_transition
+
+    # Check we're in stage 5
+    li t1, 5
+    bne t0, t1, m_trap_unexpected
+
+    # Use s11 (x27) as ECALL counter for stage 5
+    # Increment counter and dispatch based on value
+    addi s11, s11, 1
+
+    li t0, 1
+    beq s11, t0, ecall_1
+    li t0, 2
+    beq s11, t0, ecall_2
+    li t0, 3
+    beq s11, t0, ecall_3
+    j m_trap_unexpected
+
+ecall_1:
+    # First ECALL from S-mode - return to M-mode at mmode_test5
+    la t0, mmode_test5
+    csrw mepc, t0
+    # Set MPP = M-mode
+    li t1, ~MSTATUS_MPP_MASK
+    csrr t2, mstatus
+    and t2, t2, t1
+    li t1, (PRIV_M << MSTATUS_MPP_SHIFT)
+    or t2, t2, t1
+    csrw mstatus, t2
+    mret
+
+ecall_2:
+    # Second ECALL from S-mode - return to M-mode at mmode_check5
+    la t0, mmode_check5
+    csrw mepc, t0
+    # Set MPP = M-mode
+    li t1, ~MSTATUS_MPP_MASK
+    csrr t2, mstatus
+    and t2, t2, t1
+    li t1, (PRIV_M << MSTATUS_MPP_SHIFT)
+    or t2, t2, t1
+    csrw mstatus, t2
+    mret
+
+ecall_3:
+    # Third ECALL from S-mode - return to M-mode at mmode_verify5
+    la t0, mmode_verify5
+    csrw mepc, t0
+    # Set MPP = M-mode
+    li t1, ~MSTATUS_MPP_MASK
+    csrr t2, mstatus
+    and t2, t2, t1
+    li t1, (PRIV_M << MSTATUS_MPP_SHIFT)
+    or t2, t2, t1
+    csrw mstatus, t2
+    mret
+
+handle_stage3_to_4_transition:
+    # ECALL from end of stage 3 - set up delegation and go to stage 4
+    la t0, mmode_stage4_setup
+    csrw mepc, t0
+    # Set MPP = M-mode so MRET returns to M-mode
+    li t1, ~MSTATUS_MPP_MASK
+    csrr t2, mstatus
+    and t2, t2, t1              # Clear MPP bits
+    li t1, (PRIV_M << MSTATUS_MPP_SHIFT)
+    or t2, t2, t1               # Set MPP = 11 (M-mode)
+    csrw mstatus, t2
+    mret
+
+handle_stage4_to_5_transition:
+    # ECALL from S-mode trap handler at end of stage 4
+    # Return to M-mode to start stage 5
+    la t0, stage5_mmode_entry
+    csrw mepc, t0
+    # Set MPP = M-mode so MRET returns to M-mode
+    li t1, ~MSTATUS_MPP_MASK
+    csrr t2, mstatus
+    and t2, t2, t1              # Clear MPP bits
+    li t1, (PRIV_M << MSTATUS_MPP_SHIFT)
+    or t2, t2, t1               # Set MPP = 11 (M-mode)
+    csrw mstatus, t2
+    mret
+
+m_trap_unexpected:
     # Unexpected M-mode trap
     TEST_FAIL
 

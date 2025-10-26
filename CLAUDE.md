@@ -241,14 +241,33 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit **PASSING**
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
-**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (1/5 tests complete, 5/5 stages passing)**
+**Phase 2: Status Register State Machine** 🚧 **IN PROGRESS (1/5 tests complete, 5/5 stages in test #1)**
 - 🎉 `test_mstatus_state_mret.s` - MRET state transitions **ALL 5 STAGES PASSING** ✅
-- 🔨 `test_mstatus_state_sret.s` - SRET state transitions (needs similar fix)
+- 🔨 `test_mstatus_state_sret.s` - SRET state transitions **IN PROGRESS** (stage 5 debugging)
 - ⏳ `test_mstatus_state_trap.s` - Trap entry state updates (pending)
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-25 Part 6)**:
+**Recent Work (Latest Session - 2025-10-25 Part 7)**:
+- 🔨 **IN PROGRESS**: `test_mstatus_state_sret.s` - SRET state transition testing
+  - **Goal**: Test SRET behavior for SIE←SPIE, SPIE←1, privilege←SPP, SPP←U transitions
+  - **Work Done**:
+    - Fixed delegation setup: Removed blanket S-mode delegation, added stage-specific delegation
+    - Added M-mode trap handler with stage transition logic (stages 3→4→5)
+    - Implemented ECALL counter mechanism (s11 register) for stage 5 routing
+    - Fixed all ECALL handlers to set MPP=M before MRET to ensure M-mode returns
+  - **Current Issue**: Stage 5 failing with privilege mode confusion
+    - ECALLs expected from S-mode (mcause=9) appearing as M-mode (mcause=11)
+    - ENTER_SMODE_M macro may not be properly transitioning to S-mode in complex test flow
+    - Test has multiple M↔S transitions making debugging complex
+  - **Files Modified**:
+    - `tests/asm/test_mstatus_state_sret.s` - Delegation fixes, trap handlers, stage transitions
+    - `tests/asm/test_mstatus_state_sret.hex` - Regenerated
+  - **Status**: ⏸️ Partially complete - stages 1-4 need verification, stage 5 needs debugging
+  - **Verification**: ✅ Quick regression 14/14 passing, no regressions
+  - **Next Steps**: Debug S-mode entry in stage 5, consider simplifying test structure
+
+**Recent Work (Previous Session - 2025-10-25 Part 6)**:
 - 🎉 **COMPLETE**: `test_mstatus_state_mret.s` - All 5 stages now passing!
   - **Issue 1 - Stage 3**: Test expected MPP to stay M-mode (3) after MRET
     - **Root Cause**: Test comment assumed "implementations without U-mode", but we support U-mode
