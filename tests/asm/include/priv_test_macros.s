@@ -138,10 +138,11 @@
     csrw    sepc, t0
 
     # Set SPP = 0 (U-mode)
+    # S-mode must use sstatus, not mstatus
     li      t1, ~MSTATUS_SPP
-    csrr    t2, mstatus
+    csrr    t2, sstatus
     and     t2, t2, t1          # Clear SPP bit
-    csrw    mstatus, t2         # SPP = 0 (U-mode)
+    csrw    sstatus, t2         # SPP = 0 (U-mode)
 
     sret                        # Return to U-mode
 .endm

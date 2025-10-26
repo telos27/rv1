@@ -462,6 +462,10 @@ module rv_core_pipelined #(
         exception_pc_r   <= exception_pc;
         exception_val_r  <= exception_val;
         exception_r_hold <= 1'b0;
+        `ifdef DEBUG_EXCEPTION
+        $display("[EXC_LATCH] Latching exception code=%0d PC=%h (exception=%b taken=%b)",
+                 exception_code, exception_pc, exception, exception_taken_r);
+        `endif
       end else begin
         // Clear exception_r after one cycle
         exception_r      <= 1'b0;
@@ -819,6 +823,20 @@ module rv_core_pipelined #(
                        (id_forward_b == 3'b010) ? exmem_forward_data :  // Forward from MEM stage (atomic or ALU)
                        (id_forward_b == 3'b001) ? wb_data :             // Forward from WB stage
                        id_rs2_data_raw;                                  // Use register file value
+
+  `ifdef DEBUG_EXCEPTION
+  always @(posedge clk) begin
+    // Debug branch at PC=0x60 (the mcause comparison)
+    if (ifid_pc == 32'h60 && id_branch) begin
+      $display("[BRANCH_0x60] rs1=x%0d rs2=x%0d rs1_data=%h rs2_data=%h fwd_a=%b fwd_b=%b",
+               id_rs1, id_rs2, id_rs1_data, id_rs2_data, id_forward_a, id_forward_b);
+      $display("[BRANCH_0x60] exmem_rd=x%0d exmem_reg_write=%b exmem_data=%h",
+               exmem_rd_addr, exmem_reg_write, exmem_forward_data);
+      $display("[BRANCH_0x60] idex_rd=x%0d idex_reg_write=%b idex_data=%h",
+               idex_rd_addr, idex_reg_write, ex_forward_data);
+    end
+  end
+  `endif
 
   `ifdef DEBUG_ATOMIC
   always @(posedge clk) begin
@@ -1179,6 +1197,7 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] exmem_forward_data;
   assign exmem_forward_data = exmem_is_atomic ? exmem_atomic_result :
                               exmem_int_reg_write_fp ? exmem_int_result_fp :
+                              (exmem_wb_sel == 3'b011) ? exmem_csr_rdata :  // CSR read result
                               exmem_alu_result;
 
   // rs1 data forwarding (for SFENCE.VMA and other instructions that use rs1 data directly)

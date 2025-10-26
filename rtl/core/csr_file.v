@@ -257,7 +257,12 @@ module csr_file #(
       CSR_MTVEC:     csr_rdata = mtvec_r;
       CSR_MSCRATCH:  csr_rdata = mscratch_r;
       CSR_MEPC:      csr_rdata = mepc_r;
-      CSR_MCAUSE:    csr_rdata = mcause_r;
+      CSR_MCAUSE: begin
+        csr_rdata = mcause_r;
+        `ifdef DEBUG_EXCEPTION
+        if (csr_access) $display("[CSR_READ] mcause = %0d", mcause_r);
+        `endif
+      end
       CSR_MTVAL:     csr_rdata = mtval_r;
       CSR_MIP:       csr_rdata = mip_r;
       CSR_MVENDORID: csr_rdata = {{(XLEN-32){1'b0}}, mvendorid};  // Zero-extend to XLEN
@@ -420,12 +425,18 @@ module csr_file #(
       // Trap entry has priority over CSR writes and SRET/MRET
       // trap_entry is a one-shot signal from the top level (pulses for exactly one cycle)
       if (trap_entry) begin
+        `ifdef DEBUG_EXCEPTION
+        $display("[CSR_TRAP] Trap entry: target_priv=%b cause=%0d PC=%h", trap_target_priv, trap_cause, trap_pc);
+        `endif
         // Determine target privilege level
         if (trap_target_priv == 2'b11) begin
           // Machine-mode trap
           mepc_r  <= trap_pc;
           mcause_r <= {{(XLEN-5){1'b0}}, trap_cause};
           mtval_r  <= trap_val;
+          `ifdef DEBUG_EXCEPTION
+          $display("[CSR_TRAP] Writing mcause=%0d mepc=%h", trap_cause, trap_pc);
+          `endif
           mstatus_r[MSTATUS_MPIE_BIT] <= mstatus_mie_w;         // Save current MIE
           mstatus_r[MSTATUS_MIE_BIT]  <= 1'b0;                  // Disable interrupts
           mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= current_priv; // Save current privilege

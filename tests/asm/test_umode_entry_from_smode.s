@@ -77,7 +77,7 @@ m_trap_handler:
     # Verify MEPC points to CSR instruction
     csrr t0, mepc
     la t1, umode_code
-    addi t1, t1, 8          # Offset to csrr (after li s0, 3)
+    addi t1, t1, 2          # Offset to csrr (li s0,3 is 2 bytes compressed)
     bne t0, t1, test_fail
 
     # SUCCESS - we successfully:

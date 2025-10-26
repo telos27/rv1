@@ -29,6 +29,9 @@ fi
 if [ ! -z "$DEBUG_PRIV" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_PRIV"
 fi
+if [ ! -z "$DEBUG_EXCEPTION" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_EXCEPTION"
+fi
 
 # Determine architecture
 # NOTE: We enable all extensions (IMAFDC) to match how tests are compiled

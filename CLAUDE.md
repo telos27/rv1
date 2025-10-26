@@ -233,11 +233,11 @@ A comprehensive privilege mode testing framework implementation in progress:
 - **Macro Library**: `tests/asm/include/priv_test_macros.s` (520+ lines, 50+ macros)
 - **Demo Test**: `tests/asm/test_priv_macros_demo.s` (working example)
 
-**Phase 1: U-Mode Fundamentals** 🚧 **PARTIAL (3/5 tests passing)**
-- 🔨 `test_umode_entry_from_mmode.s` - M→U transition via MRET (needs investigation)
-- 🔨 `test_umode_entry_from_smode.s` - S→U transition via SRET (needs investigation)
+**Phase 1: U-Mode Fundamentals** ✅ **COMPLETE (5/5 tests passing - 100%)**
+- ✅ `test_umode_entry_from_mmode.s` - M→U transition via MRET **PASSING** 🎉
+- ✅ `test_umode_entry_from_smode.s` - S→U transition via SRET **PASSING** 🎉
 - ✅ `test_umode_ecall.s` - ECALL from U-mode (cause=8) **PASSING**
-- ✅ `test_umode_csr_violation.s` - CSR privilege checking **PASSING** 🎉
+- ✅ `test_umode_csr_violation.s` - CSR privilege checking **PASSING**
 - ✅ `test_umode_illegal_instr.s` - WFI privilege with TW bit **PASSING**
 - ⏭️ `test_umode_memory_sum.s` - Skipped (requires full MMU)
 
@@ -248,7 +248,53 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-25 Part 2)**:
+**Recent Work (Latest Session - 2025-10-25 Part 3)**:
+- 🎉 **CRITICAL FIX**: CSR forwarding bug preventing CSR read values from being forwarded
+  - **Symptom**: U-mode entry tests (`test_umode_entry_from_mmode`, `test_umode_entry_from_smode`) failing with x28=0xDEADDEAD
+  - **Root Cause #1**: CSR read values not included in MEM-stage forwarding
+    - `exmem_forward_data` only forwarded ALU result, atomic result, or FP-to-INT result
+    - CSR instructions use `wb_sel=3'b011` to select CSR data for writeback
+    - But `exmem_forward_data` didn't check `exmem_wb_sel` to include CSR data
+    - When branch compared `csrr t0, mcause` result in ID stage, forwarding from MEM gave 0 instead of mcause value
+  - **Fix Applied**: Modified `rtl/core/rv32i_core_pipelined.v:1200`
+    - Added CSR data to forwarding logic: `(exmem_wb_sel == 3'b011) ? exmem_csr_rdata : ...`
+    - Now CSR reads in MEM stage properly forward their results to ID/EX stages
+  - **Root Cause #2**: Test hardcoded offsets assuming 4-byte instructions (no compression)
+    - Tests checked `mepc == umode_code + 8` (expecting 2 instructions × 4 bytes)
+    - But `li s0, N` is compressed to 2 bytes with C extension enabled
+    - Actual offset should be 2 bytes, not 8
+  - **Fix Applied**: Updated test offsets
+    - `tests/asm/test_umode_entry_from_mmode.s:72` - Changed offset from 8 to 2
+    - `tests/asm/test_umode_entry_from_smode.s:80` - Changed offset from 8 to 2
+  - **Root Cause #3**: S-mode macro incorrectly accessing mstatus
+    - `ENTER_UMODE_S` macro used `csrr/csrw mstatus` from S-mode
+    - S-mode cannot access mstatus directly - must use sstatus
+    - SPP bit (bit 8) is visible in sstatus
+  - **Fix Applied**: Modified `tests/asm/include/priv_test_macros.s:143-145`
+    - Changed from `csrr t2, mstatus` → `csrr t2, sstatus`
+    - Changed from `csrw mstatus, t2` → `csrw sstatus, t2`
+  - **Files Modified**:
+    - `rtl/core/rv32i_core_pipelined.v:1200` - Added CSR forwarding support
+    - `rtl/core/rv32i_core_pipelined.v:827-839` - Added branch debug output (DEBUG_EXCEPTION)
+    - `rtl/core/rv32i_core_pipelined.v:465-468` - Added exception latching debug (DEBUG_EXCEPTION)
+    - `rtl/core/csr_file.v:423-434` - Added CSR trap debug output (DEBUG_EXCEPTION)
+    - `rtl/core/csr_file.v:260-265` - Added mcause read debug output (DEBUG_EXCEPTION)
+    - `tools/test_pipelined.sh:32-34` - Added DEBUG_EXCEPTION flag support
+    - `tests/asm/test_umode_entry_from_mmode.s:72` - Fixed offset for compressed instructions
+    - `tests/asm/test_umode_entry_from_smode.s:80` - Fixed offset for compressed instructions
+    - `tests/asm/include/priv_test_macros.s:143-145` - Fixed S-mode CSR access
+  - **Result**: ✅ Both U-mode entry tests now PASSING! Phase 1 complete (5/5 tests)
+  - **Impact**: Critical forwarding fix - affects any code where CSR read immediately followed by register use
+  - **Tests Now Passing**:
+    - `test_umode_entry_from_mmode.s` ✅ (M→U transition via MRET)
+    - `test_umode_entry_from_smode.s` ✅ (S→U transition via SRET)
+
+- ✅ **Verified**: Quick regression fully passes (14/14 tests - 100%)
+  - All I/M/A/F/D/C extension tests passing
+  - No regressions from CSR forwarding fix
+  - Phase 1 privilege mode testing complete
+
+**Recent Work (Previous Session - 2025-10-25 Part 2)**:
 - 🎉 **CRITICAL FIX**: Configuration mismatch causing test failures and infinite loops
   - **Symptom**: `test_fp_compare_simple` timing out with infinite loop, all tests compiled with compressed instructions failing
   - **Root Cause #1**: Configuration mismatch between test compilation and CPU simulation
@@ -419,17 +465,9 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ✅ **Verified**: Quick regression passes (14/14 tests: ✅) - no regressions from fixes
 
 **Known Issues**:
-- 🔧 **ACTIVE INVESTIGATION**: U-mode entry failures (M→U and S→U transitions)
-  - **Status**: Two Phase 1 tests failing with x28=0xDEADDEAD marker
-  - **Failing Tests**:
-    - `test_umode_entry_from_mmode.s` - M→U transition via MRET ❌
-    - `test_umode_entry_from_smode.s` - S→U transition via SRET ❌
-  - **Next Steps for Next Session**:
-    1. Debug why M→U MRET transition fails
-    2. Debug why S→U SRET transition fails
-    3. Verify mstatus.MPP and mstatus.SPP updates
-    4. Check privilege mode transition logic
-  - **Impact**: Blocks Phase 1 completion (currently 3/5 tests passing)
+- ✅ **RESOLVED**: U-mode entry failures - Fixed in session 2025-10-25 Part 3
+  - Root cause was CSR forwarding bug + test offset bugs + S-mode macro bug
+  - Both tests now passing
 
 - 🔧 **KNOWN ISSUE**: SRET/CSR pipeline hazard (documented, not blocking)
   - **Status**: Pipeline hazard when CSR instruction immediately follows SRET
