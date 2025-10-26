@@ -482,6 +482,9 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] satp;         // SATP register (for MMU)
   wire [XLEN-1:0] csr_satp;     // Alias for MMU
   wire            mstatus_mie;
+  wire            mstatus_sie;
+  wire            mstatus_mpie;
+  wire            mstatus_spie;
   wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
   wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
   // Note: csr_frm and csr_fflags are now connected to CSR file outputs
@@ -1520,6 +1523,9 @@ module rv_core_pipelined #(
     .sret(exmem_is_sret && exmem_valid && !exception),
     .sepc_out(sepc),
     .mstatus_mie(mstatus_mie),
+    .mstatus_sie(mstatus_sie),
+    .mstatus_mpie(mstatus_mpie),
+    .mstatus_spie(mstatus_spie),
     .illegal_csr(ex_illegal_csr),
     // Privilege mode tracking (Phase 1)
     .current_priv(current_priv),
@@ -1661,6 +1667,146 @@ module rv_core_pipelined #(
   assign ex_fp_mem_write_data_mux = ex_fp_operand_b;        // FP stores use FP rs2
 
   //==========================================================================
+  // CSR MRET/SRET Forwarding
+  //==========================================================================
+  // When MRET/SRET is in MEM stage, it updates mstatus at the end of the cycle.
+  // If a CSR read of mstatus/sstatus is in EX stage, it needs the updated value.
+  // Forward the "next" mstatus value to avoid reading stale data.
+
+  // MSTATUS bit positions (from csr_file.v)
+  localparam MSTATUS_MIE_BIT  = 3;
+  localparam MSTATUS_SIE_BIT  = 1;
+  localparam MSTATUS_MPIE_BIT = 7;
+  localparam MSTATUS_SPIE_BIT = 5;
+  localparam MSTATUS_SPP_BIT  = 8;
+  localparam MSTATUS_MPP_LSB  = 11;
+  localparam MSTATUS_MPP_MSB  = 12;
+  localparam MSTATUS_SUM_BIT  = 18;
+  localparam MSTATUS_MXR_BIT  = 19;
+
+  // CSR addresses
+  localparam CSR_MSTATUS = 12'h300;
+  localparam CSR_SSTATUS = 12'h100;
+
+  // Compute the "next" mstatus value after MRET
+  function [XLEN-1:0] compute_mstatus_after_mret;
+    input [XLEN-1:0] current_mstatus;
+    input mpie_val;
+    reg [XLEN-1:0] next_mstatus;
+    begin
+      next_mstatus = current_mstatus;
+      // MIE ← MPIE
+      next_mstatus[MSTATUS_MIE_BIT] = mpie_val;
+      // MPIE ← 1
+      next_mstatus[MSTATUS_MPIE_BIT] = 1'b1;
+      // MPP ← U (2'b00)
+      next_mstatus[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] = 2'b00;
+      compute_mstatus_after_mret = next_mstatus;
+    end
+  endfunction
+
+  // Compute the "next" mstatus value after SRET
+  function [XLEN-1:0] compute_mstatus_after_sret;
+    input [XLEN-1:0] current_mstatus;
+    input spie_val;
+    reg [XLEN-1:0] next_mstatus;
+    begin
+      next_mstatus = current_mstatus;
+      // SIE ← SPIE
+      next_mstatus[MSTATUS_SIE_BIT] = spie_val;
+      // SPIE ← 1
+      next_mstatus[MSTATUS_SPIE_BIT] = 1'b1;
+      // SPP ← U (1'b0)
+      next_mstatus[MSTATUS_SPP_BIT] = 1'b0;
+      compute_mstatus_after_sret = next_mstatus;
+    end
+  endfunction
+
+  // Construct current mstatus from individual bits (matching csr_file.v format)
+  wire [XLEN-1:0] current_mstatus_reconstructed;
+  assign current_mstatus_reconstructed = {
+    {(XLEN-32){1'b0}},           // Upper bits (if XLEN > 32)
+    12'b0,                        // Reserved bits [31:20]
+    mstatus_mxr,                  // MXR [19]
+    mstatus_sum,                  // SUM [18]
+    5'b0,                         // Reserved bits [17:13]
+    mpp,                          // MPP [12:11]
+    2'b0,                         // Reserved [10:9]
+    spp,                          // SPP [8]
+    mstatus_mpie,                 // MPIE [7]
+    1'b0,                         // Reserved [6]
+    mstatus_spie,                 // SPIE [5]
+    1'b0,                         // Reserved [4]
+    mstatus_mie,                  // MIE [3]
+    1'b0,                         // Reserved [2]
+    mstatus_sie,                  // SIE [1]
+    1'b0                          // Reserved [0]
+  };
+
+  // Track MRET/SRET from previous cycle (for forwarding after hazard stall)
+  reg exmem_is_mret_r;
+  reg exmem_is_sret_r;
+  reg exmem_valid_r;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      exmem_is_mret_r <= 1'b0;
+      exmem_is_sret_r <= 1'b0;
+      exmem_valid_r <= 1'b0;
+    end else begin
+      exmem_is_mret_r <= exmem_is_mret && exmem_valid && !exception;
+      exmem_is_sret_r <= exmem_is_sret && exmem_valid && !exception;
+      exmem_valid_r <= exmem_valid;
+      `ifdef DEBUG_CSR_FORWARD
+      if (exmem_is_mret && exmem_valid) begin
+        $display("[CSR_FORWARD] Capturing MRET: exmem_mret=%b exmem_valid=%b exc=%b -> mret_r=%b",
+                 exmem_is_mret, exmem_valid, exception, exmem_is_mret && exmem_valid && !exception);
+      end
+      `endif
+    end
+  end
+
+  // Forward mstatus if:
+  // Case 1: MRET is in MEM stage NOW (same cycle - no stall occurred)
+  // Case 2: MRET was in MEM stage LAST cycle (CSR stalled, now advancing)
+  // CSR being read must be mstatus or sstatus
+  wire forward_mret_mstatus = ((exmem_is_mret && exmem_valid && !exception) || exmem_is_mret_r) &&
+                              (idex_is_csr && idex_valid) &&
+                              ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS));
+
+  wire forward_sret_mstatus = ((exmem_is_sret && exmem_valid && !exception) || exmem_is_sret_r) &&
+                              (idex_is_csr && idex_valid) &&
+                              ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS));
+
+  wire [XLEN-1:0] ex_csr_rdata_forwarded;
+  // If MRET/SRET was last cycle, mstatus is already updated - just use current value
+  // If MRET/SRET is this cycle, compute what it will be
+  wire [XLEN-1:0] mstatus_after_mret = exmem_is_mret_r ? current_mstatus_reconstructed :
+                                        compute_mstatus_after_mret(current_mstatus_reconstructed, mstatus_mpie);
+  wire [XLEN-1:0] mstatus_after_sret = exmem_is_sret_r ? current_mstatus_reconstructed :
+                                        compute_mstatus_after_sret(current_mstatus_reconstructed, mstatus_spie);
+
+  assign ex_csr_rdata_forwarded = forward_mret_mstatus ? mstatus_after_mret :
+                                  forward_sret_mstatus ? mstatus_after_sret :
+                                  ex_csr_rdata;  // Normal case: no forwarding needed
+
+  `ifdef DEBUG_CSR_FORWARD
+  always @(posedge clk) begin
+    if (forward_mret_mstatus || forward_sret_mstatus) begin
+      $display("[CSR_FORWARD] Time=%0t forward_mret=%b forward_sret=%b", $time, forward_mret_mstatus, forward_sret_mstatus);
+      $display("[CSR_FORWARD]   current_mstatus=%h forwarded_mstatus=%h", current_mstatus_reconstructed, ex_csr_rdata_forwarded);
+      $display("[CSR_FORWARD]   exmem_is_mret=%b exmem_is_sret=%b exmem_valid=%b", exmem_is_mret, exmem_is_sret, exmem_valid);
+      $display("[CSR_FORWARD]   idex_is_csr=%b idex_valid=%b idex_csr_addr=%h", idex_is_csr, idex_valid, idex_csr_addr);
+    end
+    if (idex_is_csr && idex_valid && ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS))) begin
+      $display("[CSR_FORWARD] CSR read: addr=%h rdata=%h (forwarded=%h)", idex_csr_addr, ex_csr_rdata, ex_csr_rdata_forwarded);
+      $display("[CSR_FORWARD]   Conditions: exmem_mret=%b exmem_mret_r=%b exmem_valid=%b exc=%b",
+               exmem_is_mret, exmem_is_mret_r, exmem_valid, exception);
+      $display("[CSR_FORWARD]   forward_mret=%b forward_sret=%b", forward_mret_mstatus, forward_sret_mstatus);
+    end
+  end
+  `endif
+
+  //==========================================================================
   // EX/MEM Pipeline Register
   //==========================================================================
   exmem_register #(
@@ -1687,7 +1833,7 @@ module rv_core_pipelined #(
     // CSR inputs
     .csr_addr_in(idex_csr_addr),
     .csr_we_in(idex_csr_we),
-    .csr_rdata_in(ex_csr_rdata),
+    .csr_rdata_in(ex_csr_rdata_forwarded),  // Use forwarded value for MRET/SRET
     // Exception inputs
     // Clear xRET signals only if the xRET itself caused an illegal instruction exception
     // (illegal due to insufficient privilege). This prevents the xRET from propagating

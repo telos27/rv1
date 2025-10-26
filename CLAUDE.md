@@ -248,7 +248,39 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏳ `test_mstatus_nested_traps.s` - Nested trap handling (pending)
 - ⏳ `test_mstatus_interrupt_enables.s` - Interrupt enable verification (pending)
 
-**Recent Work (Latest Session - 2025-10-25 Part 3)**:
+**Recent Work (Latest Session - 2025-10-25 Part 4)**:
+- 🔧 **IN PROGRESS**: MRET/SRET CSR forwarding timing issue investigation
+  - **Symptom**: Test `test_mstatus_state_mret` fails on stage 2 - CSR read after MRET sees stale mstatus value
+  - **Investigation Findings**:
+    1. MRET correctly updates mstatus in CSR file (verified: MPIE→MIE transfer works)
+    2. CSR RAW hazard detection correctly stalls pipeline when CSR read follows MRET
+    3. Added CSR forwarding infrastructure for MRET/SRET mstatus updates
+    4. Added `exmem_is_mret_r` tracking register to detect MRET in previous cycle
+    5. BUT: Timing issue persists - forwarding not triggering at correct cycle
+  - **Root Cause Analysis**:
+    - Timeline: Cycle N: MRET in MEM (stalls CSR read in ID)
+    - Cycle N+1: MRET completes, CSR read advances to EX
+    - Problem: `exmem_is_mret` becomes 0 before CSR read reaches EX
+    - Attempted fix: Track `exmem_is_mret_r` from previous cycle
+    - Issue: Debug shows `exmem_is_mret_r=0` when CSR read happens (timing mismatch)
+  - **Infrastructure Added** (ready for completion):
+    - CSR status outputs: `mstatus_sie`, `mstatus_mpie`, `mstatus_spie` (csr_file.v:40-42)
+    - MRET/SRET tracking registers: `exmem_is_mret_r`, `exmem_is_sret_r` (rv32i_core_pipelined.v:1747-1766)
+    - Forwarding computation functions: `compute_mstatus_after_mret/sret` (rv32i_core_pipelined.v:1690-1721)
+    - Mstatus reconstruction from individual bits (rv32i_core_pipelined.v:1725-1744)
+    - Debug infrastructure: `DEBUG_CSR_FORWARD` flag support
+  - **Files Modified**:
+    - `rtl/core/csr_file.v:40-42,591-594,457-460` - Added status outputs, MRET debug
+    - `rtl/core/rv32i_core_pipelined.v:485-487,1670-1784,1785` - CSR forwarding logic
+    - `tools/test_pipelined.sh:29-31` - Added DEBUG_CSR_FORWARD flag
+  - **Status**: Forwarding infrastructure in place but timing issue remains
+  - **Next Steps**:
+    - Option A: Debug why exmem_is_mret_r isn't visible to forwarding logic at correct time
+    - Option B: Workaround with NOPs in tests (add NOP after MRET/SRET before CSR read)
+    - Recommend Option B for now (unblock testing), revisit Option A later
+  - **Workaround**: Insert NOP between xRET and CSR reads in tests
+
+**Recent Work (Previous Session - 2025-10-25 Part 3)**:
 - 🎉 **CRITICAL FIX**: CSR forwarding bug preventing CSR read values from being forwarded
   - **Symptom**: U-mode entry tests (`test_umode_entry_from_mmode`, `test_umode_entry_from_smode`) failing with x28=0xDEADDEAD
   - **Root Cause #1**: CSR read values not included in MEM-stage forwarding
@@ -469,19 +501,28 @@ A comprehensive privilege mode testing framework implementation in progress:
   - Root cause was CSR forwarding bug + test offset bugs + S-mode macro bug
   - Both tests now passing
 
-- 🔧 **KNOWN ISSUE**: SRET/CSR pipeline hazard (documented, not blocking)
-  - **Status**: Pipeline hazard when CSR instruction immediately follows SRET
+- 🔧 **KNOWN ISSUE**: MRET/SRET CSR forwarding timing issue (under investigation)
+  - **Status**: CSR reads immediately after MRET/SRET may see stale mstatus values
   - **Observation**:
-    - SRET with NOPs after: SPIE correctly set to 1 ✅
-    - SRET with immediate CSR read: SPIE remains 0 ❌
-  - **Root Cause**: CSR instruction in EX stage computes stale write value before SRET in MEM completes
-  - **Current Mitigation**: Enhanced hazard detection partially addresses issue
-  - **Workaround**: Insert NOP between SRET and CSR operations (compiler hint needed)
-  - **Impact**: Does not block current development (tests use NOPs as workaround)
+    - xRET with NOPs after: mstatus correctly updated ✅ (verified in session 2025-10-25-4)
+    - xRET with immediate CSR read: CSR sees old mstatus value ❌
+  - **Root Cause**: Cycle timing mismatch between xRET completion and CSR forwarding
+    - CSR RAW hazard detection correctly stalls pipeline
+    - MRET correctly updates mstatus register in CSR file
+    - But forwarding logic doesn't see xRET signal at correct cycle
+  - **Current Mitigation**:
+    - CSR forwarding infrastructure added (functions, tracking regs, debug)
+    - Hazard detection stalls pipeline (prevents wrong-path reads)
+    - Forwarding logic present but timing issue remains
+  - **Workaround**: Insert NOP between xRET and CSR operations
+  - **Impact**: Tests need NOPs as workaround; compiler would need to emit NOPs
   - **Code Locations**:
-    - `rtl/core/csr_file.v:441-444` - SRET implementation (correct)
-    - `rtl/core/hazard_detection_unit.v:281-282` - CSR-xRET hazard detection (partial fix)
-    - `rtl/core/rv32i_core_pipelined.v:1416` - CSR operations use EX stage signals
+    - `rtl/core/csr_file.v:455-465` - MRET/SRET implementation (correct)
+    - `rtl/core/hazard_detection_unit.v:278-279` - CSR-xRET hazard detection (working)
+    - `rtl/core/rv32i_core_pipelined.v:1670-1784` - CSR forwarding infrastructure (partial)
+  - **Debug Commands**:
+    - `DEBUG_CSR_FORWARD=1 env XLEN=32 ./tools/test_pipelined.sh <test_name>`
+  - **TODO**: Resolve timing issue between exmem_is_mret_r and forwarding logic
 
 **Remaining Phases** (7 Phases, 29 tests remaining):
 - Phase 2: Status Register State Machine (5 tests) - 🟠 HIGH - **NEXT**

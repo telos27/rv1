@@ -37,6 +37,9 @@ module csr_file #(
 
   // Status outputs
   output wire             mstatus_mie,    // Global interrupt enable
+  output wire             mstatus_sie,    // Supervisor interrupt enable
+  output wire             mstatus_mpie,   // Machine previous interrupt enable
+  output wire             mstatus_spie,   // Supervisor previous interrupt enable
   output wire             illegal_csr,    // Invalid CSR access
 
   // Privilege mode tracking (Phase 1)
@@ -451,6 +454,10 @@ module csr_file #(
         end
       end else if (mret) begin
         // MRET: Return from machine-mode trap
+        `ifdef DEBUG_CSR_FORWARD
+        $display("[CSR_MRET] Time=%0t Executing MRET: MPIE=%b -> MIE, mstatus_before=%h",
+                 $time, mstatus_mpie_w, mstatus_r);
+        `endif
         mstatus_r[MSTATUS_MIE_BIT]  <= mstatus_mpie_w;  // Restore interrupt enable
         mstatus_r[MSTATUS_MPIE_BIT] <= 1'b1;          // Set MPIE to 1
         // Per RISC-V spec: MPP is set to least privileged mode (U if implemented, else M)
@@ -586,6 +593,9 @@ module csr_file #(
   assign mepc_out    = mepc_r;
   assign sepc_out    = sepc_r;
   assign mstatus_mie = mstatus_mie_w;
+  assign mstatus_sie = mstatus_sie_w;
+  assign mstatus_mpie = mstatus_mpie_w;
+  assign mstatus_spie = mstatus_spie_w;
 
   // Privilege mode outputs
   assign mpp_out     = mstatus_mpp_w;

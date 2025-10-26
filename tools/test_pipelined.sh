@@ -26,6 +26,9 @@ fi
 if [ ! -z "$DEBUG_CSR" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_CSR"
 fi
+if [ ! -z "$DEBUG_CSR_FORWARD" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_CSR_FORWARD"
+fi
 if [ ! -z "$DEBUG_PRIV" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_PRIV"
 fi
