@@ -21,6 +21,7 @@ _start:
     # Setup: Clear MPIE, Set MIE
     DISABLE_MPIE                    # MPIE ← 0
     ENABLE_MIE                      # MIE ← 1
+    SET_MPP PRIV_M                  # MPP ← M (stay in M-mode after MRET)
 
     # Set return address
     la t0, after_mret1
@@ -44,6 +45,7 @@ after_mret1:
     # Setup: Set MPIE, Clear MIE
     ENABLE_MPIE                     # MPIE ← 1
     DISABLE_MIE                     # MIE ← 0
+    SET_MPP PRIV_M                  # MPP ← M (stay in M-mode after MRET)
 
     # Set return address
     la t0, after_mret2

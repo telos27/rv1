@@ -1744,22 +1744,50 @@ module rv_core_pipelined #(
   };
 
   // Track MRET/SRET from previous cycle (for forwarding after hazard stall)
+  // These flags must stay set until the CSR read that caused the hazard actually executes
   reg exmem_is_mret_r;
   reg exmem_is_sret_r;
   reg exmem_valid_r;
+
+  // Detect when a CSR instruction consumes the forwarding
+  // Only consume if the CSR read will actually complete (not invalidated by exception)
+  wire mret_forward_consumed = exmem_is_mret_r && idex_is_csr && idex_valid && !exception &&
+                                ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS));
+  wire sret_forward_consumed = exmem_is_sret_r && idex_is_csr && idex_valid && !exception &&
+                                ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS));
+
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       exmem_is_mret_r <= 1'b0;
       exmem_is_sret_r <= 1'b0;
       exmem_valid_r <= 1'b0;
     end else begin
-      exmem_is_mret_r <= exmem_is_mret && exmem_valid && !exception;
-      exmem_is_sret_r <= exmem_is_sret && exmem_valid && !exception;
+      // Set when MRET/SRET is in MEM, clear when CSR read consumes it
+      if (mret_forward_consumed) begin
+        exmem_is_mret_r <= 1'b0;  // Clear when forwarding is consumed
+      end else if (exmem_is_mret && exmem_valid && !exception) begin
+        exmem_is_mret_r <= 1'b1;  // Set when MRET enters MEM
+      end
+      // Else: hold current value (stays set during stall)
+
+      if (sret_forward_consumed) begin
+        exmem_is_sret_r <= 1'b0;  // Clear when forwarding is consumed
+      end else if (exmem_is_sret && exmem_valid && !exception) begin
+        exmem_is_sret_r <= 1'b1;  // Set when SRET enters MEM
+      end
+      // Else: hold current value (stays set during stall)
+
       exmem_valid_r <= exmem_valid;
+
       `ifdef DEBUG_CSR_FORWARD
       if (exmem_is_mret && exmem_valid) begin
-        $display("[CSR_FORWARD] Capturing MRET: exmem_mret=%b exmem_valid=%b exc=%b -> mret_r=%b",
-                 exmem_is_mret, exmem_valid, exception, exmem_is_mret && exmem_valid && !exception);
+        $display("[CSR_FORWARD] MRET in MEM: setting mret_r");
+      end
+      if (mret_forward_consumed) begin
+        $display("[CSR_FORWARD] CSR read consumed MRET forwarding: clearing mret_r");
+      end
+      if (exmem_is_mret_r && !mret_forward_consumed) begin
+        $display("[CSR_FORWARD] Holding mret_r: waiting for CSR read in EX");
       end
       `endif
     end
@@ -1799,9 +1827,11 @@ module rv_core_pipelined #(
     end
     if (idex_is_csr && idex_valid && ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS))) begin
       $display("[CSR_FORWARD] CSR read: addr=%h rdata=%h (forwarded=%h)", idex_csr_addr, ex_csr_rdata, ex_csr_rdata_forwarded);
-      $display("[CSR_FORWARD]   Conditions: exmem_mret=%b exmem_mret_r=%b exmem_valid=%b exc=%b",
-               exmem_is_mret, exmem_is_mret_r, exmem_valid, exception);
+      $display("[CSR_FORWARD]   Conditions: exmem_mret=%b exmem_mret_r=%b exmem_valid=%b exc=%b exc_code=%d",
+               exmem_is_mret, exmem_is_mret_r, exmem_valid, exception, exception_code);
       $display("[CSR_FORWARD]   forward_mret=%b forward_sret=%b", forward_mret_mstatus, forward_sret_mstatus);
+      $display("[CSR_FORWARD]   idex: PC=%h instr=%h is_ebreak=%b is_ecall=%b illegal=%b",
+               idex_pc, idex_instruction, idex_is_ebreak, idex_is_ecall, idex_illegal_inst);
     end
   end
   `endif
