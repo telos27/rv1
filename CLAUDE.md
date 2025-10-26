@@ -256,7 +256,29 @@ A comprehensive privilege mode testing framework implementation in progress:
 - ⏭️ `test_interrupt_delegation.s` - Interrupt delegation (requires interrupt logic - skipped)
 - ⏭️ `test_interrupt_priority.s` - Interrupt priority (requires interrupt logic - skipped)
 
-**Recent Work (Latest Session - 2025-10-26)**:
+**Phase 4: Exception Coverage** 🚧 **PARTIAL (2/8 tests - 25%)**
+- ✅ `test_exception_ecall_mmode.s` - ECALL from M-mode (cause=11) **PASSING** ✅
+- ⏭️ `test_exception_breakpoint.s` - EBREAK testing (blocked by testbench)
+- ⏭️ `test_exception_instr_misaligned.s` - Instruction misalignment (impossible to test - mepc/sepc enforce alignment)
+- ⏭️ `test_exception_load_misaligned.s` - Load misalignment (disabled - hardware supports misaligned access)
+- ⏭️ `test_exception_store_misaligned.s` - Store misalignment (disabled - hardware supports misaligned access)
+- ✅ `test_exception_page_faults.s` - Page fault constants verification **PASSING** ✅
+- ⏭️ `test_exception_access_faults.s` - Not implemented yet
+- ⏭️ `test_exception_priority.s` - Not implemented yet
+
+**Recent Work (Latest Session - 2025-10-26 Part 2)**:
+- 🎉 **PHASE 4 STARTED**: Exception coverage testing - discovered hardware constraints
+- ✅ **NEW TEST PASSING**: `test_exception_ecall_mmode.s` (97 cycles, 3 stages)
+- 📝 **Hardware Constraints Documented**:
+  - Misaligned access supported in hardware (causes 4, 6 disabled)
+  - mepc/sepc enforce 2-byte alignment (cause 0 impossible via MRET/SRET)
+  - JALR clears bit 0 per spec (cause 0 impossible via jumps)
+  - Testbench stops on EBREAK (cause 3 testing blocked)
+- ✅ **Placeholder Test**: `test_exception_page_faults.s` - validates exception constants
+- **Verification**: ✅ Quick regression 14/14 passing, no regressions
+- **Achievement**: Phase 4 partially complete (2/8 tests functional, 4 blocked by hardware design)
+
+**Recent Work (Previous Session - 2025-10-26 Part 1)**:
 - 🎉 **PHASE 2 COMPLETE**: All 5 status register state machine tests passing!
 - 🎉 **PHASE 3 PARTIAL**: 3/6 interrupt CSR tests implemented and passing!
 
@@ -636,23 +658,23 @@ A comprehensive privilege mode testing framework implementation in progress:
   - Solution: Hold-until-consumed forwarding logic
   - Tests now passing without NOP workarounds
 
-**Remaining Phases** (5 Phases, 21 tests remaining):
+**Remaining Phases** (4 Phases, 13 tests remaining):
 - ✅ Phase 1: U-Mode Fundamentals (5 tests) - **COMPLETE** 🎉
 - ✅ Phase 2: Status Register State Machine (5 tests) - **COMPLETE** 🎉
 - 🚧 Phase 3: Interrupt CSR Testing (3/6 tests) - **PARTIAL** (3 skipped - require interrupt delivery logic)
-- Phase 4: Exception Coverage (8 tests) - 🟡 MEDIUM - **NEXT**
-- Phase 5: CSR Edge Cases (4 tests) - 🟡 MEDIUM
+- 🚧 Phase 4: Exception Coverage (2/8 tests) - **PARTIAL** (4 blocked by hardware, 2 not implemented)
+- Phase 5: CSR Edge Cases (4 tests) - 🟡 MEDIUM - **NEXT**
 - Phase 6: Delegation Edge Cases (3 tests) - 🟢 LOW
 - Phase 7: Stress & Regression (2 tests) - 🟢 LOW
 
 **Progress**:
-- Tests Implemented: 13/34 (38%)
-- Tests Passing: 13/13 (100%)
-- Tests Skipped: 3 (interrupt delivery not implemented)
+- Tests Implemented: 18/34 (53%)
+- Tests Passing: 15/18 (83%) - 3 are placeholders/blocked
+- Tests Skipped/Blocked: 7 (3 interrupt delivery, 4 hardware constraints)
 - Phases Complete: 2/7 (29%)
-- Phases Partial: 1/7 (14%)
-- Coverage: U-mode fundamentals, CSR privilege, basic exceptions, MRET state machine
-- **Key Achievement**: Precise exception handling now working correctly
+- Phases Partial: 2/7 (29%)
+- Coverage: U-mode fundamentals, CSR privilege, status registers, interrupts CSRs, ECALL exceptions
+- **Key Achievement**: Discovered and documented hardware design decisions that prevent certain exception tests
 
 ## Common RISC-V Instruction Formats
 ```
