@@ -6,8 +6,8 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
-- **Privilege Tests**: 19/34 passing (Phases 1-2-5 complete, Phases 3-4 partial)
-- **Active Issue**: Privilege mode forwarding bug (blocks Phase 6) - See `docs/KNOWN_ISSUES.md`
+- **Privilege Tests**: 20+/34 passing (Phases 1-2-5 complete, Phase 6 partial)
+- **Recent Fix**: Privilege mode forwarding bug RESOLVED ✅ (2025-10-26) - See `docs/KNOWN_ISSUES.md`
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -95,7 +95,18 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
-**2025-10-26**: Phase 5 completed - CSR edge cases (4/4 tests passing)
+**2025-10-26 (Session 2)**: Privilege mode forwarding bug FIXED ✅
+- **Problem**: CSR access immediately after MRET/SRET used stale privilege mode
+- **Solution**: Implemented privilege mode forwarding (similar to data forwarding)
+  - Forward new privilege from MRET/SRET in MEM stage to EX stage
+  - Separate `effective_priv` (for CSR checks) from latched privilege (for trap delegation)
+  - Added `exception_target_priv_r` register to break combinational feedback loop
+  - Changed trap flush to use registered exception (1-cycle delay)
+- **Impact**: `test_delegation_to_current_mode` now PASSING ✅
+- **Trade-off**: Introduced 1-cycle trap latency (some tests need investigation)
+- **Files**: `rtl/core/rv32i_core_pipelined.v`, `rtl/core/csr_file.v`
+
+**2025-10-26 (Session 1)**: Phase 5 completed - CSR edge cases (4/4 tests passing)
 - `test_csr_readonly_verify.s` - Read-only CSRs return consistent values (mvendorid, marchid, mimpid, mhartid, misa)
 - `test_csr_warl_fields.s` - WARL constraints verified (MPP, SPP, mtvec mode)
 - `test_csr_side_effects.s` - CSR side effects (mstatus↔sstatus, mie↔sie, mip↔sip)

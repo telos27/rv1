@@ -43,7 +43,8 @@ module csr_file #(
   output wire             illegal_csr,    // Invalid CSR access
 
   // Privilege mode tracking (Phase 1)
-  input  wire [1:0]       current_priv,   // Current privilege mode
+  input  wire [1:0]       current_priv,   // Current privilege mode (for CSR access checks)
+  input  wire [1:0]       actual_priv,    // Actual privilege mode (for trap delegation)
   output wire [1:0]       trap_target_priv, // Target privilege for trap
   output wire [1:0]       mpp_out,        // Machine Previous Privilege
   output wire             spp_out,        // Supervisor Previous Privilege
@@ -595,7 +596,10 @@ module csr_file #(
     end
   endfunction
 
-  assign trap_target_priv = get_trap_target_priv(trap_cause, current_priv, medeleg_r);
+  // Use actual_priv for trap delegation (not forwarded effective privilege)
+  // The trap delegation decision must be based on the ACTUAL current privilege
+  // at the time of the exception, not the forwarded privilege from a pending xRET.
+  assign trap_target_priv = get_trap_target_priv(trap_cause, actual_priv, medeleg_r);
 
   // =========================================================================
   // Output Assignments

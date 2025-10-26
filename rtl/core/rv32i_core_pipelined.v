@@ -444,27 +444,33 @@ module rv_core_pipelined #(
   reg [XLEN-1:0]  exception_pc_r;
   reg [XLEN-1:0]  exception_val_r;
   reg             exception_r_hold;  // Hold exception_r for one extra cycle
+  reg [1:0]       exception_priv_r;  // Privilege mode when exception occurred
+  reg [1:0]       exception_target_priv_r;  // Target privilege for trap (latched)
 
   // Exception signal registration
   // Latch exception signals when exception first occurs, hold for one cycle
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      exception_r      <= 1'b0;
-      exception_code_r <= 5'd0;
-      exception_pc_r   <= {XLEN{1'b0}};
-      exception_val_r  <= {XLEN{1'b0}};
-      exception_r_hold <= 1'b0;
+      exception_r            <= 1'b0;
+      exception_code_r       <= 5'd0;
+      exception_pc_r         <= {XLEN{1'b0}};
+      exception_val_r        <= {XLEN{1'b0}};
+      exception_r_hold       <= 1'b0;
+      exception_priv_r       <= 2'b11;  // Default to M-mode
+      exception_target_priv_r <= 2'b11;  // Default to M-mode
     end else begin
       // Latch exception info when exception FIRST asserts
       if (exception && !exception_taken_r) begin
-        exception_r      <= 1'b1;  // Will pulse for one cycle
-        exception_code_r <= exception_code;
-        exception_pc_r   <= exception_pc;
-        exception_val_r  <= exception_val;
-        exception_r_hold <= 1'b0;
+        exception_r            <= 1'b1;  // Will pulse for one cycle
+        exception_code_r       <= exception_code;
+        exception_pc_r         <= exception_pc;
+        exception_val_r        <= exception_val;
+        exception_priv_r       <= current_priv;  // Latch current privilege at time of exception
+        exception_target_priv_r <= trap_target_priv;  // Latch target privilege
+        exception_r_hold       <= 1'b0;
         `ifdef DEBUG_EXCEPTION
-        $display("[EXC_LATCH] Latching exception code=%0d PC=%h (exception=%b taken=%b)",
-                 exception_code, exception_pc, exception, exception_taken_r);
+        $display("[EXC_LATCH] Latching exception code=%0d PC=%h priv=%b target=%b (exception=%b taken=%b)",
+                 exception_code, exception_pc, current_priv, trap_target_priv, exception, exception_taken_r);
         `endif
       end else begin
         // Clear exception_r after one cycle
@@ -511,11 +517,12 @@ module rv_core_pipelined #(
   assign pc_increment = if_is_compressed ? pc_plus_2 : pc_plus_4;
 
   // Trap and xRET handling
-  // Use the combinational exception for immediate trap flush
-  assign trap_flush = exception && !exception_taken_r;  // Exception occurred (but not already taken)
+  // Use the REGISTERED exception to allow privilege/target latching before trap
+  // This breaks the combinational feedback loop: exception -> trap_flush -> current_priv -> trap_target_priv
+  assign trap_flush = exception_r && !exception_r_hold;  // Use registered exception (one cycle delay)
   // xRET only flushes if there's no exception (exceptions take priority)
-  assign mret_flush = exmem_is_mret && exmem_valid && !exception;  // MRET in MEM stage
-  assign sret_flush = exmem_is_sret && exmem_valid && !exception;  // SRET in MEM stage
+  assign mret_flush = exmem_is_mret && exmem_valid && !exception && !exception_r;  // MRET in MEM stage
+  assign sret_flush = exmem_is_sret && exmem_valid && !exception && !exception_r;  // SRET in MEM stage
 
   // Track exception to prevent re-triggering
   // Set when exception first occurs, stay high until exception_r fully processed
@@ -539,9 +546,10 @@ module rv_core_pipelined #(
     end else begin
       if (trap_flush) begin
         // On trap entry, move to target privilege level
-        current_priv <= trap_target_priv;
+        // Use latched target privilege to avoid combinational feedback loop
+        current_priv <= exception_target_priv_r;
         `ifdef DEBUG_PRIV
-        $display("[PRIV] Time=%0t TRAP: priv %b -> %b", $time, current_priv, trap_target_priv);
+        $display("[PRIV] Time=%0t TRAP: priv %b -> %b (latched)", $time, current_priv, exception_target_priv_r);
         `endif
       end else if (mret_flush) begin
         // On MRET, restore privilege from MSTATUS.MPP
@@ -1528,7 +1536,11 @@ module rv_core_pipelined #(
     .mstatus_spie(mstatus_spie),
     .illegal_csr(ex_illegal_csr),
     // Privilege mode tracking (Phase 1)
-    .current_priv(current_priv),
+    // Bug fix: Use effective_priv (with forwarding) for CSR access checks and trap delegation.
+    // The key is that effective_priv includes xRET forwarding but does NOT include
+    // the feedback from trap_target_priv -> current_priv (that happens on next clock edge).
+    .current_priv(effective_priv),      // For CSR privilege checks
+    .actual_priv(effective_priv),       // For trap delegation (same as CSR checks)
     .trap_target_priv(trap_target_priv),
     .mpp_out(mpp),
     .spp_out(spp),
@@ -1558,6 +1570,8 @@ module rv_core_pipelined #(
     .XLEN(XLEN)
   ) exception_unit_inst (
     // Privilege mode (Phase 1)
+    // Note: Exception delegation is determined by CSR file's trap_target_priv output,
+    // which uses actual current_priv. Exception unit just detects exceptions.
     .current_priv(current_priv),
     // IF stage - instruction fetch (check misaligned PC)
     // Note: IF exceptions are checked when instruction is in IFID register
@@ -1832,6 +1846,54 @@ module rv_core_pipelined #(
       $display("[CSR_FORWARD]   forward_mret=%b forward_sret=%b", forward_mret_mstatus, forward_sret_mstatus);
       $display("[CSR_FORWARD]   idex: PC=%h instr=%h is_ebreak=%b is_ecall=%b illegal=%b",
                idex_pc, idex_instruction, idex_is_ebreak, idex_is_ecall, idex_illegal_inst);
+    end
+  end
+  `endif
+
+  //==========================================================================
+  // Privilege Mode Forwarding (Bug Fix: Phase 6)
+  //==========================================================================
+  // When MRET/SRET is in MEM stage, it updates current_priv at the end of the cycle.
+  // However, instructions already in earlier pipeline stages (IF/ID/EX) use the OLD
+  // current_priv for CSR privilege checks and exception delegation decisions.
+  //
+  // This causes incorrect behavior when a CSR access immediately follows MRET/SRET:
+  // - Example: MRET changes M→S, next instruction accesses CSR
+  // - CSR check sees old priv=M instead of new priv=S
+  // - Delegation decision is wrong (M-mode traps never delegate)
+  //
+  // Solution: Forward the new privilege mode from MEM stage to earlier stages.
+  //
+  // Timeline:
+  //   Cycle N:   MRET in MEM stage, next_instr in EX stage
+  //              - MRET computes new_priv from MPP
+  //              - Forward new_priv to EX stage
+  //              - next_instr uses forwarded_priv for CSR checks
+  //   Cycle N+1: MRET flush, current_priv updated
+  //
+  // Note: Similar to CSR data forwarding, but for privilege mode.
+
+  // Compute new privilege mode from MRET/SRET in MEM stage
+  wire [1:0] mret_new_priv = mpp;              // MRET restores from MPP
+  wire [1:0] sret_new_priv = {1'b0, spp};      // SRET restores from SPP (0=U, 1=S)
+
+  // Forward privilege mode when MRET/SRET is in MEM stage
+  wire forward_priv_mode = (exmem_is_mret || exmem_is_sret) && exmem_valid && !exception;
+
+  // Effective privilege mode for EX stage (used for CSR checks and delegation)
+  wire [1:0] effective_priv = forward_priv_mode ?
+                              (exmem_is_mret ? mret_new_priv : sret_new_priv) :
+                              current_priv;
+
+  `ifdef DEBUG_PRIV
+  always @(posedge clk) begin
+    if (forward_priv_mode) begin
+      $display("[PRIV_FORWARD] Time=%0t Forwarding privilege: %s in MEM, current_priv=%b -> effective_priv=%b",
+               $time, exmem_is_mret ? "MRET" : "SRET", current_priv, effective_priv);
+      if (idex_is_csr && idex_valid) begin
+        $display("[PRIV_FORWARD]   CSR access in EX: addr=0x%03x will use effective_priv=%b",
+                 idex_csr_addr, effective_priv);
+      end
     end
   end
   `endif

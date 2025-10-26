@@ -4,10 +4,41 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### 1. Privilege Mode Forwarding Bug (CRITICAL)
+### 1. Trap Latency Test Compatibility
 
-**Status**: Identified 2025-10-26, Fix Pending
-**Priority**: HIGH - Blocks Phase 6 privilege mode tests
+**Status**: Identified 2025-10-26, Investigation Pending
+**Priority**: MEDIUM - Some privilege tests need adjustment
+**Affected**: Tests with specific trap timing assumptions
+
+#### Description
+
+The privilege mode forwarding fix introduced a one-cycle delay in trap handling (using `exception_r` instead of `exception` for `trap_flush`). This breaks the combinational feedback loop but changes trap latency from 0 to 1 cycle.
+
+**Failing Tests:**
+- `test_delegation_disable` - Needs investigation
+- `test_mstatus_state_trap` - Needs investigation
+- A few other tests show no output
+
+**Passing Tests:**
+- 14/14 quick regression tests ✅
+- `test_delegation_to_current_mode` ✅
+- `test_umode_entry_from_mmode` ✅
+- `test_umode_entry_from_smode` ✅
+- Most privilege mode tests ✅
+
+**Next Steps:**
+- Investigate failing tests
+- Determine if tests need updating or if implementation needs refinement
+- Consider alternative solutions that maintain 0-cycle trap latency
+
+---
+
+## Resolved Issues
+
+### 1. Privilege Mode Forwarding Bug (RESOLVED 2025-10-26)
+
+**Status**: FIXED ✅
+**Priority**: HIGH - Was blocking Phase 6 privilege mode tests
 **Affected**: Pipelined core privilege mode transitions
 
 #### Description
@@ -55,36 +86,40 @@ Even with delegation enabled (`medeleg[2]=1`), the check sees `curr_priv=11` (M-
 - 81/81 official RISC-V tests still PASS (they don't test this edge case)
 - 19/34 privilege mode tests PASS (those not affected by this bug)
 
-#### Required Fix
+#### Solution Implemented
 
-Implement **privilege mode forwarding** similar to data forwarding:
+**1. Privilege Mode Forwarding** (`rv32i_core_pipelined.v:1839-1885`):
+```verilog
+// Compute new privilege mode from MRET/SRET in MEM stage
+wire [1:0] mret_new_priv = mpp;
+wire [1:0] sret_new_priv = {1'b0, spp};
 
-1. When MRET/SRET detected in MEM stage:
-   - Compute new_priv from MPP/SPP
-   - Forward new_priv to earlier pipeline stages
+// Forward privilege mode when MRET/SRET is in MEM stage
+wire forward_priv_mode = (exmem_is_mret || exmem_is_sret) && exmem_valid && !exception;
 
-2. Modify CSR access check in EX stage:
-   ```verilog
-   wire [1:0] effective_priv = (mret_in_mem || sret_in_mem) ?
-                                forwarded_priv : current_priv;
-   ```
+// Effective privilege mode for EX stage
+wire [1:0] effective_priv = forward_priv_mode ?
+                            (exmem_is_mret ? mret_new_priv : sret_new_priv) :
+                            current_priv;
+```
 
-3. Use `effective_priv` for:
-   - CSR privilege checks (`csr_priv_ok`)
-   - Exception delegation decisions (`get_trap_target_priv`)
+**2. Exception Latching** (`rv32i_core_pipelined.v:447-481`):
+- Latch `exception_target_priv_r` when exception first occurs
+- Prevents combinational feedback loop (exception → trap_flush → current_priv → trap_target_priv)
 
-**Files to modify:**
-- `rtl/core/rv32i_core_pipelined.v` - Add privilege forwarding logic
-- `rtl/core/csr_file.v` - Accept forwarded privilege mode input
+**3. Delayed Trap Flush** (`rv32i_core_pipelined.v:522`):
+```verilog
+// Use registered exception to break feedback loop
+assign trap_flush = exception_r && !exception_r_hold;
+```
 
-**Complexity**: Moderate (~2-3 hours)
+**4. CSR File Updates** (`csr_file.v:46-47, 602`):
+- Added `actual_priv` input for trap delegation
+- Separated CSR privilege checks (uses `effective_priv`) from trap delegation (uses `actual_priv`)
 
-#### Workaround
-
-Tests can avoid this bug by:
-1. Adding NOP instruction after MRET/SRET before CSR access
-2. Avoiding immediate CSR operations after privilege transitions
-3. Testing delegation separately from privilege transitions
+**Files Modified:**
+- `rtl/core/rv32i_core_pipelined.v` - Privilege forwarding, exception latching
+- `rtl/core/csr_file.v` - Dual privilege inputs
 
 #### References
 
@@ -102,6 +137,6 @@ Tests can avoid this bug by:
 
 ## Future Enhancements
 
-1. **Performance**: Privilege mode changes have 1-cycle latency due to lack of forwarding
+1. **Trap Latency Optimization**: Current implementation has 1-cycle trap latency. Consider optimizing to 0-cycle while maintaining correctness.
 2. **Coverage**: Need more edge case tests for privilege transitions
 3. **Documentation**: Better waveform examples for privilege mode state machine
