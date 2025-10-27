@@ -5,6 +5,7 @@
 // Parameterized for RV32/RV64
 
 `include "config/rv_config.vh"
+`include "config/rv_csr_defines.vh"
 
 module csr_file #(
   parameter XLEN = `XLEN
@@ -65,74 +66,9 @@ module csr_file #(
 );
 
   // =========================================================================
-  // CSR Address Definitions
-  // =========================================================================
-
-  // Machine Information Registers (read-only)
-  localparam CSR_MVENDORID = 12'hF11;
-  localparam CSR_MARCHID   = 12'hF12;
-  localparam CSR_MIMPID    = 12'hF13;
-  localparam CSR_MHARTID   = 12'hF14;
-
-  // Machine Trap Setup
-  localparam CSR_MSTATUS   = 12'h300;
-  localparam CSR_MISA      = 12'h301;
-  localparam CSR_MIE       = 12'h304;
-  localparam CSR_MTVEC     = 12'h305;
-
-  // Machine Trap Handling
-  localparam CSR_MSCRATCH  = 12'h340;
-  localparam CSR_MEPC      = 12'h341;
-  localparam CSR_MCAUSE    = 12'h342;
-  localparam CSR_MTVAL     = 12'h343;
-  localparam CSR_MIP       = 12'h344;
-
-  // Supervisor Trap Setup
-  localparam CSR_SSTATUS   = 12'h100;
-  localparam CSR_SIE       = 12'h104;
-  localparam CSR_STVEC     = 12'h105;
-
-  // Supervisor Trap Handling
-  localparam CSR_SSCRATCH  = 12'h140;
-  localparam CSR_SEPC      = 12'h141;
-  localparam CSR_SCAUSE    = 12'h142;
-  localparam CSR_STVAL     = 12'h143;
-  localparam CSR_SIP       = 12'h144;
-
-  // Supervisor Address Translation and Protection
-  localparam CSR_SATP      = 12'h180;
-
-  // Machine Trap Delegation
-  localparam CSR_MEDELEG   = 12'h302;
-  localparam CSR_MIDELEG   = 12'h303;
-
-  // Floating-Point CSRs (F/D extension)
-  localparam CSR_FFLAGS    = 12'h001;  // Floating-point exception flags
-  localparam CSR_FRM       = 12'h002;  // Floating-point rounding mode
-  localparam CSR_FCSR      = 12'h003;  // Full floating-point CSR
-
-  // CSR Operation Encodings (funct3)
-  localparam CSR_RW  = 3'b001;  // CSRRW
-  localparam CSR_RS  = 3'b010;  // CSRRS
-  localparam CSR_RC  = 3'b011;  // CSRRC
-  localparam CSR_RWI = 3'b101;  // CSRRWI
-  localparam CSR_RSI = 3'b110;  // CSRRSI
-  localparam CSR_RCI = 3'b111;  // CSRRCI
-
-  // =========================================================================
   // CSR Registers
   // =========================================================================
-
-  // Machine Status Register (mstatus) - Bit Position Constants
-  localparam MSTATUS_SIE_BIT  = 1;   // Supervisor Interrupt Enable
-  localparam MSTATUS_MIE_BIT  = 3;   // Machine Interrupt Enable
-  localparam MSTATUS_SPIE_BIT = 5;   // Supervisor Previous Interrupt Enable
-  localparam MSTATUS_MPIE_BIT = 7;   // Machine Previous Interrupt Enable
-  localparam MSTATUS_SPP_BIT  = 8;   // Supervisor Previous Privilege
-  localparam MSTATUS_MPP_LSB  = 11;  // Machine Previous Privilege [11]
-  localparam MSTATUS_MPP_MSB  = 12;  // Machine Previous Privilege [12]
-  localparam MSTATUS_SUM_BIT  = 18;  // Supervisor User Memory access
-  localparam MSTATUS_MXR_BIT  = 19;  // Make eXecutable Readable
+  // Note: CSR addresses and bit positions are defined in rv_csr_defines.vh
 
   // Machine Status Register - Single register storage
   reg [XLEN-1:0] mstatus_r;

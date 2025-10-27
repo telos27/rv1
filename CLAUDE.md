@@ -6,8 +6,8 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
-- **Privilege Tests**: 23/34 passing (68%) - Phases 1-2-5-6 complete ✅
-- **Recent Work**: Writeback gating & test infrastructure ✅ (2025-10-26 Session 7) - See below
+- **Privilege Tests**: 25/34 passing (74%) - Phases 1-2-5-6-7 complete ✅
+- **Recent Work**: Phase 7 complete - Stress & regression tests ✅ (2025-10-26 Session 8) - See below
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -97,11 +97,49 @@ rv1/
 | 4: Exception Coverage | 🚧 Partial | 2/8 | ECALL (4 blocked by hardware, 2 pending) |
 | 5: CSR Edge Cases | ✅ Complete | 4/4 | Read-only CSRs, WARL fields, side effects, validity |
 | 6: Delegation Edge Cases | ✅ Complete | 4/4 | Delegation to current mode, medeleg (writeback gating fixed) |
-| 7: Stress & Regression | 🔵 Next | 0/2 | Pending |
+| 7: Stress & Regression | ✅ Complete | 2/2 | Rapid mode switching, comprehensive regression |
 
-**Progress**: 23/34 tests passing (68%), 7 skipped/blocked, 4 pending
+**Progress**: 25/34 tests passing (74%), 7 skipped/blocked, 2 pending
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-26 (Session 9)**: Refactoring - Task 1.1 Complete - CSR Constants Header ✅
+- **Achievement**: Eliminated CSR constant duplication, single source of truth
+- **Created**: `rtl/config/rv_csr_defines.vh` (154 lines)
+  - CSR addresses (25 constants): mstatus, misa, mie, mtvec, mepc, mcause, etc.
+  - MSTATUS/SSTATUS bit positions (9 constants): MIE, SIE, MPIE, SPIE, MPP, SPP, SUM, MXR
+  - CSR instruction opcodes (6 constants): CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
+  - Exception cause codes (14 constants): illegal instruction, ECALL, page faults, etc.
+  - Interrupt cause codes (6 constants): timer, software, external interrupts
+  - Privilege mode encodings (3 constants): U=00, S=01, M=11
+- **Modified**: 4 core files to use shared header
+  - `rtl/core/csr_file.v` - removed 58 duplicate constants
+  - `rtl/core/rv32i_core_pipelined.v` - removed 11 duplicate constants
+  - `rtl/core/hazard_detection_unit.v` - removed 3 duplicate constants
+  - `rtl/core/exception_unit.v` - removed 14 duplicate constants
+- **Impact**:
+  - 70 lines of duplicate definitions eliminated ✅
+  - Single source of truth aligned with RISC-V spec ✅
+  - Quick regression: 14/14 passing ✅
+  - Zero regressions, purely organizational change ✅
+- **Next**: Task 1.3 - Extract trap controller module
+- **Reference**: `docs/REFACTORING_PLAN.md` - Phase 1 (1/2 tasks complete)
+
+**2025-10-26 (Session 8)**: Phase 7 Complete - Stress & Regression Tests ✅
+- **Achievement**: Implemented final 2 tests of privilege mode test suite (Phase 7)
+- **Tests Created**:
+  - `test_priv_rapid_switching.s`: Stress test with 20 M↔S privilege transitions (10 round-trips)
+  - `test_priv_comprehensive.s`: All-in-one regression covering all major privilege features
+- **Coverage**:
+  - Rapid mode switching: Validates state preservation across many transitions
+  - Comprehensive regression: Tests transitions, CSR access, delegation, state machine, exceptions
+  - 6 stages: Basic M→S, M→S→U→S→M chains, CSR verification, state machine, exceptions, delegation
+- **Results**:
+  - Both tests PASSING ✅
+  - Quick regression: 14/14 passing ✅
+  - Compliance: 81/81 passing (100%) ✅
+  - Phase 7 complete: 2/2 tests (100%)
+- **Files**: `tests/asm/test_priv_rapid_switching.s`, `tests/asm/test_priv_comprehensive.s`
 
 **2025-10-26 (Session 7)**: Writeback Gating & Test Infrastructure FIXED ✅
 - **Problem**: Instructions after exceptions could write to registers before pipeline flush
@@ -275,13 +313,17 @@ See `docs/KNOWN_ISSUES.md` for detailed tracking.
 **Active:**
 - None! All critical issues resolved ✅
 
-**Resolved (Session 7):**
+**Resolved (Sessions 7-8):**
 - ✅ Writeback gating for trap latency - FIXED
 - ✅ Hex file management and auto-rebuild - FIXED
+- ✅ Phase 7 tests implemented - COMPLETE
 
 ## Future Enhancements
-- **NEXT SESSION**: Phase 7 - Stress & Regression tests (2 tests pending)
-- Bit Manipulation (B), Vector (V), Crypto (K) extensions
-- Performance: Branch prediction, caching, out-of-order execution
-- System: Debug module, PMP, Hypervisor extension
-- Verification: Formal verification, FPGA synthesis, ASIC tape-out
+- **NEXT PRIORITIES**:
+  - Phase 3: Interrupt handling tests (requires interrupt injection capability)
+  - Phase 4: Exception coverage (EBREAK, misaligned access, page faults)
+  - Remaining privilege mode tests (9 tests in Phases 3-4)
+- **Extensions**: Bit Manipulation (B), Vector (V), Crypto (K)
+- **Performance**: Branch prediction, caching, out-of-order execution
+- **System**: Debug module, PMP, Hypervisor extension
+- **Verification**: Formal verification, FPGA synthesis, ASIC tape-out

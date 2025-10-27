@@ -6,6 +6,8 @@
 // ⚠️ KNOWN ISSUE: Atomic forwarding stall is overly conservative (~6% overhead)
 // See line ~126 for detailed explanation and proper fix (requires adding clk/reset_n)
 
+`include "config/rv_csr_defines.vh"
+
 module hazard_detection_unit (
   input  wire        clk,              // Clock for debug logging
   // Inputs from ID/EX register (instruction in EX stage)
@@ -200,9 +202,7 @@ module hazard_detection_unit (
   //       fpu_busy (operation in progress) and idex_fp_alu_en (FP op just started).
   //       We don't stall when fpu_done=1 because that means the operation has completed
   //       and flags are ready.
-  localparam CSR_FFLAGS = 12'h001;
-  localparam CSR_FRM    = 12'h002;
-  localparam CSR_FCSR   = 12'h003;
+  // Note: CSR addresses defined in rv_csr_defines.vh
 
   wire csr_accesses_fp_flags;
   wire csr_fpu_dependency_stall;

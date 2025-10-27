@@ -6,6 +6,7 @@
 // Date: 2025-10-10
 
 `include "config/rv_config.vh"
+`include "config/rv_csr_defines.vh"
 
 module rv_core_pipelined #(
   parameter XLEN = `XLEN,
@@ -1742,21 +1743,7 @@ module rv_core_pipelined #(
   // When MRET/SRET is in MEM stage, it updates mstatus at the end of the cycle.
   // If a CSR read of mstatus/sstatus is in EX stage, it needs the updated value.
   // Forward the "next" mstatus value to avoid reading stale data.
-
-  // MSTATUS bit positions (from csr_file.v)
-  localparam MSTATUS_MIE_BIT  = 3;
-  localparam MSTATUS_SIE_BIT  = 1;
-  localparam MSTATUS_MPIE_BIT = 7;
-  localparam MSTATUS_SPIE_BIT = 5;
-  localparam MSTATUS_SPP_BIT  = 8;
-  localparam MSTATUS_MPP_LSB  = 11;
-  localparam MSTATUS_MPP_MSB  = 12;
-  localparam MSTATUS_SUM_BIT  = 18;
-  localparam MSTATUS_MXR_BIT  = 19;
-
-  // CSR addresses
-  localparam CSR_MSTATUS = 12'h300;
-  localparam CSR_SSTATUS = 12'h100;
+  // Note: MSTATUS bit positions and CSR addresses defined in rv_csr_defines.vh
 
   // Compute the "next" mstatus value after MRET
   function [XLEN-1:0] compute_mstatus_after_mret;

@@ -5,6 +5,7 @@
 // Date: 2025-10-10
 
 `include "config/rv_config.vh"
+`include "config/rv_csr_defines.vh"
 
 module exception_unit #(
   parameter XLEN = `XLEN
@@ -47,23 +48,9 @@ module exception_unit #(
 );
 
   // =========================================================================
-  // Exception Code Definitions (RISC-V Spec)
+  // Exception Code Definitions
   // =========================================================================
-
-  localparam CAUSE_INST_ADDR_MISALIGNED = 5'd0;
-  localparam CAUSE_INST_ACCESS_FAULT    = 5'd1;
-  localparam CAUSE_ILLEGAL_INST         = 5'd2;
-  localparam CAUSE_BREAKPOINT           = 5'd3;
-  localparam CAUSE_LOAD_ADDR_MISALIGNED = 5'd4;
-  localparam CAUSE_LOAD_ACCESS_FAULT    = 5'd5;
-  localparam CAUSE_STORE_ADDR_MISALIGNED= 5'd6;
-  localparam CAUSE_STORE_ACCESS_FAULT   = 5'd7;
-  localparam CAUSE_ECALL_FROM_U_MODE    = 5'd8;
-  localparam CAUSE_ECALL_FROM_S_MODE    = 5'd9;
-  localparam CAUSE_ECALL_FROM_M_MODE    = 5'd11;
-  localparam CAUSE_INST_PAGE_FAULT      = 5'd12;  // Phase 3: Instruction page fault
-  localparam CAUSE_LOAD_PAGE_FAULT      = 5'd13;  // Phase 3: Load page fault
-  localparam CAUSE_STORE_PAGE_FAULT     = 5'd15;  // Phase 3: Store/AMO page fault
+  // Note: Exception cause codes are defined in rv_csr_defines.vh
 
   // funct3 encodings for load/store
   localparam FUNCT3_LB  = 3'b000;
