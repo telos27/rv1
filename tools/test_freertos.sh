@@ -53,11 +53,13 @@ RTL_TOP="rtl/*.v"
 TB="tb/integration/tb_freertos.v"
 
 # Compile with Icarus Verilog
+# FreeRTOS binary includes compressed instructions - enable C extension
 iverilog -g2012 \
     -o "$SIM_OUT" \
     -I rtl \
     -I rtl/config \
     -D XLEN=32 \
+    -D ENABLE_C_EXT=1 \
     $RTL_CORE \
     $RTL_MEMORY \
     $RTL_PERIPHERALS \

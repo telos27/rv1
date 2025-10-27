@@ -10,9 +10,9 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
 - **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS compiled, boot debugging required
-- **Recent Work**: FreeRTOS Compilation & First Boot (2025-10-27 Session 22) - See below
-- **Session 22 Summary**: FreeRTOS built successfully, testbench created, boot sequence debugging needed
-- **Next Step**: Session 23 - Debug FreeRTOS boot (analyze waveforms, fix startup sequence)
+- **Recent Work**: C Extension Config Bug Fix (2025-10-27 Session 23) - See below
+- **Session 23 Summary**: Fixed critical C extension configuration mismatch causing boot loop
+- **Next Step**: Session 24 - Continue FreeRTOS boot debugging (investigate slow execution)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -108,529 +108,71 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
-**2025-10-27 (Session 22)**: Phase 2 - FreeRTOS Compilation Success & First Boot Attempt 🎉
-- **Achievement**: FreeRTOS successfully compiled for RV32IMAFDC - first RTOS binary! ✅
-- **Compilation Fixes**:
-  - **picolibc Installation**: Installed lightweight C library for embedded RISC-V (`picolibc-riscv64-unknown-elf`)
-  - **Makefile** (`software/freertos/Makefile`): Added picolibc specs, fixed demo source inclusion
-  - **FreeRTOSConfig.h**: Fixed preprocessor macros (removed casts), added `configUSE_16_BIT_TICKS`, reduced heap 512KB→256KB
-  - **uart.c**: Added `#include <stddef.h>` for NULL definition
-  - **syscalls.c**: Removed conflicting errno declaration, added stdin/stdout/stderr FILE pointers
-- **Build Statistics**:
-  - IMEM: 17,464 bytes / 64KB (26.65%) ✅
-  - DMEM: 794,944 bytes / 1MB (75.81%) ✅
-  - Binary: text=17,448B, data=16B, bss=794,928B (includes 256KB heap)
-- **Testbench Infrastructure**:
-  - Created `tb/integration/tb_freertos.v` (195 lines) - UART monitoring, progress indicators, stuck detection
-  - Created `tools/test_freertos.sh` - Simulation runner with timeout control
-  - 50 MHz clock, 64KB IMEM, 1MB DMEM support
-- **First Boot Attempt**: 🚧 DEBUGGING REQUIRED
-  - Simulation runs 50k cycles but appears stuck at PC 0x14 (gp initialization in start.S)
-  - No UART output received
-  - VCD waveform generated for debugging (`tb_freertos.vcd`)
-  - Likely issue: DMEM address decode or auipc instruction with large immediate
-- **Status**: Compilation 100% successful, boot sequence debugging needed
-- **Files Modified**: 4 files (compilation fixes)
-- **Files Created**: 2 files (testbench + script), plus build artifacts (elf/hex/map)
-- **Next**: Session 23 - Analyze waveforms, debug startup sequence, achieve first successful boot
+**Session 23 (2025-10-27)**: C Extension Configuration Bug Fix 🐛→✅
+- **Bug Found**: FreeRTOS compiled with RVC (compressed instructions), but core simulated without C extension enabled
+- **Symptom**: Infinite boot loop with "instruction address misaligned" exceptions (cause=0) at PC 0x1E
+- **Root Cause**: 2-byte aligned PCs (e.g., 0x1A after C.LUI) triggered misalignment exception when `ENABLE_C_EXT=0`
+- **Investigation**: Systematic debug trace revealed `if_inst_misaligned=1` for valid compressed instruction addresses
+- **Fix**: Added `-D ENABLE_C_EXT=1` to `tools/test_freertos.sh` simulation compilation
+- **Result**: Boot progresses past FPU initialization, no more trap loops
+- **Reference**: Debug testbench `tb/integration/tb_freertos_debug.v` with detailed CSR tracing
+
+**Session 22 (2025-10-27)**: FreeRTOS Compilation & First Boot 🎉
+- **Achievement**: FreeRTOS compiled successfully (17KB code, 795KB data) - first RTOS binary!
+- **Fixes**: picolibc integration, FreeRTOSConfig.h macros, syscalls cleanup
+- **Infrastructure**: `tb_freertos.v`, `test_freertos.sh` created
+- **Status**: Compilation ✅, boot debugging needed (stuck at PC 0x14)
 - **Reference**: `docs/SESSION_22_SUMMARY.md`
 
-**2025-10-27 (Session 21)**: Phase 2 - FreeRTOS Port Layer Complete ✅
-- **Achievement**: Implemented complete FreeRTOS port layer for RV32IMAFDC (ready for compilation)
-- **Files Created** (9 files, 1587 lines of new code):
-  - `config/FreeRTOSConfig.h` (298 lines) - CPU config, CLINT addresses, heap size (512KB)
-  - `port/chip_specific_extensions/freertos_risc_v_chip_specific_extensions.h` (151 lines) - FPU context save/restore
-  - `port/start.S` (205 lines) - Startup code: init SP/GP/FPU, zero BSS, copy .data, set MTVEC
-  - `port/riscv32-freertos.ld` (263 lines) - Linker script: IMEM (64KB), DMEM (1MB), heap (512KB)
-  - `lib/uart.h` + `lib/uart.c` (140 lines) - 16550 UART driver (polling-based)
-  - `lib/syscalls.c` (195 lines) - Newlib syscalls for printf/scanf
-  - `demos/blinky/main_blinky.c` (230 lines) - Two-task demo (500ms/1000ms)
-  - `Makefile` (105 lines) - Build system for rv32imafdc/ilp32d
-- **Files Copied**: port.c, portASM.S, portmacro.h, portContext.h from FreeRTOS RISC-V port
-- **FPU Context Switching**: Save/restore all 32 FP registers (f0-f31) + FCSR (264 bytes per task)
-- **Memory Layout**: IMEM 64KB (code), DMEM 1MB (512KB heap, 4KB stack)
-- **Build System**: riscv64-unknown-elf-gcc, -march=rv32imafdc -mabi=ilp32d, -nostartfiles -nostdlib
-- **Dependency Identified**: picolibc-riscv64-unknown-elf needed for stdlib.h (compilation blocked)
-- **Status**: Port layer 100% complete, ready for compilation test in Session 22
-- **Time**: 60 minutes (infrastructure + port layer)
+**Session 21 (2025-10-27)**: FreeRTOS Port Layer Complete ✅
+- **Achievement**: Full FreeRTOS port for RV32IMAFDC (9 files, 1587 lines)
+- **Created**: FreeRTOSConfig.h, start.S, linker script, UART driver, syscalls, Blinky demo
+- **FPU Context**: Save/restore all 32 FP registers + FCSR (264 bytes/task)
 - **Reference**: `docs/SESSION_21_PHASE_2_SUMMARY.md`
 
-**2025-10-27 (Session 20)**: Phase 1.5 COMPLETE - Interrupt Test Suite Implementation 🎉
-- **Achievement**: Implemented and validated 6 focused interrupt tests, Phase 1.5 complete (100%)
-- **Tests Created** (all PASSING ✅):
-  1. `test_interrupt_delegation_mti.s` - MTI delegation to S-mode via mideleg (521 cycles)
-  2. `test_interrupt_delegation_msi.s` - MSI delegation to S-mode via mideleg
-  3. `test_interrupt_msi_priority.s` - Priority encoding: MSI > MTI
-  4. `test_interrupt_mie_masking.s` - mstatus.MIE masking in M-mode
-  5. `test_interrupt_sie_masking.s` - mstatus.SIE masking in S-mode
-  6. `test_interrupt_nested_mmode.s` - Nested interrupt handling
-- **Test Design Philosophy**:
-  - Simple, focused tests (ONE feature per test)
-  - Minimal complexity for ease of debugging
-  - Fast execution (most tests complete in <100 cycles)
-  - Clear pass/fail criteria with specific exit codes
-- **Coverage**:
-  - ✅ Interrupt delegation (MTI and MSI to S-mode)
-  - ✅ Interrupt priority encoding (MSI > MTI verified)
-  - ✅ Global enable masking (MIE/SIE behavior)
-  - ✅ Nested interrupt handling
-  - ✅ Cross-privilege interrupt delivery
-- **Testing Results**:
-  - All 6 interrupt tests: **PASSING** ✅
-  - Quick regression: **14/14 passing** ✅ (zero breakage)
-  - Official compliance: **81/81 passing** ✅ (100%)
-- **Privilege Test Progress**: 33/34 (97%) - up from 27/34 (79%)
-- **Status**: Phase 1.5 100% COMPLETE 🚀 - Ready for FreeRTOS (Phase 2)
-- **Files Created**: 6 interrupt test files (~100 lines each, focused and minimal)
-- **Next**: Phase 2 - FreeRTOS port (OS Integration Roadmap)
-- **Reference**: Session 20 summary (this entry)
+**Session 20 (2025-10-27)**: Phase 1.5 Complete - Interrupt Tests 🎉
+- **Achievement**: 6 interrupt tests implemented, all passing (100%)
+- **Tests**: MTI/MSI delegation, priority encoding, MIE/SIE masking, nested interrupts
+- **Progress**: Privilege tests 33/34 (97%), up from 27/34 (79%)
 
-**2025-10-27 (Session 19)**: Phase 1.5 - Interrupt Delivery Debugging & xRET Priority Fix 🔥
-- **Achievement**: Fixed critical xRET-exception priority bug, timer interrupts now fully functional
-- **Problem Identified**: Interrupt delivery created infinite loop due to xRET-exception race condition
-- **Root Cause Analysis** (Systematic debugging):
-  1. CLINT correctly generates MTIP when `mtime >= mtimecmp` ✅
-  2. Signal propagates CLINT → SoC → Core correctly ✅
-  3. Core detects interrupt, triggers trap, jumps to handler ✅
-  4. **BUG**: MRET execution blocked by spurious exceptions from prefetched instructions ❌
-  5. Pipeline continued fetching past MRET, hit padding area (illegal instructions)
-  6. Exceptions prevented `mret_flush` from asserting (circular dependency)
-  7. Created infinite trap loop: exception → blocks MRET → repeats → exception
-- **Fixes Applied**:
-  - **xRET Priority Fix** (`rv32i_core_pipelined.v:586-592`):
-    - `mret_flush/sret_flush` now assert unconditionally when xRET in MEM stage
-    - `trap_flush` only asserts if NOT executing xRET (xRET has priority)
-    - Prevents spurious exceptions from blocking xRET execution
-  - **Interrupt Masking** (`rv32i_core_pipelined.v:1680-1698`):
-    - Mask interrupts while xRET in pipeline (ID/EX/MEM stages)
-    - Mask interrupts for 1 cycle after xRET completes
-    - Prevents interrupt-xRET race where interrupt fires before privilege restoration
-  - **SoC Wire Connections** (`rv_soc.v:37-47`):
-    - Made CLINT vector-to-scalar connections explicit for clarity
-    - Added `mtip_vec/msip_vec` intermediate wires, extract `[0]` for hart 0
-  - **Debug Infrastructure**:
-    - Added `DEBUG_INTERRUPT` support to `tools/test_soc.sh`
-    - Added comprehensive interrupt debug output (CLINT, SoC, Core levels)
-    - PC trace, MRET tracking, trap analysis for systematic debugging
-- **Testing Results**:
-  - Timer interrupt test: **PASSING** ✅ (524 cycles, clean exit)
-  - Quick regression: **14/14 passing** ✅ (zero breakage)
-  - Interrupt delivery end-to-end verified ✅
-- **Status**: Interrupt infrastructure 100% functional! Ready for remaining interrupt tests
-- **Files Modified**: `rv32i_core_pipelined.v`, `rv_soc.v`, `clint.v`, `tools/test_soc.sh`
-- **Lines Changed**: ~30 lines (core logic) + ~100 lines (debug infrastructure)
-- **Next**: Implement 5 remaining interrupt delivery tests, achieve 34/34 privilege tests (100%)
-- **Reference**: Session 19 summary (this entry)
+**Session 19 (2025-10-27)**: Interrupt Delivery & xRET Priority Fix 🔥
+- **Critical Fix**: xRET-exception race causing infinite trap loop
+- **Solution**: xRET priority over exceptions, interrupt masking during xRET
+- **Files**: `rv32i_core_pipelined.v`, `rv_soc.v`, debug infrastructure
 
-**2025-10-27 (Session 18)**: Phase 1.5 - Interrupt Handling Implementation ⚡
-- **Achievement**: Implemented full interrupt detection, priority encoding, and trap generation
-- **Problem Identified**: Interrupt infrastructure existed (CLINT, CSR mip/mie), but core had NO interrupt handling logic
-- **CSR File Enhancements** (`csr_file.v`):
-  - Added `mip_out`, `mie_out`, `mideleg_out` ports (export interrupt status to core)
-  - Added `trap_is_interrupt` input (distinguish interrupts from exceptions)
-  - Modified mcause/scause writes to set interrupt bit (MSB) for interrupts
-  - ~15 lines modified
-- **Core Interrupt Logic** (`rv32i_core_pipelined.v`, ~50 lines NEW):
-  - Interrupt detection: `pending_interrupts = mip & mie`
-  - Global enable check: mstatus.MIE (M-mode), mstatus.SIE (S-mode), always-on (U-mode)
-  - Priority encoder: MEI(11) > MSI(3) > MTI(7) > SEI(9) > SSI(1) > STI(5)
-  - Delegation logic: mideleg-based S-mode delegation
-  - Exception/interrupt merging: sync exceptions have priority, interrupts injected asynchronously
-- **Testing**:
-  - Quick regression: **14/14 passing** ✅ (zero breakage)
-  - Basic CLINT test: **PASSED** ✅ (register access works)
-  - Timer interrupt test: Infrastructure complete, needs debugging 🔧
-- **Status**: Core interrupt handling 100% implemented, delivery testing in progress
-- **Files Modified**: `csr_file.v`, `rv32i_core_pipelined.v`, `CLAUDE.md`
-- **Files Created**: `test_interrupt_mtimer.s`, `test_clint_basic.s`
-- **Next**: Debug timer interrupt delivery, implement 5 more interrupt tests
-- **Reference**: Session 18 summary (this entry)
+**Session 18 (2025-10-27)**: Core Interrupt Handling ⚡
+- **Implementation**: Full interrupt detection, priority encoder, delegation logic
+- **CSR Ports**: Added mip_out, mie_out, mideleg_out, trap_is_interrupt
+- **Priority**: MEI(11) > MSI(3) > MTI(7) > SEI(9) > SSI(1) > STI(5)
 
-**2025-10-27 (Session 17)**: Phase 1.4 - Full SoC Integration Complete ✅
-- **Achievement**: Connected CPU core to bus interconnect, enabling memory-mapped peripheral access
-- **Core Changes** (`rv32i_core_pipelined.v`):
-  - Added 7-signal bus master port (req_valid, req_addr, req_wdata, req_we, req_size, req_ready, req_rdata)
-  - Replaced embedded DMEM with bus interface connection
-  - Maintained memory arbiter for MMU PTW compatibility
-- **DMEM Bus Adapter** (`dmem_bus_adapter.v`, NEW, 45 lines):
-  - Wraps `data_memory` module with bus slave interface
-  - Single-cycle response, transparent pass-through
-- **Full SoC Integration** (`rv_soc.v`, rewritten, 264 lines):
-  - Instantiated bus interconnect with 4 slaves (CLINT, UART, PLIC, DMEM)
-  - Connected all peripherals with memory-mapped interfaces
-  - Full interrupt routing: CLINT→Core (mtip/msip), UART→PLIC→Core (meip/seip)
-  - Fixed PLIC integration (signal name `irq_sources`, 24-bit address offset)
-- **MMIO Test** (`test_mmio_peripherals.s`, NEW):
-  - Tests CLINT MSIP/MTIMECMP read/write (0x0200_0000)
-  - Tests UART register access (0x1000_0000)
-  - Tests DMEM byte/half/word access (0x8000_0000)
-  - 10 test cases, **PASSED** ✅ in 76 cycles
-- **Testbench Updates**:
-  - `tb_core_pipelined.v`: Added bus interface + DMEM adapter
-  - `tb_soc.v`: Added COMPLIANCE_TEST support
-  - `tools/test_soc.sh`: Added interconnect directory to includes
-- **Testing**: Quick regression 14/14 passing ✅, zero regressions
-- **Phase 1.4 Status**: 100% COMPLETE 🚀
-- **Files Created**: `dmem_bus_adapter.v`, `test_mmio_peripherals.s`, `SESSION_17_PHASE_1_4_SUMMARY.md`
-- **Files Modified**: `rv32i_core_pipelined.v`, `rv_soc.v`, testbenches, `CLAUDE.md`
-- **Reference**: `docs/SESSION_17_PHASE_1_4_SUMMARY.md`
+**Session 17 (2025-10-27)**: SoC Integration Complete ✅
+- **Achievement**: Core connected to bus interconnect, full SoC integration
+- **Created**: `dmem_bus_adapter.v`, MMIO test (10 tests passing)
+- **Integration**: 4 slaves (CLINT, UART, PLIC, DMEM), interrupt routing complete
 
-**2025-10-26 (Session 15)**: UART Implementation Complete - Phase 1.2 ✅
-- **Achievement**: Full 16550-compatible UART peripheral with comprehensive testing
-- **Implementation**: `rtl/peripherals/uart_16550.v` (342 lines)
-  - 8 memory-mapped registers (RBR/THR, IER, IIR/FCR, LCR, MCR, LSR, MSR, SCR)
-  - 16-byte TX/RX FIFOs with proper empty/full detection
-  - Interrupt support (RDA, THRE) with priority encoding
-  - Fixed 8N1 mode, byte-level serial interface
-- **Testbench**: `tb/peripherals/tb_uart.v` (565 lines)
-  - 12/12 tests passing (100%) ✅
-  - Coverage: Register access, FIFO operation, interrupts, status bits
-  - Tests: Reset values, scratch reg, TX/RX single/multi-byte, FIFO full, interrupts, FCR clear
-- **Bugs Fixed**:
-  - TX handshake timing (consume_tx task wait logic)
-  - RX injection timing (#1 delay to avoid delta-cycle races)
-  - THRE interrupt logic (consider both FIFO empty AND transmitter idle)
-- **SoC Integration**:
-  - Added UART to `rtl/rv_soc.v` with serial interface exposed
-  - Updated `tb/integration/tb_soc.v` with UART TX monitor
-  - UART interrupt output available (not yet routed - waiting for PLIC)
-- **Testing**: Quick regression 14/14 passing ✅, zero regressions
-- **Phase 1.2 Status**: 100% COMPLETE 🚀
-- **Files Created**: `uart_16550.v`, `tb_uart.v`, `SESSION_15_SUMMARY.md`
-- **Files Modified**: `rv_soc.v`, `tb_soc.v`, `CLAUDE.md`
-- **Reference**: `docs/SESSION_15_SUMMARY.md`
+**Session 15-16 (2025-10-26/27)**: UART & Bus Interconnect ✅
+- **UART**: 16550-compatible (342 lines), 12/12 tests passing
+- **Bus**: Simple interconnect (254 lines), priority-based addressing
+- **PLIC**: 32 interrupt sources, M/S-mode contexts (390 lines)
 
-**2025-10-27 (Session 16)**: Phase 1.3 - Bus Interconnect & PLIC Foundation Complete ✅
-- **Achievement**: Built complete infrastructure for memory-mapped peripheral access
-- **Bus Interconnect** (`rtl/interconnect/simple_bus.v`, 254 lines):
-  - Single master (CPU) to multiple slaves (CLINT, UART, PLIC, DMEM)
-  - Priority-based address decoding for 4 peripheral ranges
-  - Single-cycle response, size adaptation (8/32/64-bit)
-  - Unmapped address handling (returns 0, ready)
-- **PLIC Implementation** (`rtl/peripherals/plic.v`, 390 lines):
-  - RISC-V PLIC spec compliant (32 interrupt sources, 0-7 priorities)
-  - Per-hart, per-mode configuration (M-mode and S-mode contexts)
-  - Claim/complete mechanism for interrupt acknowledgment
-  - MEI/SEI outputs for external interrupt delivery
-- **Core Interrupt Support**:
-  - Added MEI (bit 11) and SEI (bit 9) to mip register
-  - Added `meip_in` and `seip_in` ports to core and CSR file
-  - Updated MIP write mask to protect MEI/SEI from software writes
-  - Backward compatible (all testbenches updated)
-- **Testing**:
-  - Bus interconnect testbench: **10/10 tests passing** ✅
-  - Address decode verified for CLINT, UART, PLIC, DMEM
-  - Quick regression: **14/14 tests passing** ✅ (zero breakage)
-- **Status**: Foundation complete, SoC integration deferred to Phase 1.4
-- **Files Created**: `simple_bus.v`, `plic.v`, `tb_simple_bus.v`, `test_peripheral_mmio.s`
-- **Files Modified**: `rv32i_core_pipelined.v`, `csr_file.v`, `tb_core_pipelined.v`, `rv_soc.v`
-- **Reference**: `docs/SESSION_16_PHASE_1_3_SUMMARY.md`
+**Session 12-14 (2025-10-26)**: CLINT & Phase 3-4 ✅
+- **CLINT**: 10/10 tests passing, CSR integration, SoC architecture
+- **Phase 3**: Interrupt CSR tests complete (4/4 passing)
+- **Phase 4**: Exception coverage analysis, delegation test added
 
-**2025-10-26 (Session 14)**: Phase 4 Exception Coverage Analysis & Delegation Test ✅
-- **Achievement**: Analyzed Phase 4 exception tests, identified hardware constraints, added delegation test
-- **Analysis**: Comprehensive review of 8 planned Phase 4 tests
-  - 4 tests already passing (breakpoint, M-mode ECALL, instr misaligned, page faults placeholder)
-  - 2 tests blocked by hardware (load/store misalignment - hardware supports unaligned access)
-  - 1 test redundant (all_ecalls - already covered by existing tests)
-  - 1 test implemented (delegation_full)
-- **New Test**: `test_exception_delegation_full.s` ✅
-  - Tests medeleg CSR functionality
-  - Verifies delegation from M-mode to S-mode
-  - Confirms M-mode exceptions never delegate
-  - 3 stages: no delegation, with delegation, M-mode never delegates
-- **Coverage Analysis**:
-  - All ECALL causes tested: cause 8 (U-mode), 9 (S-mode), 11 (M-mode)
-  - Existing tests provide complete coverage: `test_umode_ecall`, `test_ecall_smode`, `test_exception_ecall_mmode`
-  - Hardware architectural choice: Misaligned access supported (RISC-V compliant)
-- **Hardware Constraints Documented**:
-  - `mem_load_misaligned = 1'b0` (exception_unit.v:106) - intentionally disabled
-  - `mem_store_misaligned = 1'b0` (exception_unit.v:118) - intentionally disabled
-  - Rationale: Hardware implements unaligned access, matches rv32ui-p-ma_data requirements
-- **Testing**: Quick regression 14/14 passing ✅
-- **Phase 4 Status**: 5/8 tests (63%) - 3 blocked by hardware architecture, well-documented
-- **Privilege Test Progress**: 27/34 (79%) - up from 26/34 (76%)
-- **Files Created**: `tests/asm/test_exception_delegation_full.s` (164 lines)
-- **Deferred**: `test_exception_all_ecalls.s` - Low priority (redundant with existing coverage)
-- **Reference**: Session 14 summary (this entry)
+**Session 9-10 (2025-10-26)**: Refactoring Analysis ⚙️
+- **Phase 1**: CSR constants extraction (142 lines), config consolidation
+- **Phase 2**: Stage extraction analysis - deferred (250+ I/O ports)
+- **Decision**: "If it ain't broke, don't fix it" - code well-organized
 
-**2025-10-26 (Session 13)**: Phase 3 Interrupt CSR Tests Complete ✅
-- **Achievement**: Fixed and completed all testable Phase 3 interrupt tests (4/4)
-- **Issue Identified**: After CLINT integration, MSIP (bit 3) and MTIP (bit 7) in `mip` are now READ-ONLY
-  - These bits are hardware-driven by CLINT, not software-writable via CSR
-  - Tests that tried to write these bits directly were failing
-- **Solution**: Updated tests to reflect hardware architecture
-  - `test_interrupt_software`: Now tests SSIP (writable) and verifies MSIP/MTIP are read-only
-  - `test_interrupt_pending`: Tests SSIP behavior and read-only verification
-  - Both tests now PASSING ✅
-- **New Infrastructure**: Created SoC test runner (`tools/test_soc.sh`)
-  - Tests can run on full SoC (core + CLINT) instead of bare core
-  - Enhanced `tb/integration/tb_soc.v` with test completion detection
-  - Foundation for future CLINT memory-mapped testing
-- **Testing**: All 4 Phase 3 tests passing ✅
-  - `test_interrupt_software` ✅ (SSIP/SSIE, mideleg, read-only verification)
-  - `test_interrupt_pending` ✅ (SSIP writable, MSIP/MTIP read-only)
-  - `test_interrupt_masking` ✅ (mie/sie masking behavior)
-  - `test_mstatus_interrupt_enables` ✅ (MIE/SIE enable bits)
-- **Coverage**: Interrupt CSR behavior fully tested
-  - Software-writable bits (SSIP via sip)
-  - Hardware-driven bits (MSIP/MTIP read-only)
-  - Interrupt enable registers (mie/sie)
-  - Interrupt delegation (mideleg)
-  - M-mode vs S-mode visibility (mip vs sip masking)
-- **Deferred**: Full interrupt delivery testing (requires CLINT memory-mapped access)
-  - Will be implemented when bus interconnect is added (Phase 1.2 or later)
-  - Current tests verify all CSR behavior that's testable without actual interrupts
-- **Phase 3 Status**: 100% COMPLETE (4/4 tests passing) ✅
-- **Privilege Test Progress**: 26/34 (76%) - Phases 1,2,3,5,6,7 complete
-- **Quick Regression**: 14/14 passing ✅
-- **Official Compliance**: 81/81 (100%) ✅
-- **Files Created**: `tools/test_soc.sh`, enhanced `tb/integration/tb_soc.v`
-- **Files Modified**: `test_interrupt_software.s`, `test_interrupt_pending.s`, `CLAUDE.md`
-- **Reference**: Session 13 summary (this entry)
+**Session 7-8 (2025-10-26)**: Writeback Gating & Phase 7 ✅
+- **Critical Fix**: Register writes gated by memwb_valid, auto-rebuild infrastructure
+- **Phase 7**: Stress tests implemented (rapid switching, comprehensive regression)
 
-**2025-10-26 (Session 12)**: CLINT Integration Complete + SoC Architecture ✅
-- **Achievement**: Fixed CLINT bugs and fully integrated with CPU core and CSR file
-- **Bug Fixed**: Testbench race condition causing address decode failures
-  - **Problem**: Signals set at `@(posedge clk)` sampled immediately, causing delta-cycle glitches
-  - **Solution**: Added `#1` delay in testbench tasks (`tb_clint.v`)
-  - **Result**: CLINT tests 2/10 → 10/10 passing (100%) ✅
-- **CSR Integration**:
-  - Added `mtip_in`/`msip_in` interrupt ports to `csr_file.v`
-  - MTIP (bit 7) and MSIP (bit 3) in mip register are read-only, hardware-driven
-  - Updated SIP to reflect hardware interrupts
-  - Software writes to interrupt bits properly masked
-- **Core Integration**:
-  - Added interrupt ports to `rv_core_pipelined.v`
-  - Connected CSR file to CLINT interrupt signals
-  - Updated testbenches to tie off interrupts (backward compatibility)
-- **SoC Architecture**:
-  - Created `rtl/rv_soc.v` - top-level SoC module
-  - Instantiates core + CLINT, connects interrupt signals
-  - Created `tb/integration/tb_soc.v` - SoC testbench
-  - Ready for future expansion (UART, PLIC, bus interconnect)
-- **Testing**:
-  - CLINT: 10/10 tests ✅
-  - Quick regression: 14/14 tests ✅
-  - SoC compiles and simulates successfully ✅
-- **Files Modified/Created**: 8 files (~150 lines)
-- **Phase 1.1 Status**: 100% COMPLETE 🚀
-- **Reference**: `docs/SESSION_12_SUMMARY.md`
-
-**2025-10-26 (Session 11)**: OS Integration Planning + CLINT Implementation (Phase 1 Start) 🚧
-- **Planning**: Created comprehensive OS roadmap (2400+ lines)
-  - 5 phases: FreeRTOS → xv6 → Linux
-  - Timeline: 16-24 weeks
-  - Created `docs/OS_INTEGRATION_PLAN.md`, `docs/MEMORY_MAP.md`
-- **CLINT Implementation**: Partial (80% - memory interface working, tests failing)
-  - Created `rtl/peripherals/clint.v` (260 lines)
-  - Created `tb/peripherals/tb_clint.v` (400 lines)
-  - MTIME counter working, MTIMECMP/MSIP address decode issues
-  - Tests: 2/10 passing (20%) 🚧
-- **Reference**: `docs/SESSION_11_SUMMARY.md`, `docs/SESSION_11_OS_PLANNING.md`
-
-**2025-10-26 (Session 10)**: Refactoring Phase 2 Analysis - Stage Extraction vs Hybrid Approach ⚙️
-- **Goal**: Split rv32i_core_pipelined.v (2455 lines) into stage-based modules
-- **Analysis**: Full pipeline stage extraction would require 250+ I/O ports
-  - IF Stage: ~30 ports
-  - ID Stage: ~80+ ports (decoder, register files, forwarding)
-  - EX Stage: ~100+ ports (ALU, mul/div, atomic, FPU, CSR, exceptions)
-  - MEM Stage: ~40 ports
-  - WB Stage: ~20 ports
-- **Issues Identified**:
-  - Signal explosion - more interface ports than current signal count
-  - Forwarding complexity - data forwarding crosses all 4 stage boundaries
-  - Testing risk - breaking 100% compliant design for organizational change
-  - Questionable value - 5 files with 50+ ports vs 1 well-organized file
-- **Pivot Decision**: Hybrid approach - extract functional modules, not stages
-- **Existing Modularization** (already good):
-  - ✅ `hazard_detection_unit.v` (~301 lines)
-  - ✅ `forwarding_unit.v` (~297 lines)
-  - ✅ Pipeline registers (4 modules)
-- **New Module Created**: `csr_priv_coordinator.v` (~267 lines) - reference implementation
-  - Privilege mode state machine (28 lines from core)
-  - CSR MRET/SRET forwarding (155 lines from core)
-  - Privilege mode forwarding (45 lines from core)
-  - MSTATUS reconstruction (39 lines from core)
-- **Decision**: Integration DEFERRED
-  - Current code already well-organized with clear comments
-  - Only 10% size reduction (252 lines)
-  - No functional benefit, only organizational
-  - "If it ain't broke, don't fix it"
-- **Deliverables**:
-  - ✅ `rtl/core/csr_priv_coordinator.v` (reference, not integrated)
-  - ✅ `docs/REFACTORING_SESSION_10.md` (detailed analysis)
-  - ✅ Updated `docs/REFACTORING_PLAN.md`
-- **Lessons Learned**:
-  - Always analyze before refactoring - avoid premature optimization
-  - Port count indicates coupling - high I/O means tight integration
-  - Sometimes the best refactoring is no refactoring
-  - Document analysis even if changes aren't made
-- **Reference**: `docs/REFACTORING_SESSION_10.md`, `docs/REFACTORING_PLAN.md` - Phase 2 analysis
-
-**2025-10-26 (Session 9)**: Refactoring Phase 1 - CSR Constants & Configuration Parameters ✅
-- **Task 1.1 Complete**: CSR constants extraction successful ✅
-  - **Created**: `rtl/config/rv_csr_defines.vh` (142 lines, 63 constants)
-  - **Eliminated**: 70 lines of duplicate CSR constant definitions
-  - **Impact**: Single source of truth for CSR addresses, bit positions, privilege modes, exception codes
-  - **Modified**: 4 core files (csr_file.v, rv32i_core_pipelined.v, hazard_detection_unit.v, exception_unit.v)
-  - **Testing**: Quick regression 14/14 passing ✅, zero regressions
-- **Task 1.2 Complete**: Configuration parameter consolidation ✅
-  - **Enhanced**: `rtl/config/rv_config.vh` (added TLB_ENTRIES define)
-  - **Updated**: 11 FPU modules to use `` `FLEN`` defaults (fp_adder, fp_classify, fp_compare, fp_converter, fp_divider, fp_fma, fp_minmax, fp_multiplier, fp_register_file, fp_sign, fp_sqrt, fpu)
-  - **Updated**: 4 core modules to use config defaults (atomic_unit, reservation_station, rvc_decoder, mmu)
-  - **Eliminated**: 18 hardcoded parameter defaults
-  - **Impact**: Single source of truth for all configuration parameters (XLEN, FLEN, TLB_ENTRIES)
-  - **Testing**: Quick regression 14/14 passing ✅, zero regressions
-- **Task 1.3 Attempted**: Trap controller extraction (deferred)
-  - **Problem Identified**: Trap handling deeply coupled with CSR updates
-    - CSR file computes trap_target_priv and manages trap state
-    - Separation creates combinational loops or duplicates logic
-  - **Analysis**: Created prototype trap_controller.v (263 lines)
-  - **Decision**: Defer until Phase 2 (stage-based core split) for cleaner boundaries
-  - **Documentation**: Updated REFACTORING_PLAN.md with detailed analysis
-- **Reference**: `docs/REFACTORING_PLAN.md` - Phase 1 status (2/3 tasks complete, 67%)
-
-**2025-10-26 (Session 8)**: Phase 7 Complete - Stress & Regression Tests ✅
-- **Achievement**: Implemented final 2 tests of privilege mode test suite (Phase 7)
-- **Tests Created**:
-  - `test_priv_rapid_switching.s`: Stress test with 20 M↔S privilege transitions (10 round-trips)
-  - `test_priv_comprehensive.s`: All-in-one regression covering all major privilege features
-- **Coverage**:
-  - Rapid mode switching: Validates state preservation across many transitions
-  - Comprehensive regression: Tests transitions, CSR access, delegation, state machine, exceptions
-  - 6 stages: Basic M→S, M→S→U→S→M chains, CSR verification, state machine, exceptions, delegation
-- **Results**:
-  - Both tests PASSING ✅
-  - Quick regression: 14/14 passing ✅
-  - Compliance: 81/81 passing (100%) ✅
-  - Phase 7 complete: 2/2 tests (100%)
-- **Files**: `tests/asm/test_priv_rapid_switching.s`, `tests/asm/test_priv_comprehensive.s`
-
-**2025-10-26 (Session 7)**: Writeback Gating & Test Infrastructure FIXED ✅
-- **Problem**: Instructions after exceptions could write to registers before pipeline flush
-  - Git operations deleted untracked hex files
-  - No staleness detection - stale hex files caused mysterious test failures
-  - Manual rebuild workflow error-prone
-- **Root Cause**:
-  - Register write enable not gated by `memwb_valid`
-  - 1-cycle delay in `exception_taken_r` allowed next instruction to advance
-  - Hex files were build artifacts (not tracked), got deleted on `git checkout`
-  - No automatic rebuild when source files changed
-- **Solution**: Multi-part fix for robustness
-  - **Writeback Gating** (`rv32i_core_pipelined.v:853-867`): Gate register writes with `memwb_valid`
-  - **Auto-Rebuild** (`tools/test_pipelined.sh:67-97`): Tests auto-rebuild missing/stale hex files
-  - **Smart Rebuild** (`Makefile:350-399`): `make rebuild-hex` only rebuilds changed files
-  - **Force Rebuild** (`Makefile:378-399`): `make rebuild-hex-force` rebuilds everything
-- **Impact**:
-  - `test_delegation_disable` now PASSING ✅ (Phase 6 complete: 4/4 tests)
-  - No more "hex file not found" errors ✅
-  - Tests work after git operations (checkout, pull, etc.) ✅
-  - Quick regression: 14/14 passing ✅
-  - Compliance: 79/79 passing (100%) ✅
-- **Files**: `rtl/core/rv32i_core_pipelined.v`, `tools/test_pipelined.sh`, `Makefile`, `tools/README.md`
-
-**2025-10-26 (Session 4)**: Exception Gating & Trap Target Computation FIXED ✅
-- **Problem**: Exception propagation to subsequent instructions + trap delegation race condition
-- **Symptoms**:
-  - Exception signal fired for both faulting instruction AND next instruction
-  - Duplicate ECALL exceptions with wrong privilege modes
-  - `trap_target_priv` computed from stale `exception_code_r` causing wrong delegation
-- **Solution**: Multi-part fix for exception handling
-  - **Exception Gating** (`rv32i_core_pipelined.v:452`): Added `exception_gated` to prevent propagation
-  - **Trap Target Computation** (`rv32i_core_pipelined.v:454-489`): Core-side `compute_trap_target()` function using un-latched signals
-  - **CSR Delegation Export** (`csr_file.v:51, 621`): Added `medeleg_out` port for direct access
-- **Impact**:
-  - Exception propagation bug FIXED ✅
-  - Trap delegation timing FIXED ✅
-  - Quick regression: 14/14 passing ✅
-  - Compliance: 81/81 still passing ✅
-- **Files**: `rtl/core/rv32i_core_pipelined.v`, `rtl/core/csr_file.v`
-- **Remaining Issue**: `test_delegation_disable` - ECALL not detected initially
-
-**2025-10-26 (Session 6)**: Trap Latency Architectural Analysis ⚙️
-- **Investigation**: Deep dive into `test_delegation_disable` failure - register corruption after ECALL
-- **Root Cause Identified**: Synchronous pipeline limitation creates inherent 1-cycle trap latency
-  - Exception detected in cycle N
-  - Pipeline flush synchronous → takes effect in cycle N+1
-  - Next instruction advances to IDEX before flush completes
-  - Result: Instruction after exception may execute before trap
-- **Attempted Fixes**:
-  - ✅ 0-cycle trap latency: Changed `trap_flush` to use `exception_gated` (immediate)
-  - ✅ Updated CSR trap inputs to use current exception signals (non-registered)
-  - ❌ Combinational valid gating: Creates oscillation loop, all tests timeout
-- **Impact**:
-  - Quick regression: 14/14 passing ✅
-  - Compliance: 81/81 passing ✅
-  - `test_delegation_disable`: Still fails (architectural limitation)
-- **Conclusion**: Documented as architectural characteristic in KNOWN_ISSUES.md
-  - Proposed 4 solution approaches (writeback gating to full speculative execution)
-  - Recommended: Accept 1-cycle latency, ensure no harmful side effects
-  - No impact on real-world code or official compliance tests
-- **Files**: `rtl/core/rv32i_core_pipelined.v:565,567,1567-1570`, `docs/KNOWN_ISSUES.md`
-
-**2025-10-26 (Session 5)**: CSR Write Exception Gating FIXED ✅
-- **Problem**: CSR writes committing even when instruction causes illegal instruction exception
-- **Root Cause**: `csr_we` signal not gated by exception detection
-  - When CSR instruction caused illegal exception, CSR write still executed
-  - Example: `csrw medeleg, zero` from S-mode → illegal exception, but write committed
-- **Solution**: Added exception gating to CSR write enable (`rv32i_core_pipelined.v:1564`)
-  - Changed: `.csr_we(idex_csr_we && idex_valid)`
-  - To: `.csr_we(idex_csr_we && idex_valid && !exception)`
-- **Impact**:
-  - ECALL detection now working ✅ (cause=9 correctly generated)
-  - CSR corruption on illegal access FIXED ✅
-  - Quick regression: 14/14 passing ✅
-  - Compliance: 81/81 still passing ✅
-- **Files**: `rtl/core/rv32i_core_pipelined.v:1564`
-- **Remaining Issue**: `test_delegation_disable` - Architectural trap latency (Session 6 analysis)
-
-**2025-10-26 (Session 3)**: Phase 6 - Delegation logic FIXED ✅
-- **Problem**: Trap delegation used forwarded privilege mode from xRET instructions
-- **Solution**: Separated `actual_priv` (for delegation) from `effective_priv` (for CSR checks)
-  - Changed `.actual_priv` connection from `effective_priv` to `current_priv`
-  - Ensures delegation decisions based on actual privilege of trapping instruction
-  - Fixed test_delegation_disable test bug (S-mode can't write medeleg)
-- **Impact**:
-  - `test_delegation_to_current_mode` ✅
-  - `test_medeleg` ✅
-  - `test_phase10_2_delegation` ✅
-  - Phase 6: 3/4 tests passing (75%)
-- **Files**: `rtl/core/rv32i_core_pipelined.v:1543`, `tests/asm/test_delegation_disable.s`
-- **Known Issue**: `test_delegation_disable` has trap timing issue (documented in KNOWN_ISSUES.md)
-
-**2025-10-26 (Session 2)**: Privilege mode forwarding bug FIXED ✅
-- **Problem**: CSR access immediately after MRET/SRET used stale privilege mode
-- **Solution**: Implemented privilege mode forwarding (similar to data forwarding)
-  - Forward new privilege from MRET/SRET in MEM stage to EX stage
-  - Separate `effective_priv` (for CSR checks) from latched privilege (for trap delegation)
-  - Added `exception_target_priv_r` register to break combinational feedback loop
-  - Changed trap flush to use registered exception (1-cycle delay)
-- **Impact**: `test_delegation_to_current_mode` now PASSING ✅
-- **Trade-off**: Introduced 1-cycle trap latency (some tests need investigation)
-- **Files**: `rtl/core/rv32i_core_pipelined.v`, `rtl/core/csr_file.v`
-
-**2025-10-26 (Session 1)**: Phase 5 completed - CSR edge cases (4/4 tests passing)
-- `test_csr_readonly_verify.s` - Read-only CSRs return consistent values (mvendorid, marchid, mimpid, mhartid, misa)
-- `test_csr_warl_fields.s` - WARL constraints verified (MPP, SPP, mtvec mode)
-- `test_csr_side_effects.s` - CSR side effects (mstatus↔sstatus, mie↔sie, mip↔sip)
-- `test_csr_illegal_access.s` - Valid CSRs accessible, proper decoding verified
-- Quick regression: 14/14 passing ✅
-
-**2025-10-26**: Phase 4 started - Exception coverage
-- Hardware constraints documented (misaligned access supported, EBREAK blocked)
-
-**2025-10-25**: Phases 2-3 completed
-- CSR forwarding bug fixed (MEM stage forwarding)
-- MRET/SRET forwarding timing issue resolved (hold-until-consumed)
-- Configuration mismatch fixed (C extension enabled)
-- Exception signal latching to prevent mcause corruption
-
-**2025-10-24**: Phase 1 completed + core fixes
-- Precise exception handling (instructions before exception complete)
-- MRET/SRET executing multiple times fixed
-- sstatus_mask bug fixed (SPIE/SPP visibility)
-- PC stall override for control flow changes
-- MMU bare mode handshake logic fixed
+**Session 1-6 (2025-10-24 to 2025-10-26)**: Privilege Mode Foundation ✅
+- **Phase 5**: CSR edge cases (4/4 tests)
+- **Core Fixes**: Exception gating, trap target computation, privilege forwarding
+- **Infrastructure**: Trap latency analysis, writeback gating, test auto-rebuild
 
 ## Naming Conventions
 
