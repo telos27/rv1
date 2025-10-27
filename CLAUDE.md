@@ -7,7 +7,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 25/34 passing (74%) - Phases 1-2-5-6-7 complete ✅
-- **Recent Work**: Phase 7 complete - Stress & regression tests ✅ (2025-10-26 Session 8) - See below
+- **Recent Work**: Refactoring Phase 1 (Task 1.1) - CSR constants extraction ✅ (2025-10-26 Session 9) - See below
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -103,27 +103,21 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
-**2025-10-26 (Session 9)**: Refactoring - Task 1.1 Complete - CSR Constants Header ✅
-- **Achievement**: Eliminated CSR constant duplication, single source of truth
-- **Created**: `rtl/config/rv_csr_defines.vh` (154 lines)
-  - CSR addresses (25 constants): mstatus, misa, mie, mtvec, mepc, mcause, etc.
-  - MSTATUS/SSTATUS bit positions (9 constants): MIE, SIE, MPIE, SPIE, MPP, SPP, SUM, MXR
-  - CSR instruction opcodes (6 constants): CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
-  - Exception cause codes (14 constants): illegal instruction, ECALL, page faults, etc.
-  - Interrupt cause codes (6 constants): timer, software, external interrupts
-  - Privilege mode encodings (3 constants): U=00, S=01, M=11
-- **Modified**: 4 core files to use shared header
-  - `rtl/core/csr_file.v` - removed 58 duplicate constants
-  - `rtl/core/rv32i_core_pipelined.v` - removed 11 duplicate constants
-  - `rtl/core/hazard_detection_unit.v` - removed 3 duplicate constants
-  - `rtl/core/exception_unit.v` - removed 14 duplicate constants
-- **Impact**:
-  - 70 lines of duplicate definitions eliminated ✅
-  - Single source of truth aligned with RISC-V spec ✅
-  - Quick regression: 14/14 passing ✅
-  - Zero regressions, purely organizational change ✅
-- **Next**: Task 1.3 - Extract trap controller module
-- **Reference**: `docs/REFACTORING_PLAN.md` - Phase 1 (1/2 tasks complete)
+**2025-10-26 (Session 9)**: Refactoring Phase 1 - CSR Constants & Trap Controller Analysis ✅
+- **Task 1.1 Complete**: CSR constants extraction successful ✅
+  - **Created**: `rtl/config/rv_csr_defines.vh` (142 lines, 63 constants)
+  - **Eliminated**: 70 lines of duplicate CSR constant definitions
+  - **Impact**: Single source of truth for CSR addresses, bit positions, privilege modes, exception codes
+  - **Modified**: 4 core files (csr_file.v, rv32i_core_pipelined.v, hazard_detection_unit.v, exception_unit.v)
+  - **Testing**: Quick regression 14/14 passing ✅, zero regressions
+- **Task 1.3 Attempted**: Trap controller extraction (deferred)
+  - **Problem Identified**: Trap handling deeply coupled with CSR updates
+    - CSR file computes trap_target_priv and manages trap state
+    - Separation creates combinational loops or duplicates logic
+  - **Analysis**: Created prototype trap_controller.v (263 lines)
+  - **Decision**: Defer until Phase 2 (stage-based core split) for cleaner boundaries
+  - **Documentation**: Updated REFACTORING_PLAN.md with detailed analysis
+- **Reference**: `docs/REFACTORING_PLAN.md` - Phase 1 status (1/2 tasks complete)
 
 **2025-10-26 (Session 8)**: Phase 7 Complete - Stress & Regression Tests ✅
 - **Achievement**: Implemented final 2 tests of privilege mode test suite (Phase 7)

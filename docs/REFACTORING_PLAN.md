@@ -648,13 +648,13 @@ endproperty
 **Status:** 1/2 tasks complete (50%)
 **Tasks:**
 1. ✅ Task 1.1: Extract CSR constants to header file (1 hour) - **COMPLETE**
-2. ⏳ Task 1.3: Extract trap controller module (2 hours) - **PENDING**
+2. ❌ Task 1.3: Extract trap controller module (2 hours) - **DEFERRED** (see analysis below)
 
 **Testing:** `make test-quick` after each task
 
 **Deliverables:**
 - ✅ `rtl/config/rv_csr_defines.vh` (154 lines, 63 constants)
-- ⏳ `rtl/core/trap_controller.v`
+- ❌ `rtl/core/trap_controller.v` - **DEFERRED**
 - ✅ Updated 4 core files (csr_file.v, rv32i_core_pipelined.v, hazard_detection_unit.v, exception_unit.v)
 - ✅ All tests passing (14/14 quick regression)
 
@@ -662,6 +662,22 @@ endproperty
 - Created comprehensive CSR defines header with RISC-V spec references
 - Removed 70 lines of duplicate localparam definitions
 - Zero regressions - all tests passing
+
+**Task 1.3 Analysis (2025-10-26):**
+- **Attempted**: Created trap_controller.v (263 lines) to extract trap handling logic
+- **Problem**: Trap handling is deeply intertwined with CSR updates:
+  - CSR file computes `trap_target_priv` based on delegation logic
+  - CSR file updates mepc/sepc/mcause/scause on trap entry
+  - Trap controller would need to either:
+    1. Duplicate CSR logic (violates DRY principle)
+    2. Have CSR file as submodule (increases complexity)
+    3. Split CSR updates from trap computation (breaks atomicity)
+- **Issue**: Created combinational timing loops during integration
+- **Decision**: **DEFER** until after Phase 2 (main core split)
+- **Recommendation**: Extract trap controller AFTER splitting core into stages
+  - Rationale: Stage-based design will clarify trap/CSR boundaries
+  - Trap controller can then interface cleanly with dedicated CSR stage
+- **Tests**: Reverted changes, all tests passing (14/14)
 
 ---
 

@@ -24,7 +24,7 @@
 
 #### Privilege Mode
 
-**Tests**: 5
+**Tests**: 7
 
 - **test_priv_basic.s** ✅
   - Test 1: Basic Privilege Mode Testing
@@ -34,13 +34,21 @@
   - Check Privilege Mode
   - Lines: 25
 
-- **test_priv_macros_demo.s** ❌
+- **test_priv_comprehensive.s** ✅
+  - Comprehensive Privilege Mode Regression (Phase 7.2)
+  - Lines: 151
+
+- **test_priv_macros_demo.s** ✅
   - Privilege Macro Library Demo
   - Lines: 42
 
 - **test_priv_minimal.s** ✅
   - Minimal CSR Test
   - Lines: 16
+
+- **test_priv_rapid_switching.s** ✅
+  - Rapid Privilege Mode Switching (Phase 7.1)
+  - Lines: 39
 
 - **test_priv_transitions.s** ✅
   - Privilege Mode Transitions
@@ -89,11 +97,11 @@
 
 **Tests**: 2
 
-- **test_rv64i_arithmetic.s** ✅
+- **test_rv64i_arithmetic.s** ❌
   - test_rv64i_arithmetic.s
   - Lines: 104
 
-- **test_rv64i_basic.s** ✅
+- **test_rv64i_basic.s** ❌
   - test_rv64i_basic.s
   - Lines: 79
 
@@ -126,7 +134,7 @@
 
 - **test_fp_add_simple.s** ✅
   - Simplest FP Add Test
-  - Lines: 25
+  - Lines: 29
 
 - **test_fp_basic.s** ✅
   - Basic Floating-Point Test
@@ -179,22 +187,54 @@
 
 #### CSR Instructions
 
-**Tests**: 2
+**Tests**: 9
 
 - **test_csr_basic.s** ✅
   - Test CSR instructions
   - Lines: 16
 
+- **test_csr_compare.s** ✅
+  - Compare CSR reads - mscratch vs mstatus
+  - Lines: 14
+
 - **test_csr_debug.s** ✅
   - CSR Debug - Check what CSR read returns
   - Lines: 13
 
+- **test_csr_illegal_access.s** ✅
+  - CSR Illegal Access Verification
+  - Lines: 70
+
+- **test_csr_readonly_verify.s** ✅
+  - CSR Read-Only Verification (Simplified)
+  - Lines: 56
+  - Expected: All CSRs return the same value on multiple reads
+
+- **test_csr_scratch.s** ✅
+  - Simple CSR Read/Write - mscratch only
+  - Lines: 9
+  - Expected: mscratch should read back written value
+
+- **test_csr_side_effects.s** ✅
+  - CSR Side Effects Verification
+  - Lines: 109
+  - Expected: Changes propagate correctly between related CSRs
+
+- **test_csr_warl_fields.s** ✅
+  - CSR WARL Fields Verification
+  - Lines: 114
+  - Expected: Illegal values are converted to legal values
+
+- **test_csr_write_read.s** ✅
+  - CSR Write-Then-Read
+  - Lines: 21
+
 
 #### Miscellaneous
 
-**Tests**: 91
+**Tests**: 135
 
-- **branch_test.s** ❌
+- **branch_test.s** ✅
   - Branch Instructions Test
   - Lines: 95
 
@@ -202,19 +242,19 @@
   - Expected: Expected result: x10 = 55
   - Lines: 27
 
-- **jump_test.s** ❌
+- **jump_test.s** ✅
   - Jump and Upper Immediate Test
   - Lines: 71
 
-- **load_store.s** ❌
+- **load_store.s** ✅
   - Test load and store operations
   - Lines: 14
 
-- **logic_ops.s** ❌
+- **logic_ops.s** ✅
   - Logic Operations Test
   - Lines: 68
 
-- **shift_ops.s** ❌
+- **shift_ops.s** ✅
   - Shift Operations Test
   - Lines: 64
 
@@ -222,7 +262,7 @@
   - Simple test: Add two numbers
   - Lines: 8
 
-- **test_21_pattern.s** ❌
+- **test_21_pattern.s** ✅
   - Replicate test 21 pattern from compliance
   - Lines: 24
 
@@ -242,11 +282,11 @@
   - Test Program: AMOSWAP.W - Atomic Swap (Compact Version)
   - Lines: 44
 
-- **test_and_loop.s** ❌
+- **test_and_loop.s** ✅
   - Replicate the exact pattern from compliance test 19
   - Lines: 24
 
-- **test_branch_forward.s** ❌
+- **test_branch_forward.s** ✅
   - Test forwarding after branch
   - Lines: 21
 
@@ -254,17 +294,37 @@
   - Simple test: Add two numbers
   - Lines: 8
 
-- **test_div_by_zero.s** ❌
+- **test_debug_mret.s** ✅
+  - Debug test - just check what MRET does to mstatus
+  - Lines: 21
+
+- **test_debug_mstatus.s** ✅
+  - Debug mstatus read - check what's failing
+  - Lines: 21
+
+- **test_delegation_disable.s** ✅
+  - Delegation Disable
+  - Lines: 50
+
+- **test_delegation_to_current_mode.s** ✅
+  - Delegation to Current Mode
+  - Lines: 36
+
+- **test_div_by_zero.s** ✅
   - Test division by zero behavior
   - Lines: 24
 
-- **test_div_comprehensive.s** ❌
+- **test_div_comprehensive.s** ✅
   - Comprehensive DIV/DIVU/REM/REMU test
   - Lines: 35
 
-- **test_div_simple.s** ❌
+- **test_div_simple.s** ✅
   - Simple DIV test to debug the division bug
   - Lines: 15
+
+- **test_ebreak_timing.s** ✅
+  - Test EBREAK timing - when do register writes complete?
+  - Lines: 12
 
 - **test_ecall_simple.s** ✅
   - Simple ECALL Test
@@ -277,6 +337,22 @@
 - **test_enter_smode.s** ✅
   - Enter S-mode
   - Lines: 38
+
+- **test_exception_breakpoint.s** ✅
+  - test_exception_breakpoint.s
+  - Lines: 129
+
+- **test_exception_ecall_mmode.s** ✅
+  - test_exception_ecall_mmode.s
+  - Lines: 49
+
+- **test_exception_instr_misaligned.s** ✅
+  - test_exception_instr_misaligned.s
+  - Lines: 114
+
+- **test_exception_page_faults.s** ✅
+  - test_exception_page_faults.s
+  - Lines: 25
 
 - **test_fcvt_edges.s** ✅
   - Test FCVT.S.W Edge Cases
@@ -298,12 +374,12 @@
   - Test FCVT.S.WU (Unsigned Integer → Float)
   - Lines: 71
 
-- **test_fcvt_w_simple.s** ❌
+- **test_fcvt_w_simple.s** ✅
   - Simple test for fcvt.w.s with 0.9
   - Lines: 20
   - Expected: result=0, fflags=0x01 (NX)
 
-- **test_fcvt_w_test7.s** ❌
+- **test_fcvt_w_test7.s** ✅
   - Test fcvt.w.s 1.1 specifically (test #7 from compliance suite)
   - Lines: 22
   - Expected: result=1, flags=0x01 (NX)
@@ -320,7 +396,7 @@
   - Test FMV.X.W instruction (FP to Integer register move)
   - Lines: 24
 
-- **test_forwarding_and.s** ❌
+- **test_forwarding_and.s** ✅
   - Minimal test to expose data forwarding bug with AND instruction
   - Lines: 29
 
@@ -336,7 +412,19 @@
   - Test Integer Load (sanity check)
   - Lines: 17
 
-- **test_lb_detailed.s** ❌
+- **test_interrupt_masking.s** ✅
+  - Test 3.5: Interrupt Masking
+  - Lines: 92
+
+- **test_interrupt_pending.s** ✅
+  - Test 3.4: Interrupt Pending Bits
+  - Lines: 78
+
+- **test_interrupt_software.s** ✅
+  - Test 3.1: Software Interrupt CSRs
+  - Lines: 59
+
+- **test_lb_detailed.s** ✅
   - Detailed LB (load byte) test
   - Lines: 42
 
@@ -361,7 +449,7 @@
   - Minimal test for load-to-branch hazard
   - Lines: 16
 
-- **test_load_use.s** ❌
+- **test_load_use.s** ✅
   - Test load-use hazard detection
   - Lines: 21
 
@@ -377,25 +465,33 @@
   - Minimal LR/SC Test
   - Lines: 22
 
-- **test_lrsc_debug.s** ❌
+- **test_lrsc_debug.s** ✅
   - Test LR/SC basic operation
   - Lines: 37
 
-- **test_lrsc_minimal.s** ❌
+- **test_lrsc_minimal.s** ✅
   - Minimal LR/SC test to debug forwarding hazard
   - Lines: 23
 
-- **test_lui_1nop_minimal.s** ❌
+- **test_lui_1nop_minimal.s** ✅
   - Minimal test for 1-NOP LUI bug
   - Lines: 9
 
-- **test_lui_addi.s** ❌
+- **test_lui_addi.s** ✅
   - Minimal test for LUI followed by ADDI (same register)
   - Lines: 14
 
-- **test_lui_spacing.s** ❌
+- **test_lui_spacing.s** ✅
   - Test LUI with different amounts of spacing before ADDI
   - Lines: 28
+
+- **test_macro_simple.s** ✅
+  - Basic Register Operations
+  - Lines: 9
+
+- **test_marker_check.s** ✅
+  - Test marker mechanism
+  - Lines: 11
 
 - **test_medeleg.s** ✅
   - MEDELEG CSR Test
@@ -418,8 +514,53 @@
   - Lines: 15
 
 - **test_mret_simple.s** ✅
-  - Simple MRET Test
-  - Lines: 23
+  - Simple MRET test
+  - Lines: 25
+
+- **test_mret_trap_simple.s** ✅
+  - Simple test: MRET in U-mode should trap
+  - Lines: 19
+
+- **test_mret_umode_minimal.s** ✅
+  - Minimal test: MRET in U-mode should trap
+  - Lines: 28
+  - Expected: Illegal instruction exception (cause=2)
+
+- **test_mstatus_basic.s** ✅
+  - Basic mstatus read/write
+  - Lines: 16
+
+- **test_mstatus_csrrw.s** ✅
+  - MSTATUS CSR Read/Write Test
+  - Lines: 16
+
+- **test_mstatus_direct.s** ✅
+  - Direct test - write and read mstatus
+  - Lines: 24
+
+- **test_mstatus_interrupt_enables.s** ✅
+  - Test 2.5: Interrupt Enable Verification
+  - Lines: 83
+
+- **test_mstatus_nested_traps.s** ✅
+  - Test 2.4: Sequential Trap Handling
+  - Lines: 102
+
+- **test_mstatus_state_mret.s** ✅
+  - Test 2.1: MRET State Transitions
+  - Lines: 72
+
+- **test_mstatus_state_mret_simple.s** ✅
+  - Simple test for MRET state transitions
+  - Lines: 40
+
+- **test_mstatus_state_sret.s** ✅
+  - Test 2.2: SRET State Transitions
+  - Lines: 131
+
+- **test_mstatus_state_trap.s** ✅
+  - Test 2.3: Trap Entry State Transitions
+  - Lines: 68
 
 - **test_nop.s** ✅
   - Minimal NOP test to verify pipeline still works
@@ -453,7 +594,7 @@
   - Phase 10.2 - Privilege Mode Transitions
   - Lines: 90
 
-- **test_raw_hazards.s** ❌
+- **test_raw_hazards.s** ✅
   - Test RAW (Read-After-Write) Hazard Handling
   - Lines: 25
 
@@ -489,7 +630,7 @@
   - Test SC instruction only (should fail since no prior LR)
   - Lines: 16
 
-- **test_shifts_debug.s** ❌
+- **test_shifts_debug.s** ✅
   - Test program to debug right shift operations
   - Lines: 21
 
@@ -509,7 +650,7 @@
   - Simple FP Load Test - Matches simple_add pattern
   - Lines: 9
 
-- **test_simple_raw.s** ❌
+- **test_simple_raw.s** ✅
   - Simple RAW hazard test
   - Lines: 9
 
@@ -517,9 +658,77 @@
   - Supervisor Mode CSR Read/Write
   - Lines: 41
 
-- **test_sret.s** ❌
+- **test_smode_entry.s** ✅
+  - Test S-mode entry and sstatus read
+  - Lines: 26
+
+- **test_smode_priv_check.s** ✅
+  - No description available
+  - Lines: 37
+
+- **test_sret.s** ✅
   - SRET instruction
   - Lines: 14
+
+- **test_sret_check_mmode.s** ✅
+  - Test SRET by checking mstatus from M-mode afterward
+  - Lines: 37
+
+- **test_sret_debug.s** ✅
+  - No description available
+  - Lines: 38
+
+- **test_sret_debug2.s** ✅
+  - No description available
+  - Lines: 32
+
+- **test_sret_debug3.s** ✅
+  - Test SRET SIE/SPIE updates
+  - Lines: 37
+
+- **test_sret_minimal.s** ✅
+  - Minimal SRET test - just execute SRET and check SPIE
+  - Lines: 30
+
+- **test_sret_mstatus_trace.s** ✅
+  - No description available
+  - Lines: 44
+
+- **test_sret_no_csr_after.s** ✅
+  - Test SRET SPIE without any CSR reads after SRET
+  - Lines: 38
+
+- **test_sret_sie_spie.s** ✅
+  - Test SRET SIE/SPIE handling
+  - Lines: 38
+
+- **test_sret_simple.s** ✅
+  - Minimal SRET test to debug SIE/SPIE behavior
+  - Lines: 41
+
+- **test_sret_spie_debug.s** ✅
+  - Minimal test to debug SRET SPIE update issue
+  - Lines: 42
+
+- **test_sret_spie_mem_dump.s** ✅
+  - Test SRET SPIE with memory dumps for inspection
+  - Lines: 37
+
+- **test_sret_spie_simple.s** ✅
+  - Ultra-minimal test to debug SRET SPIE update
+  - Lines: 36
+
+- **test_sret_stage2_only.s** ✅
+  - Test only stage 2 of SRET test
+  - Lines: 36
+
+- **test_stage1_and_2.s** ✅
+  - Test stages 1 and 2 only
+  - Lines: 47
+
+- **test_stage1_only.s** ✅
+  - Test stage 1 only: SPIE=0, SIE=1 → SRET → SIE=0, SPIE=1
+  - Lines: 40
 
 - **test_store_load.s** ✅
   - Test simple store and load
@@ -529,7 +738,7 @@
   - Simple STVEC test with NOPs to avoid hazards
   - Lines: 21
 
-- **test_supervisor_basic.s** ❌
+- **test_supervisor_basic.s** ✅
   - Basic Supervisor Mode CSR Access and SRET
   - Lines: 50
 
@@ -561,6 +770,14 @@
   - Basic Virtual Memory with Identity Mapping
   - Lines: 48
 
+- **test_x28_write.s** ✅
+  - Test writing to x28
+  - Lines: 7
+
+- **test_xret_privilege_trap.s** ✅
+  - test_xret_privilege_trap.s
+  - Lines: 60
+
 
 #### M Extension (Multiply/Divide)
 
@@ -582,7 +799,7 @@
   - No description available
   - Lines: 13
 
-- **test_m_hazard.s** ❌
+- **test_m_hazard.s** ✅
   - Test M Extension Data Hazard
   - Lines: 19
 
@@ -649,13 +866,37 @@
   - Category: Miscellaneous
 - **test_csr_basic** - Test CSR instructions
   - Category: CSR Instructions
+- **test_csr_compare** - Compare CSR reads - mscratch vs mstatus
+  - Category: CSR Instructions
 - **test_csr_debug** - CSR Debug - Check what CSR read returns
   - Category: CSR Instructions
+- **test_csr_illegal_access** - CSR Illegal Access Verification
+  - Category: CSR Instructions
+- **test_csr_readonly_verify** - CSR Read-Only Verification (Simplified)
+  - Category: CSR Instructions
+- **test_csr_scratch** - Simple CSR Read/Write - mscratch only
+  - Category: CSR Instructions
+- **test_csr_side_effects** - CSR Side Effects Verification
+  - Category: CSR Instructions
+- **test_csr_warl_fields** - CSR WARL Fields Verification
+  - Category: CSR Instructions
+- **test_csr_write_read** - CSR Write-Then-Read
+  - Category: CSR Instructions
+- **test_debug_mret** - Debug test - just check what MRET does to mstatus
+  - Category: Miscellaneous
+- **test_debug_mstatus** - Debug mstatus read - check what's failing
+  - Category: Miscellaneous
+- **test_delegation_disable** - Delegation Disable
+  - Category: Miscellaneous
+- **test_delegation_to_current_mode** - Delegation to Current Mode
+  - Category: Miscellaneous
 - **test_div_by_zero** - Test division by zero behavior
   - Category: Miscellaneous
 - **test_div_comprehensive** - Comprehensive DIV/DIVU/REM/REMU test
   - Category: Miscellaneous
 - **test_div_simple** - Simple DIV test to debug the division bug
+  - Category: Miscellaneous
+- **test_ebreak_timing** - Test EBREAK timing - when do register writes complete?
   - Category: Miscellaneous
 - **test_ecall_simple** - Simple ECALL Test
   - Category: Miscellaneous
@@ -674,6 +915,14 @@
 - **test_edge_multiply** - Test Edge Cases: Multiply Operations
   - Category: Edge Cases
 - **test_enter_smode** - Enter S-mode
+  - Category: Miscellaneous
+- **test_exception_breakpoint** - test_exception_breakpoint.s
+  - Category: Miscellaneous
+- **test_exception_ecall_mmode** - test_exception_ecall_mmode.s
+  - Category: Miscellaneous
+- **test_exception_instr_misaligned** - test_exception_instr_misaligned.s
+  - Category: Miscellaneous
+- **test_exception_page_faults** - test_exception_page_faults.s
   - Category: Miscellaneous
 - **test_fcvt_edges** - Test FCVT.S.W Edge Cases
   - Category: Miscellaneous
@@ -729,6 +978,12 @@
   - Category: Miscellaneous
 - **test_int_load** - Test Integer Load (sanity check)
   - Category: Miscellaneous
+- **test_interrupt_masking** - Test 3.5: Interrupt Masking
+  - Category: Miscellaneous
+- **test_interrupt_pending** - Test 3.4: Interrupt Pending Bits
+  - Category: Miscellaneous
+- **test_interrupt_software** - Test 3.1: Software Interrupt CSRs
+  - Category: Miscellaneous
 - **test_lb_detailed** - Detailed LB (load byte) test
   - Category: Miscellaneous
 - **test_li** - Test LI pseudo-instruction
@@ -779,6 +1034,10 @@
   - Category: M Extension (Multiply/Divide)
 - **test_m_simple_nops** - M test with NOPs after MUL
   - Category: M Extension (Multiply/Divide)
+- **test_macro_simple** - Basic Register Operations
+  - Category: Miscellaneous
+- **test_marker_check** - Test marker mechanism
+  - Category: Miscellaneous
 - **test_medeleg** - MEDELEG CSR Test
   - Category: Miscellaneous
 - **test_misaligned** - Test misaligned memory access
@@ -791,7 +1050,29 @@
   - Category: Miscellaneous
 - **test_mmu_enabled** - Verify MMU is actually enabled and translating
   - Category: MMU/Virtual Memory
-- **test_mret_simple** - Simple MRET Test
+- **test_mret_simple** - Simple MRET test
+  - Category: Miscellaneous
+- **test_mret_trap_simple** - Simple test: MRET in U-mode should trap
+  - Category: Miscellaneous
+- **test_mret_umode_minimal** - Minimal test: MRET in U-mode should trap
+  - Category: Miscellaneous
+- **test_mstatus_basic** - Basic mstatus read/write
+  - Category: Miscellaneous
+- **test_mstatus_csrrw** - MSTATUS CSR Read/Write Test
+  - Category: Miscellaneous
+- **test_mstatus_direct** - Direct test - write and read mstatus
+  - Category: Miscellaneous
+- **test_mstatus_interrupt_enables** - Test 2.5: Interrupt Enable Verification
+  - Category: Miscellaneous
+- **test_mstatus_nested_traps** - Test 2.4: Sequential Trap Handling
+  - Category: Miscellaneous
+- **test_mstatus_state_mret** - Test 2.1: MRET State Transitions
+  - Category: Miscellaneous
+- **test_mstatus_state_mret_simple** - Simple test for MRET state transitions
+  - Category: Miscellaneous
+- **test_mstatus_state_sret** - Test 2.2: SRET State Transitions
+  - Category: Miscellaneous
+- **test_mstatus_state_trap** - Test 2.3: Trap Entry State Transitions
   - Category: Miscellaneous
 - **test_nop** - Minimal NOP test to verify pipeline still works
   - Category: Miscellaneous
@@ -813,9 +1094,13 @@
   - Category: Privilege Mode
 - **test_priv_check** - Check Privilege Mode
   - Category: Privilege Mode
+- **test_priv_comprehensive** - Comprehensive Privilege Mode Regression (Phase 7.2)
+  - Category: Privilege Mode
 - **test_priv_macros_demo** - Privilege Macro Library Demo
   - Category: Privilege Mode
 - **test_priv_minimal** - Minimal CSR Test
+  - Category: Privilege Mode
+- **test_priv_rapid_switching** - Rapid Privilege Mode Switching (Phase 7.1)
   - Category: Privilege Mode
 - **test_priv_transitions** - Privilege Mode Transitions
   - Category: Privilege Mode
@@ -855,7 +1140,41 @@
   - Category: Miscellaneous
 - **test_smode_csr** - Supervisor Mode CSR Read/Write
   - Category: Miscellaneous
+- **test_smode_entry** - Test S-mode entry and sstatus read
+  - Category: Miscellaneous
+- **test_smode_priv_check** - No description available
+  - Category: Miscellaneous
 - **test_sret** - SRET instruction
+  - Category: Miscellaneous
+- **test_sret_check_mmode** - Test SRET by checking mstatus from M-mode afterward
+  - Category: Miscellaneous
+- **test_sret_debug** - No description available
+  - Category: Miscellaneous
+- **test_sret_debug2** - No description available
+  - Category: Miscellaneous
+- **test_sret_debug3** - Test SRET SIE/SPIE updates
+  - Category: Miscellaneous
+- **test_sret_minimal** - Minimal SRET test - just execute SRET and check SPIE
+  - Category: Miscellaneous
+- **test_sret_mstatus_trace** - No description available
+  - Category: Miscellaneous
+- **test_sret_no_csr_after** - Test SRET SPIE without any CSR reads after SRET
+  - Category: Miscellaneous
+- **test_sret_sie_spie** - Test SRET SIE/SPIE handling
+  - Category: Miscellaneous
+- **test_sret_simple** - Minimal SRET test to debug SIE/SPIE behavior
+  - Category: Miscellaneous
+- **test_sret_spie_debug** - Minimal test to debug SRET SPIE update issue
+  - Category: Miscellaneous
+- **test_sret_spie_mem_dump** - Test SRET SPIE with memory dumps for inspection
+  - Category: Miscellaneous
+- **test_sret_spie_simple** - Ultra-minimal test to debug SRET SPIE update
+  - Category: Miscellaneous
+- **test_sret_stage2_only** - Test only stage 2 of SRET test
+  - Category: Miscellaneous
+- **test_stage1_and_2** - Test stages 1 and 2 only
+  - Category: Miscellaneous
+- **test_stage1_only** - Test stage 1 only: SPIE=0, SIE=1 → SRET → SIE=0, SPIE=1
   - Category: Miscellaneous
 - **test_store_load** - Test simple store and load
   - Category: Miscellaneous
@@ -876,6 +1195,10 @@
 - **test_umode_illegal_instr** - test_umode_illegal_instr.s
   - Category: Miscellaneous
 - **test_vm_identity** - Basic Virtual Memory with Identity Mapping
+  - Category: Miscellaneous
+- **test_x28_write** - Test writing to x28
+  - Category: Miscellaneous
+- **test_xret_privilege_trap** - test_xret_privilege_trap.s
   - Category: Miscellaneous
 
 ---
@@ -936,19 +1259,19 @@ Official RISC-V compliance tests from riscv-tests repository.
 | F Extension | 26 |
 | D Extension | 0 |
 | C Extension | 0 |
-| CSR/Privilege | 2 |
+| CSR/Privilege | 9 |
 | Edge Cases | 6 |
-| **Total Custom** | **133** |
+| **Total Custom** | **186** |
 
 ### Hex File Status
-- Assembly files (.s): 133
-- Hex files (.hex): 123
-- Missing hex files: 10
+- Assembly files (.s): 186
+- Hex files (.hex): 178
+- Missing hex files: 8
 
 ### Overall Summary
-- **Custom Tests**: 133
+- **Custom Tests**: 186
 - **Official Tests**: 81
-- **Total Tests**: 214
+- **Total Tests**: 267
 - **Compliance**: 100% (81/81 official tests passing) ✅
 
 ---
@@ -987,5 +1310,5 @@ make test-d    # D extension
 
 ---
 
-**Last Generated**: Thu Oct 23 20:12:40 PDT 2025
+**Last Generated**: Sun Oct 26 20:35:48 PDT 2025
 **Generator**: tools/generate_test_catalog.sh
