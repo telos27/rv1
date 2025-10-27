@@ -8,10 +8,10 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **PHASE 1.5 COMPLETE - 6/6 INTERRUPT TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 1.5 COMPLETE ✅ - Full interrupt infrastructure functional!
-- **Recent Work**: Interrupt Test Suite Implementation (2025-10-27 Session 20) - See below
-- **Session 20 Summary**: Implemented 6 focused interrupt tests, all passing, Phase 1.5 complete
-- **Next Step**: Phase 2 - FreeRTOS port (OS Integration Roadmap)
+- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS port infrastructure setup complete
+- **Recent Work**: Phase 2 Infrastructure Setup (2025-10-27 Session 21) - See below
+- **Session 21 Summary**: Memory expansion (1MB), directory structure, FreeRTOS v10.5.1 LTS cloned
+- **Next Step**: Phase 2 continued - Port layer implementation (FreeRTOSConfig.h, port.c, portASM.S)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -106,6 +106,27 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-27 (Session 21)**: Phase 2 START - FreeRTOS Infrastructure Setup ✅
+- **Achievement**: Completed Phase 2 infrastructure setup (ahead of schedule)
+- **Memory Expansion**: Expanded DMEM from 64KB to 1MB for FreeRTOS
+  - Modified `rtl/config/rv_config.vh`: `DMEM_SIZE` now 1048576 bytes
+  - Validated: All 14 quick regression tests passing ✅
+  - Impact: Zero breakage, memory parameterization works correctly
+- **Directory Structure**: Created complete software hierarchy
+  - Created `software/freertos/{port,config,lib,demos}/`
+  - Placeholder files: `Makefile`, `README.md`
+- **FreeRTOS v10.5.1 LTS**: Successfully cloned kernel
+  - Repository: https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+  - Version: V10.5.1 (tag def7d2d)
+  - Includes: RISC-V port (`portable/GCC/RISC-V/`)
+  - Heap implementation: heap_4.c available
+- **Progress**: Phase 1 (Infrastructure) complete, Phase 2 (Port Layer) next
+- **Files Modified**: `rtl/config/rv_config.vh`
+- **Files Created**: Directory structure `software/freertos/*`
+- **Time**: 15 minutes (vs 2-3 hours estimated) - ahead of schedule
+- **Next Session**: Continue Phase 2 - Create FreeRTOSConfig.h and port layer
+- **Reference**: `docs/PHASE2_FREERTOS_EXECUTION_PLAN.md`
 
 **2025-10-27 (Session 20)**: Phase 1.5 COMPLETE - Interrupt Test Suite Implementation 🎉
 - **Achievement**: Implemented and validated 6 focused interrupt tests, Phase 1.5 complete (100%)

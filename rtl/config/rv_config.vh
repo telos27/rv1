@@ -136,12 +136,13 @@
 // ============================================================================
 
 // Memory sizes (in bytes)
+// Updated 2025-10-27: Expanded DMEM to 1MB for FreeRTOS (Phase 2)
 `ifndef IMEM_SIZE
   `define IMEM_SIZE 65536  // 64KB instruction memory
 `endif
 
 `ifndef DMEM_SIZE
-  `define DMEM_SIZE 65536  // 64KB data memory
+  `define DMEM_SIZE 1048576  // 1MB data memory (Phase 2: FreeRTOS unified memory)
 `endif
 
 // Address width (derived from memory size)

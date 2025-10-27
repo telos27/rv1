@@ -55,3 +55,4 @@ dist/
 # OS generated
 Thumbs.db
 riscv-tests/
+software/freertos/FreeRTOS-Kernel/
