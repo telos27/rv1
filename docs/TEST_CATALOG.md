@@ -418,11 +418,11 @@
 
 - **test_interrupt_pending.s** ✅
   - Test 3.4: Interrupt Pending Bits
-  - Lines: 78
+  - Lines: 83
 
 - **test_interrupt_software.s** ✅
   - Test 3.1: Software Interrupt CSRs
-  - Lines: 59
+  - Lines: 65
 
 - **test_lb_detailed.s** ✅
   - Detailed LB (load byte) test
@@ -1310,5 +1310,5 @@ make test-d    # D extension
 
 ---
 
-**Last Generated**: Sun Oct 26 20:35:48 PDT 2025
+**Last Generated**: Sun Oct 26 22:49:01 PDT 2025
 **Generator**: tools/generate_test_catalog.sh
