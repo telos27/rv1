@@ -40,6 +40,8 @@ module tb_core_pipelined_rv64;
   ) DUT (
     .clk(clk),
     .reset_n(reset_n),
+    .mtip_in(1'b0),      // No timer interrupt for basic tests
+    .msip_in(1'b0),      // No software interrupt for basic tests
     .pc_out(pc),
     .instr_out(instruction)
   );

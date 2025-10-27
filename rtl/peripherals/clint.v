@@ -72,9 +72,9 @@ module clint #(
 
   // Decode which register is being accessed
   // Prioritize MTIME first (most specific), then MTIMECMP, then MSIP
-  assign is_mtime    = (req_addr >= 16'hBFF8) && (req_addr <= 16'hBFFF);  // 0xBFF8-0xBFFF (8 bytes)
-  assign is_mtimecmp = !is_mtime && (req_addr >= 16'h4000) && (req_addr < 16'hBFF8);  // 0x4000-0xBFF7
-  assign is_msip     = !is_mtime && !is_mtimecmp && (req_addr < 16'h4000);  // 0x0000-0x3FFF
+  assign is_mtime    = (req_addr[15:3] == 13'h17FF);  // 0xBFF8-0xBFFF (check top 13 bits)
+  assign is_mtimecmp = (req_addr >= 16'h4000) && (req_addr[15:3] != 13'h17FF);  // 0x4000-0xBFF7
+  assign is_msip     = (req_addr < 16'h4000);  // 0x0000-0x3FFF
 
   // Calculate hart ID from address
   // MSIP: 4 bytes per hart starting at 0x0000
@@ -139,6 +139,9 @@ module clint #(
     end else begin
       // Handle writes to MTIMECMP
       if (req_valid && req_we && is_mtimecmp && (hart_id < NUM_HARTS)) begin
+        `ifdef DEBUG_CLINT
+        $display("MTIMECMP WRITE: hart_id=%0d data=0x%016h (addr=0x%04h)", hart_id, req_wdata, req_addr);
+        `endif
         case (req_size)
           3'h3: begin  // 64-bit write
             mtimecmp[hart_id] <= req_wdata;
@@ -209,6 +212,9 @@ module clint #(
         end else if (is_mtimecmp && (hart_id < NUM_HARTS)) begin
           // Read MTIMECMP for specific hart
           req_rdata <= mtimecmp[hart_id];
+          `ifdef DEBUG_CLINT
+          $display("MTIMECMP READ: hart_id=%0d data=0x%016h (addr=0x%04h)",  hart_id, mtimecmp[hart_id], req_addr);
+          `endif
         end else if (is_msip && (hart_id < NUM_HARTS)) begin
           // Read MSIP for specific hart (only bit 0 valid)
           req_rdata <= {63'h0, msip[hart_id]};
@@ -248,14 +254,18 @@ module clint #(
   `ifdef DEBUG_CLINT
   // Monitor for debugging (Icarus Verilog compatible)
   always @(posedge clk) begin
+    if (req_valid) begin
+      $display("DEBUG[@%t]: addr=0x%04h (top13=0x%03h) we=%b is_mtime=%b is_mtimecmp=%b is_msip=%b hart_id=%0d",
+               $time, req_addr, req_addr[15:3], req_we, is_mtime, is_mtimecmp, is_msip, hart_id);
+    end
     if (req_valid && req_we && is_mtime) begin
-      $display("DEBUG: MTIME write at time %t: 0x%016h", $time, req_wdata);
+      $display("  -> MTIME write at time %t: 0x%016h", $time, req_wdata);
     end
     if (req_valid && req_we && is_mtimecmp) begin
-      $display("DEBUG: MTIMECMP[%0d] write at time %t: 0x%016h", hart_id, $time, req_wdata);
+      $display("  -> MTIMECMP[%0d] write at time %t: 0x%016h", hart_id, $time, req_wdata);
     end
     if (req_valid && req_we && is_msip) begin
-      $display("DEBUG: MSIP[%0d] write at time %t: %b", hart_id, $time, req_wdata[0]);
+      $display("  -> MSIP[%0d] write at time %t: %b", hart_id, $time, req_wdata[0]);
     end
   end
   `endif

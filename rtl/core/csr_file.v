@@ -62,7 +62,11 @@ module csr_file #(
 
   // Floating-Point flag accumulation (from FPU in WB stage)
   input  wire             fflags_we,      // Write enable for flag accumulation
-  input  wire [4:0]       fflags_in       // Exception flags from FPU
+  input  wire [4:0]       fflags_in,      // Exception flags from FPU
+
+  // External interrupt inputs (from CLINT)
+  input  wire             mtip_in,        // Machine Timer Interrupt Pending
+  input  wire             msip_in         // Machine Software Interrupt Pending
 );
 
   // =========================================================================
@@ -104,8 +108,15 @@ module csr_file #(
   // Machine Trap Value (mtval)
   reg [XLEN-1:0] mtval_r;
 
-  // Machine Interrupt Pending (mip) - not fully implemented yet
+  // Machine Interrupt Pending (mip)
+  // Bits 7 (MTIP) and 3 (MSIP) are read-only and driven by external hardware (CLINT)
+  // Other bits are software-writable (for future external interrupts)
   reg [XLEN-1:0] mip_r;
+
+  // Combine hardware interrupt inputs with software-writable bits
+  wire [XLEN-1:0] mip_value;
+  assign mip_value = {mip_r[XLEN-1:8], mtip_in, mip_r[6:4], msip_in, mip_r[2:0]};
+
 
   // Floating-Point CSRs
   reg [4:0] fflags_r;  // Floating-point exception flags: [4] NV, [3] DZ, [2] OF, [1] UF, [0] NX
@@ -171,7 +182,8 @@ module csr_file #(
   // SIE and SIP are subsets of MIE and MIP
   // Supervisor-level interrupts use bits: SEIP(9), STIP(5), SSIP(1)
   wire [XLEN-1:0] sie_value = mie_r & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
-  wire [XLEN-1:0] sip_value = mip_r & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
+  // SIP is a view into MIP, showing only supervisor-level interrupt bits [9,5,1]
+  wire [XLEN-1:0] sip_value = mip_value & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
 
   // CSR read multiplexer
   // Note: mstatus_value and sstatus_value are now assigned directly above
@@ -205,7 +217,7 @@ module csr_file #(
         `endif
       end
       CSR_MTVAL:     csr_rdata = mtval_r;
-      CSR_MIP:       csr_rdata = mip_r;
+      CSR_MIP:       csr_rdata = mip_value;  // Read combined software + hardware interrupt bits
       CSR_MVENDORID: csr_rdata = {{(XLEN-32){1'b0}}, mvendorid};  // Zero-extend to XLEN
       CSR_MARCHID:   csr_rdata = {{(XLEN-32){1'b0}}, marchid};    // Zero-extend to XLEN
       CSR_MIMPID:    csr_rdata = {{(XLEN-32){1'b0}}, mimpid};     // Zero-extend to XLEN
@@ -426,7 +438,10 @@ module csr_file #(
           CSR_MEPC:     mepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C extension)
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
-          CSR_MIP:      mip_r      <= csr_write_value;
+          CSR_MIP: begin
+            // MIP: Mask out read-only bits (MTIP=7, MSIP=3) - these are driven by hardware
+            mip_r      <= csr_write_value & ~({{(XLEN-8){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0});
+          end
           CSR_MEDELEG:  medeleg_r  <= csr_write_value;
           CSR_MIDELEG:  mideleg_r  <= csr_write_value;
           CSR_SATP:     satp_r     <= csr_write_value;

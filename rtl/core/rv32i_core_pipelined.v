@@ -17,6 +17,11 @@ module rv_core_pipelined #(
 ) (
   input  wire             clk,
   input  wire             reset_n,
+
+  // External interrupt inputs (from CLINT/PLIC)
+  input  wire             mtip_in,       // Machine Timer Interrupt Pending
+  input  wire             msip_in,       // Machine Software Interrupt Pending
+
   output wire [XLEN-1:0]  pc_out,        // For debugging
   output wire [31:0]      instr_out      // For debugging (instructions always 32-bit)
 );
@@ -1613,7 +1618,10 @@ module rv_core_pipelined #(
     // FP loads have wb_sel=001 (memory data), FP ALU has other wb_sel values
     // Bug #14 fix: Include FP→INT operations (fcvt.w.s, fclass, etc.)
     .fflags_we((memwb_fp_reg_write || memwb_int_reg_write_fp) && memwb_valid && (memwb_wb_sel != 3'b001)),
-    .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx})
+    .fflags_in({memwb_fp_flag_nv, memwb_fp_flag_dz, memwb_fp_flag_of, memwb_fp_flag_uf, memwb_fp_flag_nx}),
+    // External interrupt inputs (Phase 1: CLINT integration)
+    .mtip_in(mtip_in),
+    .msip_in(msip_in)
   );
 
   // Alias for MMU integration

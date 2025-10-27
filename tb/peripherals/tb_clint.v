@@ -75,6 +75,7 @@ module tb_clint;
     input [2:0]  size;
     begin
       @(posedge clk);
+      #1;  // Small delay to avoid race with module sampling
       req_valid = 1;
       req_addr  = addr;
       req_wdata = data;
@@ -94,6 +95,7 @@ module tb_clint;
     output [63:0] data;
     begin
       @(posedge clk);
+      #1;  // Small delay to avoid race with module sampling
       req_valid = 1;
       req_addr  = addr;
       req_we    = 0;

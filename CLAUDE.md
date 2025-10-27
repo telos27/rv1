@@ -7,9 +7,10 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 25/34 passing (74%) - Phases 1-2-5-6-7 complete ✅
-- **Recent Work**: OS Integration Planning + CLINT Implementation (2025-10-26 Session 11) - See below
-- **Session 11 Summary**: Created comprehensive OS roadmap (2400+ lines docs), implemented CLINT module (80% complete, MTIME working)
-- **Next Phase**: Interrupt infrastructure (CLINT + UART) for OS support 🚀
+- **Recent Work**: CLINT Integration Complete + SoC Architecture (2025-10-26 Session 12) - See below
+- **Session 12 Summary**: Fixed CLINT bugs (10/10 tests ✅), integrated with CSR/Core, created SoC wrapper
+- **Phase 1.1 Status**: 100% COMPLETE - CLINT fully functional with timer + software interrupts 🚀
+- **Next Phase**: Interrupt test programs + UART implementation (Phase 1.2)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -104,6 +105,46 @@ rv1/
 **Progress**: 25/34 tests passing (74%), 7 skipped/blocked, 2 pending
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-26 (Session 12)**: CLINT Integration Complete + SoC Architecture ✅
+- **Achievement**: Fixed CLINT bugs and fully integrated with CPU core and CSR file
+- **Bug Fixed**: Testbench race condition causing address decode failures
+  - **Problem**: Signals set at `@(posedge clk)` sampled immediately, causing delta-cycle glitches
+  - **Solution**: Added `#1` delay in testbench tasks (`tb_clint.v`)
+  - **Result**: CLINT tests 2/10 → 10/10 passing (100%) ✅
+- **CSR Integration**:
+  - Added `mtip_in`/`msip_in` interrupt ports to `csr_file.v`
+  - MTIP (bit 7) and MSIP (bit 3) in mip register are read-only, hardware-driven
+  - Updated SIP to reflect hardware interrupts
+  - Software writes to interrupt bits properly masked
+- **Core Integration**:
+  - Added interrupt ports to `rv_core_pipelined.v`
+  - Connected CSR file to CLINT interrupt signals
+  - Updated testbenches to tie off interrupts (backward compatibility)
+- **SoC Architecture**:
+  - Created `rtl/rv_soc.v` - top-level SoC module
+  - Instantiates core + CLINT, connects interrupt signals
+  - Created `tb/integration/tb_soc.v` - SoC testbench
+  - Ready for future expansion (UART, PLIC, bus interconnect)
+- **Testing**:
+  - CLINT: 10/10 tests ✅
+  - Quick regression: 14/14 tests ✅
+  - SoC compiles and simulates successfully ✅
+- **Files Modified/Created**: 8 files (~150 lines)
+- **Phase 1.1 Status**: 100% COMPLETE 🚀
+- **Reference**: `docs/SESSION_12_SUMMARY.md`
+
+**2025-10-26 (Session 11)**: OS Integration Planning + CLINT Implementation (Phase 1 Start) 🚧
+- **Planning**: Created comprehensive OS roadmap (2400+ lines)
+  - 5 phases: FreeRTOS → xv6 → Linux
+  - Timeline: 16-24 weeks
+  - Created `docs/OS_INTEGRATION_PLAN.md`, `docs/MEMORY_MAP.md`
+- **CLINT Implementation**: Partial (80% - memory interface working, tests failing)
+  - Created `rtl/peripherals/clint.v` (260 lines)
+  - Created `tb/peripherals/tb_clint.v` (400 lines)
+  - MTIME counter working, MTIMECMP/MSIP address decode issues
+  - Tests: 2/10 passing (20%) 🚧
+- **Reference**: `docs/SESSION_11_SUMMARY.md`, `docs/SESSION_11_OS_PLANNING.md`
 
 **2025-10-26 (Session 10)**: Refactoring Phase 2 Analysis - Stage Extraction vs Hybrid Approach ⚙️
 - **Goal**: Split rv32i_core_pipelined.v (2455 lines) into stage-based modules
