@@ -3,8 +3,10 @@
 // Pure combinational logic (1 cycle)
 // Returns 10-bit classification mask in integer register rd
 
+`include "config/rv_config.vh"
+
 module fp_classify #(
-  parameter FLEN = 32  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
 ) (
   // Operand
   input  wire [FLEN-1:0]   operand,

@@ -3,8 +3,10 @@
 // IEEE 754-2008 compliant with SRT radix-2 division algorithm
 // Multi-cycle execution: 16-32 cycles (depending on FLEN)
 
+`include "config/rv_config.vh"
+
 module fp_divider #(
-  parameter FLEN = 32  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
 ) (
   input  wire              clk,
   input  wire              reset_n,

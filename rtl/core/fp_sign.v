@@ -6,8 +6,10 @@
 // FSGNJN: result = |rs1| with negated sign of rs2
 // FSGNJX: result = |rs1| with sign(rs1) XOR sign(rs2)
 
+`include "config/rv_config.vh"
+
 module fp_sign #(
-  parameter FLEN = 32  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
 ) (
   // Operands
   input  wire [FLEN-1:0]   operand_a,   // rs1

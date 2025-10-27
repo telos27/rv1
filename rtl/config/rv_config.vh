@@ -148,6 +148,11 @@
 `define IMEM_ADDR_WIDTH $clog2(`IMEM_SIZE)
 `define DMEM_ADDR_WIDTH $clog2(`DMEM_SIZE)
 
+// TLB Configuration
+`ifndef TLB_ENTRIES
+  `define TLB_ENTRIES 16  // Number of TLB entries (power of 2)
+`endif
+
 // ============================================================================
 // Pipeline Configuration
 // ============================================================================

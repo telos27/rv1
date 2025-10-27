@@ -3,8 +3,10 @@
 // Supports both F extension (FLEN=32) and D extension (FLEN=64)
 // Includes NaN boxing logic for single-precision values in double-precision registers
 
+`include "config/rv_config.vh"
+
 module fp_register_file #(
-  parameter FLEN = 32  // 32 for F extension, 64 for D extension
+  parameter FLEN = `FLEN  // 32 for F extension, 64 for D extension
 ) (
   input  wire              clk,
   input  wire              reset_n,

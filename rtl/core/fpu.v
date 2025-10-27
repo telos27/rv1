@@ -21,8 +21,8 @@
 `include "config/rv_config.vh"
 
 module fpu #(
-  parameter FLEN = 32,  // 32 for single-precision (F), 64 for double-precision (D)
-  parameter XLEN = 32   // 32 for RV32, 64 for RV64
+  parameter FLEN = `FLEN,  // 32 for single-precision (F), 64 for double-precision (D)
+  parameter XLEN = `XLEN   // 32 for RV32, 64 for RV64
 ) (
   input  wire              clk,
   input  wire              reset_n,

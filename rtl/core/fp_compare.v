@@ -3,8 +3,10 @@
 // Pure combinational logic (1 cycle)
 // Result written to integer register rd
 
+`include "config/rv_config.vh"
+
 module fp_compare #(
-  parameter FLEN = 32  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
 ) (
   // Operands
   input  wire [FLEN-1:0]   operand_a,   // rs1

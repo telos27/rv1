@@ -3,8 +3,10 @@
 // IEEE 754-2008 compliant with single rounding step (key advantage over separate ops)
 // Multi-cycle execution: 4-5 cycles
 
+`include "config/rv_config.vh"
+
 module fp_fma #(
-  parameter FLEN = 32  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
 ) (
   input  wire              clk,
   input  wire              reset_n,

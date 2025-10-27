@@ -9,7 +9,7 @@
 
 module mmu #(
   parameter XLEN = `XLEN,
-  parameter TLB_ENTRIES = 16  // Number of TLB entries (power of 2)
+  parameter TLB_ENTRIES = `TLB_ENTRIES  // Number of TLB entries (power of 2)
 ) (
   input  wire             clk,
   input  wire             reset_n,

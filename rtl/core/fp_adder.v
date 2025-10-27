@@ -3,8 +3,10 @@
 // IEEE 754-2008 compliant with full rounding mode support
 // Multi-cycle execution: 3-4 cycles
 
+`include "config/rv_config.vh"
+
 module fp_adder #(
-  parameter FLEN = 32  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
 ) (
   input  wire              clk,
   input  wire              reset_n,

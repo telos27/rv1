@@ -1,7 +1,7 @@
 # Refactoring Plan
 
 **Date**: 2025-10-26
-**Status**: In Progress - Phase 1 (Task 1.1 Complete ✅)
+**Status**: In Progress - Phase 1 (Tasks 1.1 & 1.2 Complete ✅)
 **Purpose**: Document code quality improvements and technical debt reduction
 
 ## Executive Summary
@@ -104,7 +104,66 @@ Create `rtl/config/rv_csr_defines.vh` with:
 
 ---
 
-### Task 1.2: Split Main Core File into Stage-Based Modules
+### Task 1.2: Consolidate Configuration Parameters
+
+**Problem:**
+- Configuration parameters (XLEN, FLEN, TLB_ENTRIES) defined with hardcoded defaults across modules
+- FPU modules hardcode `FLEN = 32` instead of using config
+- Some modules hardcode `XLEN = 32` instead of using `` `XLEN``
+- Missing `TLB_ENTRIES` define in rv_config.vh
+- Inconsistent default values across codebase
+
+**Current Duplication:**
+```verilog
+// In fp_adder.v:
+parameter FLEN = 32  // Hardcoded, not using config
+
+// In fpu.v:
+parameter FLEN = 32  // Hardcoded
+parameter XLEN = 32  // Hardcoded
+
+// In rvc_decoder.v:
+parameter XLEN = 32  // Hardcoded
+
+// In mmu.v:
+parameter TLB_ENTRIES = 16  // Not available in config
+```
+
+**Solution:**
+Extend `rtl/config/rv_config.vh` with:
+- Add `TLB_ENTRIES` define
+- Update all FPU modules to use `` `FLEN`` default
+- Update modules with hardcoded XLEN to use `` `XLEN``
+- Ensure single source of truth for all configuration
+
+**Implementation Steps:**
+1. Add `TLB_ENTRIES` to rv_config.vh
+2. Update 11 FPU modules to use `` `FLEN`` default
+3. Update 5 modules with hardcoded XLEN to use `` `XLEN``
+4. Run quick regression to verify
+
+**Files Modified:**
+- `rtl/config/rv_config.vh` (added TLB_ENTRIES)
+- FPU modules (11 files): fp_adder.v, fp_classify.v, fp_compare.v, fp_converter.v, fp_divider.v, fp_fma.v, fp_minmax.v, fp_multiplier.v, fp_register_file.v, fp_sign.v, fp_sqrt.v, fpu.v
+- Core modules (4 files): atomic_unit.v, reservation_station.v, rvc_decoder.v, mmu.v
+
+**Estimated Effort:** 30 minutes
+**Lines Changed:** 18 parameter defaults
+**Risk:** Very Low (updating defaults to use existing config)
+**Testing:** Quick regression (`make test-quick`)
+
+**Benefits:**
+- Single source of truth for all configuration parameters
+- Consistent defaults across entire codebase
+- Easier to create new configurations
+- Better parameterization support
+- Improved consistency with existing rv_config.vh
+
+**Status:** ✅ **COMPLETE** (2025-10-26 Session 9)
+
+---
+
+### Task 1.3: Split Main Core File into Stage-Based Modules
 
 **Problem:**
 - `rv32i_core_pipelined.v` is 2,468 lines - difficult to navigate
@@ -643,27 +702,37 @@ endproperty
 
 ## Implementation Roadmap
 
-### Phase 1: Quick Wins (Session 1)
+### Phase 1: Quick Wins (Session 9)
 **Time:** 2-3 hours
-**Status:** 1/2 tasks complete (50%)
+**Status:** 2/3 tasks complete (67%)
 **Tasks:**
 1. ✅ Task 1.1: Extract CSR constants to header file (1 hour) - **COMPLETE**
-2. ❌ Task 1.3: Extract trap controller module (2 hours) - **DEFERRED** (see analysis below)
+2. ✅ Task 1.2: Consolidate configuration parameters (30 min) - **COMPLETE**
+3. ❌ Task 1.3: Extract trap controller module (2 hours) - **DEFERRED** (see analysis below)
 
 **Testing:** `make test-quick` after each task
 
 **Deliverables:**
-- ✅ `rtl/config/rv_csr_defines.vh` (154 lines, 63 constants)
+- ✅ `rtl/config/rv_csr_defines.vh` (142 lines, 63 constants)
+- ✅ `rtl/config/rv_config.vh` (updated with TLB_ENTRIES)
 - ❌ `rtl/core/trap_controller.v` - **DEFERRED**
-- ✅ Updated 4 core files (csr_file.v, rv32i_core_pipelined.v, hazard_detection_unit.v, exception_unit.v)
+- ✅ Updated 4 CSR files (csr_file.v, rv32i_core_pipelined.v, hazard_detection_unit.v, exception_unit.v)
+- ✅ Updated 15 config files (11 FPU modules + 4 core modules)
 - ✅ All tests passing (14/14 quick regression)
 
-**Task 1.1 Results (2025-10-26):**
+**Task 1.1 Results (2025-10-26 Session 9):**
 - Created comprehensive CSR defines header with RISC-V spec references
 - Removed 70 lines of duplicate localparam definitions
 - Zero regressions - all tests passing
 
-**Task 1.3 Analysis (2025-10-26):**
+**Task 1.2 Results (2025-10-26 Session 9):**
+- Added `TLB_ENTRIES` to rv_config.vh
+- Updated 11 FPU modules to use `` `FLEN`` defaults
+- Updated 4 core modules to use `` `XLEN`` / `` `TLB_ENTRIES`` defaults
+- Eliminated 18 hardcoded parameter defaults
+- Zero regressions - all tests passing
+
+**Task 1.3 Analysis (2025-10-26 Session 9):**
 - **Attempted**: Created trap_controller.v (263 lines) to extract trap handling logic
 - **Problem**: Trap handling is deeply intertwined with CSR updates:
   - CSR file computes `trap_target_priv` based on delegation logic
@@ -681,10 +750,10 @@ endproperty
 
 ---
 
-### Phase 2: Major Restructure (Session 2-3)
+### Phase 2: Major Restructure (Session 10+)
 **Time:** 6-8 hours
 **Tasks:**
-1. Task 1.2: Split main core into stage modules (6-8 hours)
+1. Task 1.3: Split main core into stage modules (6-8 hours)
    - Extract incrementally (IF, ID, EX, MEM, WB, forwarding)
    - Test after each extraction
    - Update documentation

@@ -2,9 +2,11 @@
 // Implements INT↔FP and FLOAT↔DOUBLE conversions
 // Multi-cycle execution: 2-3 cycles
 
+`include "config/rv_config.vh"
+
 module fp_converter #(
-  parameter FLEN = 32,  // 32 for single-precision, 64 for double-precision
-  parameter XLEN = 32   // 32 for RV32, 64 for RV64
+  parameter FLEN = `FLEN,  // 32 for single-precision, 64 for double-precision
+  parameter XLEN = `XLEN   // 32 for RV32, 64 for RV64
 ) (
   input  wire              clk,
   input  wire              reset_n,

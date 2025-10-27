@@ -7,8 +7,10 @@
 // - -0 and +0 are equal, but FMIN returns -0, FMAX returns +0
 // - Signaling NaN sets NV flag
 
+`include "config/rv_config.vh"
+
 module fp_minmax #(
-  parameter FLEN = 32  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
 ) (
   // Operands
   input  wire [FLEN-1:0]   operand_a,   // rs1

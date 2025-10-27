@@ -103,12 +103,19 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
-**2025-10-26 (Session 9)**: Refactoring Phase 1 - CSR Constants & Trap Controller Analysis ✅
+**2025-10-26 (Session 9)**: Refactoring Phase 1 - CSR Constants & Configuration Parameters ✅
 - **Task 1.1 Complete**: CSR constants extraction successful ✅
   - **Created**: `rtl/config/rv_csr_defines.vh` (142 lines, 63 constants)
   - **Eliminated**: 70 lines of duplicate CSR constant definitions
   - **Impact**: Single source of truth for CSR addresses, bit positions, privilege modes, exception codes
   - **Modified**: 4 core files (csr_file.v, rv32i_core_pipelined.v, hazard_detection_unit.v, exception_unit.v)
+  - **Testing**: Quick regression 14/14 passing ✅, zero regressions
+- **Task 1.2 Complete**: Configuration parameter consolidation ✅
+  - **Enhanced**: `rtl/config/rv_config.vh` (added TLB_ENTRIES define)
+  - **Updated**: 11 FPU modules to use `` `FLEN`` defaults (fp_adder, fp_classify, fp_compare, fp_converter, fp_divider, fp_fma, fp_minmax, fp_multiplier, fp_register_file, fp_sign, fp_sqrt, fpu)
+  - **Updated**: 4 core modules to use config defaults (atomic_unit, reservation_station, rvc_decoder, mmu)
+  - **Eliminated**: 18 hardcoded parameter defaults
+  - **Impact**: Single source of truth for all configuration parameters (XLEN, FLEN, TLB_ENTRIES)
   - **Testing**: Quick regression 14/14 passing ✅, zero regressions
 - **Task 1.3 Attempted**: Trap controller extraction (deferred)
   - **Problem Identified**: Trap handling deeply coupled with CSR updates
@@ -117,7 +124,7 @@ rv1/
   - **Analysis**: Created prototype trap_controller.v (263 lines)
   - **Decision**: Defer until Phase 2 (stage-based core split) for cleaner boundaries
   - **Documentation**: Updated REFACTORING_PLAN.md with detailed analysis
-- **Reference**: `docs/REFACTORING_PLAN.md` - Phase 1 status (1/2 tasks complete)
+- **Reference**: `docs/REFACTORING_PLAN.md` - Phase 1 status (2/3 tasks complete, 67%)
 
 **2025-10-26 (Session 8)**: Phase 7 Complete - Stress & Regression Tests ✅
 - **Achievement**: Implemented final 2 tests of privilege mode test suite (Phase 7)

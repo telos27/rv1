@@ -11,8 +11,10 @@
 // - Combinational logic (single-cycle decompression)
 // - Illegal instruction detection
 
+`include "config/rv_config.vh"
+
 module rvc_decoder #(
-  parameter XLEN = 32
+  parameter XLEN = `XLEN
 ) (
   input  wire [15:0] compressed_instr,     // 16-bit compressed instruction
   input  wire        is_rv64,              // 1 = RV64 mode, 0 = RV32 mode

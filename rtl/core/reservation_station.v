@@ -5,7 +5,7 @@
 `include "rtl/config/rv_config.vh"
 
 module reservation_station #(
-    parameter XLEN = 32
+    parameter XLEN = `XLEN
 ) (
     input  wire clk,
     input  wire reset,
