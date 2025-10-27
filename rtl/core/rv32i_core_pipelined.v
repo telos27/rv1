@@ -24,6 +24,15 @@ module rv_core_pipelined #(
   input  wire             meip_in,       // Machine External Interrupt Pending (from PLIC)
   input  wire             seip_in,       // Supervisor External Interrupt Pending (from PLIC)
 
+  // Bus master interface (to memory interconnect)
+  output wire             bus_req_valid,
+  output wire [XLEN-1:0]  bus_req_addr,
+  output wire [63:0]      bus_req_wdata,
+  output wire             bus_req_we,
+  output wire [2:0]       bus_req_size,
+  input  wire             bus_req_ready,
+  input  wire [63:0]      bus_req_rdata,
+
   output wire [XLEN-1:0]  pc_out,        // For debugging
   output wire [31:0]      instr_out      // For debugging (instructions always 32-bit)
 );
@@ -2203,24 +2212,23 @@ module rv_core_pipelined #(
   assign mmu_ptw_resp_valid = ptw_req_valid_r;
   assign mmu_ptw_resp_data = arb_mem_read_data;
 
-  // Data Memory (connected via arbiter for MMU PTW access)
-  data_memory #(
-    .XLEN(XLEN),
-    .FLEN(`FLEN),
-    .MEM_SIZE(DMEM_SIZE),
-    .MEM_FILE(MEM_FILE)  // Load same file as instruction memory (for compliance tests)
-  ) dmem (
-    .clk(clk),
-    .addr(arb_mem_addr),        // Arbitrated address (PTW or translated CPU address)
-    .write_data(arb_mem_write_data),
-    .mem_read(arb_mem_read),
-    .mem_write(arb_mem_write),
-    .funct3(arb_mem_funct3),
-    .read_data(arb_mem_read_data)
-  );
+  //--------------------------------------------------------------------------
+  // Bus Master Interface
+  //--------------------------------------------------------------------------
+  // Connect arbiter signals to bus master port
+  // The bus will route requests to DMEM or memory-mapped peripherals
+  // Note: funct3 encodes access size: 0=byte, 1=half, 2=word, 3=double
+  assign bus_req_valid = arb_mem_read || arb_mem_write;
+  assign bus_req_addr  = arb_mem_addr;
+  assign bus_req_wdata = arb_mem_write_data;
+  assign bus_req_we    = arb_mem_write;
+  assign bus_req_size  = arb_mem_funct3;
+
+  // Bus read data feeds back to arbiter
+  assign arb_mem_read_data = bus_req_rdata;
 
   // Connect arbiter read data to both integer and FP paths
-  // For integer loads, use lower XLEN bits (with sign/zero extension handled in data_memory)
+  // For integer loads, use lower XLEN bits (with sign/zero extension handled by bus slaves)
   // For FP loads, use full FLEN bits
   assign mem_read_data    = arb_mem_read_data[XLEN-1:0];  // Integer loads: lower bits
   assign fp_mem_read_data = arb_mem_read_data;             // FP loads: full 64 bits

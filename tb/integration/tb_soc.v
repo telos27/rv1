@@ -32,10 +32,17 @@ module tb_soc;
     parameter MEM_FILE = "";
   `endif
 
+  // Reset vector (compliance tests start at 0x80000000)
+  `ifdef COMPLIANCE_TEST
+    parameter RESET_VEC = 32'h80000000;
+  `else
+    parameter RESET_VEC = 32'h00000000;
+  `endif
+
   // Instantiate SoC
   rv_soc #(
     .XLEN(32),
-    .RESET_VECTOR(32'h00000000),
+    .RESET_VECTOR(RESET_VEC),
     .IMEM_SIZE(16384),
     .DMEM_SIZE(16384),
     .MEM_FILE(MEM_FILE),

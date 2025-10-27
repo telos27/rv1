@@ -102,17 +102,20 @@ echo ""
 iverilog -g2012 \
     $CONFIG_FLAG \
     $DEBUG_FLAGS \
+    -DCOMPLIANCE_TEST \
     -DMEM_INIT_FILE=\"$HEX_FILE\" \
     -I rtl/ \
     -I rtl/core/ \
     -I rtl/memory/ \
     -I rtl/peripherals/ \
+    -I rtl/interconnect/ \
     -I rtl/config/ \
     -o "$OUTPUT_VVP" \
     rtl/rv_soc.v \
     rtl/core/*.v \
     rtl/memory/*.v \
     rtl/peripherals/*.v \
+    rtl/interconnect/*.v \
     "$TESTBENCH"
 
 if [ $? -ne 0 ]; then

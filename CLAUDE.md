@@ -7,10 +7,10 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 27/34 passing (79%) - Phases 1-2-3-5-6-7 complete ✅
-- **OS Integration**: Phase 1.3 Foundation Complete - Bus + PLIC ready ✅
-- **Recent Work**: Bus Interconnect + PLIC (2025-10-27 Session 16) - See below
-- **Session 16 Summary**: Bus interconnect (10/10 ✅), PLIC implemented, MEI/SEI support
-- **Next Phase**: Full SoC integration (Phase 1.4) - Connect bus to core
+- **OS Integration**: Phase 1.4 Complete - Full SoC with memory-mapped peripherals ✅
+- **Recent Work**: Full SoC Integration (2025-10-27 Session 17) - See below
+- **Session 17 Summary**: Core bus interface, SoC integration complete, MMIO test passing
+- **Next Phase**: Interrupt delivery testing (Phase 1.5)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -105,6 +105,35 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-27 (Session 17)**: Phase 1.4 - Full SoC Integration Complete ✅
+- **Achievement**: Connected CPU core to bus interconnect, enabling memory-mapped peripheral access
+- **Core Changes** (`rv32i_core_pipelined.v`):
+  - Added 7-signal bus master port (req_valid, req_addr, req_wdata, req_we, req_size, req_ready, req_rdata)
+  - Replaced embedded DMEM with bus interface connection
+  - Maintained memory arbiter for MMU PTW compatibility
+- **DMEM Bus Adapter** (`dmem_bus_adapter.v`, NEW, 45 lines):
+  - Wraps `data_memory` module with bus slave interface
+  - Single-cycle response, transparent pass-through
+- **Full SoC Integration** (`rv_soc.v`, rewritten, 264 lines):
+  - Instantiated bus interconnect with 4 slaves (CLINT, UART, PLIC, DMEM)
+  - Connected all peripherals with memory-mapped interfaces
+  - Full interrupt routing: CLINT→Core (mtip/msip), UART→PLIC→Core (meip/seip)
+  - Fixed PLIC integration (signal name `irq_sources`, 24-bit address offset)
+- **MMIO Test** (`test_mmio_peripherals.s`, NEW):
+  - Tests CLINT MSIP/MTIMECMP read/write (0x0200_0000)
+  - Tests UART register access (0x1000_0000)
+  - Tests DMEM byte/half/word access (0x8000_0000)
+  - 10 test cases, **PASSED** ✅ in 76 cycles
+- **Testbench Updates**:
+  - `tb_core_pipelined.v`: Added bus interface + DMEM adapter
+  - `tb_soc.v`: Added COMPLIANCE_TEST support
+  - `tools/test_soc.sh`: Added interconnect directory to includes
+- **Testing**: Quick regression 14/14 passing ✅, zero regressions
+- **Phase 1.4 Status**: 100% COMPLETE 🚀
+- **Files Created**: `dmem_bus_adapter.v`, `test_mmio_peripherals.s`, `SESSION_17_PHASE_1_4_SUMMARY.md`
+- **Files Modified**: `rv32i_core_pipelined.v`, `rv_soc.v`, testbenches, `CLAUDE.md`
+- **Reference**: `docs/SESSION_17_PHASE_1_4_SUMMARY.md`
 
 **2025-10-26 (Session 15)**: UART Implementation Complete - Phase 1.2 ✅
 - **Achievement**: Full 16550-compatible UART peripheral with comprehensive testing
