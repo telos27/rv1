@@ -6,12 +6,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Achievement**: 🎉 **PHASE 1.5 COMPLETE - 6/6 INTERRUPT TESTS PASSING** 🎉
+- **Achievement**: 🎉 **FREERTOS COMPILED - 17KB CODE, 795KB DATA** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS port infrastructure setup complete
-- **Recent Work**: Phase 2 Infrastructure Setup (2025-10-27 Session 21) - See below
-- **Session 21 Summary**: Memory expansion (1MB), directory structure, FreeRTOS v10.5.1 LTS cloned
-- **Next Step**: Phase 2 continued - Port layer implementation (FreeRTOSConfig.h, port.c, portASM.S)
+- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS compiled, boot debugging required
+- **Recent Work**: FreeRTOS Compilation & First Boot (2025-10-27 Session 22) - See below
+- **Session 22 Summary**: FreeRTOS built successfully, testbench created, boot sequence debugging needed
+- **Next Step**: Session 23 - Debug FreeRTOS boot (analyze waveforms, fix startup sequence)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -107,26 +108,52 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
-**2025-10-27 (Session 21)**: Phase 2 START - FreeRTOS Infrastructure Setup ✅
-- **Achievement**: Completed Phase 2 infrastructure setup (ahead of schedule)
-- **Memory Expansion**: Expanded DMEM from 64KB to 1MB for FreeRTOS
-  - Modified `rtl/config/rv_config.vh`: `DMEM_SIZE` now 1048576 bytes
-  - Validated: All 14 quick regression tests passing ✅
-  - Impact: Zero breakage, memory parameterization works correctly
-- **Directory Structure**: Created complete software hierarchy
-  - Created `software/freertos/{port,config,lib,demos}/`
-  - Placeholder files: `Makefile`, `README.md`
-- **FreeRTOS v10.5.1 LTS**: Successfully cloned kernel
-  - Repository: https://github.com/FreeRTOS/FreeRTOS-Kernel.git
-  - Version: V10.5.1 (tag def7d2d)
-  - Includes: RISC-V port (`portable/GCC/RISC-V/`)
-  - Heap implementation: heap_4.c available
-- **Progress**: Phase 1 (Infrastructure) complete, Phase 2 (Port Layer) next
-- **Files Modified**: `rtl/config/rv_config.vh`
-- **Files Created**: Directory structure `software/freertos/*`
-- **Time**: 15 minutes (vs 2-3 hours estimated) - ahead of schedule
-- **Next Session**: Continue Phase 2 - Create FreeRTOSConfig.h and port layer
-- **Reference**: `docs/PHASE2_FREERTOS_EXECUTION_PLAN.md`
+**2025-10-27 (Session 22)**: Phase 2 - FreeRTOS Compilation Success & First Boot Attempt 🎉
+- **Achievement**: FreeRTOS successfully compiled for RV32IMAFDC - first RTOS binary! ✅
+- **Compilation Fixes**:
+  - **picolibc Installation**: Installed lightweight C library for embedded RISC-V (`picolibc-riscv64-unknown-elf`)
+  - **Makefile** (`software/freertos/Makefile`): Added picolibc specs, fixed demo source inclusion
+  - **FreeRTOSConfig.h**: Fixed preprocessor macros (removed casts), added `configUSE_16_BIT_TICKS`, reduced heap 512KB→256KB
+  - **uart.c**: Added `#include <stddef.h>` for NULL definition
+  - **syscalls.c**: Removed conflicting errno declaration, added stdin/stdout/stderr FILE pointers
+- **Build Statistics**:
+  - IMEM: 17,464 bytes / 64KB (26.65%) ✅
+  - DMEM: 794,944 bytes / 1MB (75.81%) ✅
+  - Binary: text=17,448B, data=16B, bss=794,928B (includes 256KB heap)
+- **Testbench Infrastructure**:
+  - Created `tb/integration/tb_freertos.v` (195 lines) - UART monitoring, progress indicators, stuck detection
+  - Created `tools/test_freertos.sh` - Simulation runner with timeout control
+  - 50 MHz clock, 64KB IMEM, 1MB DMEM support
+- **First Boot Attempt**: 🚧 DEBUGGING REQUIRED
+  - Simulation runs 50k cycles but appears stuck at PC 0x14 (gp initialization in start.S)
+  - No UART output received
+  - VCD waveform generated for debugging (`tb_freertos.vcd`)
+  - Likely issue: DMEM address decode or auipc instruction with large immediate
+- **Status**: Compilation 100% successful, boot sequence debugging needed
+- **Files Modified**: 4 files (compilation fixes)
+- **Files Created**: 2 files (testbench + script), plus build artifacts (elf/hex/map)
+- **Next**: Session 23 - Analyze waveforms, debug startup sequence, achieve first successful boot
+- **Reference**: `docs/SESSION_22_SUMMARY.md`
+
+**2025-10-27 (Session 21)**: Phase 2 - FreeRTOS Port Layer Complete ✅
+- **Achievement**: Implemented complete FreeRTOS port layer for RV32IMAFDC (ready for compilation)
+- **Files Created** (9 files, 1587 lines of new code):
+  - `config/FreeRTOSConfig.h` (298 lines) - CPU config, CLINT addresses, heap size (512KB)
+  - `port/chip_specific_extensions/freertos_risc_v_chip_specific_extensions.h` (151 lines) - FPU context save/restore
+  - `port/start.S` (205 lines) - Startup code: init SP/GP/FPU, zero BSS, copy .data, set MTVEC
+  - `port/riscv32-freertos.ld` (263 lines) - Linker script: IMEM (64KB), DMEM (1MB), heap (512KB)
+  - `lib/uart.h` + `lib/uart.c` (140 lines) - 16550 UART driver (polling-based)
+  - `lib/syscalls.c` (195 lines) - Newlib syscalls for printf/scanf
+  - `demos/blinky/main_blinky.c` (230 lines) - Two-task demo (500ms/1000ms)
+  - `Makefile` (105 lines) - Build system for rv32imafdc/ilp32d
+- **Files Copied**: port.c, portASM.S, portmacro.h, portContext.h from FreeRTOS RISC-V port
+- **FPU Context Switching**: Save/restore all 32 FP registers (f0-f31) + FCSR (264 bytes per task)
+- **Memory Layout**: IMEM 64KB (code), DMEM 1MB (512KB heap, 4KB stack)
+- **Build System**: riscv64-unknown-elf-gcc, -march=rv32imafdc -mabi=ilp32d, -nostartfiles -nostdlib
+- **Dependency Identified**: picolibc-riscv64-unknown-elf needed for stdlib.h (compilation blocked)
+- **Status**: Port layer 100% complete, ready for compilation test in Session 22
+- **Time**: 60 minutes (infrastructure + port layer)
+- **Reference**: `docs/SESSION_21_PHASE_2_SUMMARY.md`
 
 **2025-10-27 (Session 20)**: Phase 1.5 COMPLETE - Interrupt Test Suite Implementation 🎉
 - **Achievement**: Implemented and validated 6 focused interrupt tests, Phase 1.5 complete (100%)

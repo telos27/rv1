@@ -8,6 +8,7 @@ sim/*.log
 sim/waves/
 sim/test_*
 sim/*.out
+sim/tb_freertos
 
 # Compiled objects
 *.o
@@ -51,6 +52,7 @@ __pycache__/
 # Build artifacts
 build/
 dist/
+software/freertos/build/
 
 # OS generated
 Thumbs.db
