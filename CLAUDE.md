@@ -6,11 +6,11 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
-- **Privilege Tests**: 26/34 passing (76%) - Phases 1-2-3-5-6-7 complete ✅
-- **Recent Work**: Phase 3 Interrupt CSR Tests Complete (2025-10-26 Session 13) - See below
-- **Session 13 Summary**: Fixed interrupt tests (4/4 ✅), created SoC testbench, Phase 3 complete
-- **Phase 3 Status**: 100% COMPLETE - Interrupt CSR behavior fully tested ✅
-- **Next Phase**: Phase 4 exception coverage (8 tests) or Phase 1.2 OS integration
+- **Privilege Tests**: 27/34 passing (79%) - Phases 1-2-3-5-6-7 complete ✅
+- **OS Integration**: Phase 1.2 Complete - UART + CLINT peripherals ✅
+- **Recent Work**: 16550 UART Implementation (2025-10-26 Session 15) - See below
+- **Session 15 Summary**: UART peripheral + testbench (12/12 ✅), SoC integration, Phase 1.2 complete
+- **Next Phase**: Bus interconnect (Phase 1.3) or FreeRTOS (Phase 2)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -105,6 +105,31 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-26 (Session 15)**: UART Implementation Complete - Phase 1.2 ✅
+- **Achievement**: Full 16550-compatible UART peripheral with comprehensive testing
+- **Implementation**: `rtl/peripherals/uart_16550.v` (342 lines)
+  - 8 memory-mapped registers (RBR/THR, IER, IIR/FCR, LCR, MCR, LSR, MSR, SCR)
+  - 16-byte TX/RX FIFOs with proper empty/full detection
+  - Interrupt support (RDA, THRE) with priority encoding
+  - Fixed 8N1 mode, byte-level serial interface
+- **Testbench**: `tb/peripherals/tb_uart.v` (565 lines)
+  - 12/12 tests passing (100%) ✅
+  - Coverage: Register access, FIFO operation, interrupts, status bits
+  - Tests: Reset values, scratch reg, TX/RX single/multi-byte, FIFO full, interrupts, FCR clear
+- **Bugs Fixed**:
+  - TX handshake timing (consume_tx task wait logic)
+  - RX injection timing (#1 delay to avoid delta-cycle races)
+  - THRE interrupt logic (consider both FIFO empty AND transmitter idle)
+- **SoC Integration**:
+  - Added UART to `rtl/rv_soc.v` with serial interface exposed
+  - Updated `tb/integration/tb_soc.v` with UART TX monitor
+  - UART interrupt output available (not yet routed - waiting for PLIC)
+- **Testing**: Quick regression 14/14 passing ✅, zero regressions
+- **Phase 1.2 Status**: 100% COMPLETE 🚀
+- **Files Created**: `uart_16550.v`, `tb_uart.v`, `SESSION_15_SUMMARY.md`
+- **Files Modified**: `rv_soc.v`, `tb_soc.v`, `CLAUDE.md`
+- **Reference**: `docs/SESSION_15_SUMMARY.md`
 
 **2025-10-26 (Session 14)**: Phase 4 Exception Coverage Analysis & Delegation Test ✅
 - **Achievement**: Analyzed Phase 4 exception tests, identified hardware constraints, added delegation test

@@ -34,7 +34,7 @@ Progressive OS validation from simple RTOS to full-featured Linux, validating al
 
 ### Key Milestones
 1. ✅ **Phase 0**: 100% ISA compliance (81/81 tests) - **COMPLETE**
-2. 🚧 **Phase 1**: Interrupt infrastructure (CLINT + UART) - **IN PROGRESS** (Phase 1.1 Complete ✅)
+2. 🚧 **Phase 1**: Interrupt infrastructure (CLINT + UART) - **IN PROGRESS** (Phase 1.1 ✅, Phase 1.2 ✅)
 3. ⏭️ **Phase 2**: FreeRTOS multitasking
 4. ⏭️ **Phase 3**: RV64 + Sv39 MMU upgrade
 5. ⏭️ **Phase 4**: xv6 Unix-like OS
@@ -68,9 +68,9 @@ Progressive OS validation from simple RTOS to full-featured Linux, validating al
 ## Phase 1: RV32 Interrupt Infrastructure
 
 **Duration**: 2-3 weeks
-**Status**: 🚧 In Progress (Phase 1.1 Complete ✅)
+**Status**: 🚧 In Progress (Phase 1.1 ✅, Phase 1.2 ✅)
 **Priority**: 🔴 Critical - Blocks all OS work
-**Update (2025-10-26)**: Phase 1.1 CLINT integration complete - see Session 12 summary
+**Update (2025-10-26)**: Phase 1.1 CLINT integration complete (Session 12), Phase 1.2 UART complete (Session 15)
 
 ### 1.1: CLINT (Core-Local Interruptor) ✅ COMPLETE
 
@@ -132,7 +132,11 @@ module clint #(
    - Wait for interrupt, verify trap handler called
 3. **Privilege test**: Add to Phase 3 interrupt tests
 
-### 1.2: UART (Universal Asynchronous Receiver/Transmitter)
+### 1.2: UART (Universal Asynchronous Receiver/Transmitter) ✅ COMPLETE
+
+**Status**: ✅ Complete (Session 15 - 2025-10-26)
+**Implementation**: `rtl/peripherals/uart_16550.v` (342 lines, 12/12 tests passing)
+**Details**: See `docs/SESSION_15_SUMMARY.md`
 
 #### Purpose
 Console I/O for debugging, user interaction, and OS stdout/stdin.

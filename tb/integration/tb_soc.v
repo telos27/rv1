@@ -17,6 +17,14 @@ module tb_soc;
   wire [31:0] pc;
   wire [31:0] instruction;
 
+  // UART signals
+  wire       uart_tx_valid;
+  wire [7:0] uart_tx_data;
+  reg        uart_tx_ready;
+  reg        uart_rx_valid;
+  reg  [7:0] uart_rx_data;
+  wire       uart_rx_ready;
+
   // Test memory file (can be overridden)
   `ifdef MEM_INIT_FILE
     parameter MEM_FILE = `MEM_INIT_FILE;
@@ -35,6 +43,12 @@ module tb_soc;
   ) DUT (
     .clk(clk),
     .reset_n(reset_n),
+    .uart_tx_valid(uart_tx_valid),
+    .uart_tx_data(uart_tx_data),
+    .uart_tx_ready(uart_tx_ready),
+    .uart_rx_valid(uart_rx_valid),
+    .uart_rx_data(uart_rx_data),
+    .uart_rx_ready(uart_rx_ready),
     .pc_out(pc),
     .instr_out(instruction)
   );
@@ -49,6 +63,9 @@ module tb_soc;
   initial begin
     // Initialize
     reset_n = 0;
+    uart_tx_ready = 1;  // UART TX consumer always ready
+    uart_rx_valid = 0;
+    uart_rx_data = 0;
 
     // Hold reset for a few cycles
     repeat (5) @(posedge clk);
@@ -117,6 +134,22 @@ module tb_soc;
           $finish;
         end
       endcase
+    end
+  end
+
+  // UART TX monitor - display transmitted characters
+  always @(posedge clk) begin
+    if (reset_n && uart_tx_valid && uart_tx_ready) begin
+      // Display printable characters, show hex for non-printable
+      if (uart_tx_data >= 8'h20 && uart_tx_data <= 8'h7E) begin
+        $write("%c", uart_tx_data);  // Printable ASCII
+      end else if (uart_tx_data == 8'h0A) begin
+        $write("\n");                // Newline
+      end else if (uart_tx_data == 8'h0D) begin
+        // Carriage return - ignore for cleaner output
+      end else begin
+        $write("[0x%02h]", uart_tx_data);  // Non-printable
+      end
     end
   end
 

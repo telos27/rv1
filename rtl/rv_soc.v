@@ -1,6 +1,6 @@
 // rv_soc.v - RV1 System-on-Chip
-// Simple SoC wrapper integrating CPU core with CLINT peripheral
-// Phase 1: CLINT timer and software interrupts
+// Simple SoC wrapper integrating CPU core with peripherals
+// Phase 1.2: CLINT timer/software interrupts + UART serial console
 // Author: RV1 Project
 // Date: 2025-10-26
 
@@ -16,6 +16,14 @@ module rv_soc #(
 ) (
   input  wire             clk,
   input  wire             reset_n,
+
+  // UART serial interface
+  output wire             uart_tx_valid,
+  output wire [7:0]       uart_tx_data,
+  input  wire             uart_tx_ready,
+  input  wire             uart_rx_valid,
+  input  wire [7:0]       uart_rx_data,
+  output wire             uart_rx_ready,
 
   // Debug outputs
   output wire [XLEN-1:0]  pc_out,
@@ -74,6 +82,38 @@ module rv_soc #(
     // Interrupt outputs
     .mti_o(mtip),
     .msi_o(msip)
+  );
+
+  //==========================================================================
+  // UART (16550-Compatible Serial Console)
+  //==========================================================================
+  // Note: For Phase 1.2, UART is included but not memory-mapped yet.
+  // Memory-mapped access will be added in future phases when we implement
+  // a proper bus interconnect. For now, UART TX/RX interfaces are exposed
+  // at the SoC level for testbench interaction.
+
+  uart_16550 #(
+    .BASE_ADDR(32'h1000_0000),
+    .FIFO_DEPTH(16)
+  ) uart_inst (
+    .clk(clk),
+    .reset_n(reset_n),
+    // Memory-mapped interface (not connected yet - Phase 2)
+    .req_valid(1'b0),                // No memory-mapped access yet
+    .req_addr(3'h0),
+    .req_wdata(8'h0),
+    .req_we(1'b0),
+    .req_ready(),                    // Unused
+    .req_rdata(),                    // Unused
+    // Serial interface (exposed at SoC level)
+    .tx_valid(uart_tx_valid),
+    .tx_data(uart_tx_data),
+    .tx_ready(uart_tx_ready),
+    .rx_valid(uart_rx_valid),
+    .rx_data(uart_rx_data),
+    .rx_ready(uart_rx_ready),
+    // Interrupt output (not connected yet - Phase 2)
+    .irq_o()                         // Unused for now
   );
 
 endmodule
