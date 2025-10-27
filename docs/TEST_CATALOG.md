@@ -232,7 +232,7 @@
 
 #### Miscellaneous
 
-**Tests**: 135
+**Tests**: 136
 
 - **branch_test.s** ✅
   - Branch Instructions Test
@@ -341,6 +341,10 @@
 - **test_exception_breakpoint.s** ✅
   - test_exception_breakpoint.s
   - Lines: 129
+
+- **test_exception_delegation_full.s** ✅
+  - test_exception_delegation_full.s
+  - Lines: 70
 
 - **test_exception_ecall_mmode.s** ✅
   - test_exception_ecall_mmode.s
@@ -918,6 +922,8 @@
   - Category: Miscellaneous
 - **test_exception_breakpoint** - test_exception_breakpoint.s
   - Category: Miscellaneous
+- **test_exception_delegation_full** - test_exception_delegation_full.s
+  - Category: Miscellaneous
 - **test_exception_ecall_mmode** - test_exception_ecall_mmode.s
   - Category: Miscellaneous
 - **test_exception_instr_misaligned** - test_exception_instr_misaligned.s
@@ -1261,17 +1267,17 @@ Official RISC-V compliance tests from riscv-tests repository.
 | C Extension | 0 |
 | CSR/Privilege | 9 |
 | Edge Cases | 6 |
-| **Total Custom** | **186** |
+| **Total Custom** | **187** |
 
 ### Hex File Status
-- Assembly files (.s): 186
-- Hex files (.hex): 178
+- Assembly files (.s): 187
+- Hex files (.hex): 179
 - Missing hex files: 8
 
 ### Overall Summary
-- **Custom Tests**: 186
+- **Custom Tests**: 187
 - **Official Tests**: 81
-- **Total Tests**: 267
+- **Total Tests**: 268
 - **Compliance**: 100% (81/81 official tests passing) ✅
 
 ---
@@ -1310,5 +1316,5 @@ make test-d    # D extension
 
 ---
 
-**Last Generated**: Sun Oct 26 22:49:01 PDT 2025
+**Last Generated**: Sun Oct 26 23:05:42 PDT 2025
 **Generator**: tools/generate_test_catalog.sh
