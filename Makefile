@@ -76,9 +76,12 @@ help:
 	@echo "Custom Test Management:"
 	@echo "  make test-quick                  - Quick regression (15 tests in ~20s) ⚡"
 	@echo "  make test-custom-all             - Run all custom tests"
-	@echo "  make rebuild-hex                 - Rebuild all .hex files from .s sources"
+	@echo "  make rebuild-hex                 - Smart rebuild (only if source changed)"
+	@echo "  make rebuild-hex-force           - Force rebuild all .hex files"
 	@echo "  make check-hex                   - Check for missing hex files"
 	@echo "  make clean-hex                   - Remove all generated hex/object files"
+	@echo ""
+	@echo "Note: Individual test runs auto-rebuild hex files if needed"
 	@echo "  make catalog                     - Generate test catalog documentation"
 	@echo ""
 	@echo "Test Infrastructure (Extension-Specific):"
@@ -347,9 +350,38 @@ info:
 #==============================================================================
 
 # Rebuild all hex files from assembly sources
+# Uses smart rebuild - only rebuilds if source is newer or hex is missing
 .PHONY: rebuild-hex
 rebuild-hex:
-	@echo "Rebuilding all hex files from assembly sources..."
+	@echo "Rebuilding hex files (only if source changed or missing)..."
+	@mkdir -p tests/asm
+	@count=0; \
+	skipped=0; \
+	failed=0; \
+	for s in tests/asm/*.s; do \
+		if [ -f "$$s" ]; then \
+			base=$$(basename $$s .s); \
+			hex="tests/asm/$$base.hex"; \
+			if [ ! -f "$$hex" ] || [ "$$s" -nt "$$hex" ]; then \
+				echo "  $$base.s → $$base.hex"; \
+				if ./tools/asm_to_hex.sh "$$s" >/dev/null 2>&1; then \
+					count=$$((count + 1)); \
+				else \
+					echo "    ⚠️  Warning: Failed to assemble $$base.s"; \
+					failed=$$((failed + 1)); \
+				fi; \
+			else \
+				skipped=$$((skipped + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "✓ Hex rebuild complete: $$count rebuilt, $$skipped up-to-date, $$failed failed"
+
+# Force rebuild all hex files (ignores timestamps)
+.PHONY: rebuild-hex-force
+rebuild-hex-force:
+	@echo "Force rebuilding ALL hex files..."
 	@mkdir -p tests/asm
 	@count=0; \
 	failed=0; \
@@ -358,14 +390,16 @@ rebuild-hex:
 			base=$$(basename $$s .s); \
 			hex="tests/asm/$$base.hex"; \
 			echo "  $$base.s → $$base.hex"; \
-			./tools/assemble.sh "$$s" "$$hex" 2>/dev/null && count=$$((count + 1)) || { \
+			if ./tools/asm_to_hex.sh "$$s" >/dev/null 2>&1; then \
+				count=$$((count + 1)); \
+			else \
 				echo "    ⚠️  Warning: Failed to assemble $$base.s"; \
 				failed=$$((failed + 1)); \
-			}; \
+			fi; \
 		fi; \
 	done; \
 	echo ""; \
-	echo "✓ Hex rebuild complete: $$count files generated, $$failed failed"
+	echo "✓ Force rebuild complete: $$count files generated, $$failed failed"
 
 # Check for missing hex files
 .PHONY: check-hex

@@ -850,6 +850,11 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] id_rs1_data_raw;  // Raw register file output
   wire [XLEN-1:0] id_rs2_data_raw;  // Raw register file output
 
+  // Writeback gating: Prevent flushed instructions from writing registers
+  // Instructions that cause exceptions may advance to EXMEM/MEMWB before being invalidated
+  // Gate register writes with memwb_valid to ensure only valid instructions commit
+  wire int_reg_write_enable = (memwb_reg_write | memwb_int_reg_write_fp) && memwb_valid;
+
   register_file #(
     .XLEN(XLEN)
   ) regfile (
@@ -859,7 +864,7 @@ module rv_core_pipelined #(
     .rs2_addr(id_rs2),
     .rd_addr(memwb_rd_addr),          // Write from WB stage
     .rd_data(wb_data),                // Write data from WB stage
-    .rd_wen(memwb_reg_write | memwb_int_reg_write_fp),  // Write enable: normal ops OR FP-to-INT ops
+    .rd_wen(int_reg_write_enable),    // Gated write enable: prevents flushed instruction writes
     .rs1_data(id_rs1_data_raw),
     .rs2_data(id_rs2_data_raw)
   );
@@ -929,6 +934,9 @@ module rv_core_pipelined #(
   `endif
 
   // FP Register File
+  // Gate FP register writes with memwb_valid for consistency with integer register file
+  wire fp_reg_write_enable = memwb_fp_reg_write && memwb_valid;
+
   fp_register_file #(
     .FLEN(`FLEN)  // 32 for F-only, 64 for F+D extensions
   ) fp_regfile (
@@ -940,7 +948,7 @@ module rv_core_pipelined #(
     .rs1_data(id_fp_rs1_data_raw),
     .rs2_data(id_fp_rs2_data_raw),
     .rs3_data(id_fp_rs3_data_raw),
-    .wr_en(memwb_fp_reg_write),
+    .wr_en(fp_reg_write_enable),  // Gated write enable: prevents flushed instruction writes
     .rd_addr(memwb_fp_rd_addr),
     .rd_data(wb_fp_data),
     .write_single(~memwb_fp_fmt)  // 1 for single-precision (fmt=0), 0 for double-precision (fmt=1)
@@ -2336,10 +2344,16 @@ module rv_core_pipelined #(
   // Debug: WB stage register file writes
   `ifdef DEBUG_REGFILE_WB
   always @(posedge clk) begin
-    if (memwb_valid && (memwb_reg_write || memwb_int_reg_write_fp) && memwb_rd_addr != 5'b0) begin
-      $display("[REGFILE_WB] @%0t Writing rd=x%0d data=%h (wb_sel=%b alu=%h mem=%h mul_div=%h)",
-               $time, memwb_rd_addr, wb_data, memwb_wb_sel,
-               memwb_alu_result, memwb_mem_read_data, memwb_mul_div_result);
+    // Show both gated and non-gated writes for debugging
+    if ((memwb_reg_write || memwb_int_reg_write_fp) && memwb_rd_addr != 5'b0) begin
+      if (memwb_valid) begin
+        $display("[REGFILE_WB] @%0t Writing rd=x%0d data=%h (wb_sel=%b valid=1 alu=%h mem=%h mul_div=%h)",
+                 $time, memwb_rd_addr, wb_data, memwb_wb_sel,
+                 memwb_alu_result, memwb_mem_read_data, memwb_mul_div_result);
+      end else begin
+        $display("[REGFILE_WB] @%0t BLOCKED rd=x%0d data=%h (wb_sel=%b valid=0 GATED BY WRITEBACK LOGIC)",
+                 $time, memwb_rd_addr, wb_data, memwb_wb_sel);
+      end
     end
   end
   `endif

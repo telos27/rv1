@@ -4,11 +4,17 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### 1. Synchronous Pipeline Trap Latency - test_delegation_disable
+None! All critical issues have been resolved as of 2025-10-26 Session 7. ✅
 
-**Status**: Architectural Limitation Identified 2025-10-26 Session 6
-**Priority**: LOW - Single privilege test affected, compliance tests pass
-**Affected**: `test_delegation_disable` (instruction after exception may execute before flush)
+---
+
+## Resolved Issues
+
+### 1. Synchronous Pipeline Trap Latency - test_delegation_disable (RESOLVED 2025-10-26)
+
+**Status**: FIXED ✅ via Writeback Gating (Session 7)
+**Priority**: HIGH - Was blocking Phase 6 privilege mode tests
+**Affected**: `test_delegation_disable` (instruction after exception was corrupting registers)
 
 #### Description
 
@@ -96,59 +102,41 @@ The fundamental issue is that **exception detection** and **pipeline advancement
 2. **Bypass/gating logic** - Prevent flushed instructions from having side effects (complex)
 3. **Pipeline redesign** - Separate exception detection from instruction advancement (major refactor)
 
-#### Fixes Applied
+#### Solution (Session 7)
 
-**Session 6** (2025-10-26):
-- Implemented 0-cycle trap latency using `exception_gated`
-- Changed trap flush from registered to immediate
-- Updated CSR trap entry inputs to use current (non-registered) exception signals
-- **Result**: Partial improvement, but synchronous pipeline prevents full fix
+**Writeback Gating** - Prevent flushed instructions from committing register writes:
 
-**Session 5** (2025-10-26):
-- CSR write exception gating (`rv32i_core_pipelined.v:1564`)
-- Prevents CSR writes when instruction causes exception
+```verilog
+// Integer register file (rv32i_core_pipelined.v:853-856)
+wire int_reg_write_enable = (memwb_reg_write | memwb_int_reg_write_fp) && memwb_valid;
 
-**Session 4** (2025-10-26):
-- Exception propagation gating (`rv32i_core_pipelined.v:452`)
-- Trap target computation function (prevents delegation race conditions)
-- CSR delegation register export (`csr_file.v:51,621`)
+// FP register file (rv32i_core_pipelined.v:937-938)
+wire fp_reg_write_enable = memwb_fp_reg_write && memwb_valid;
+```
 
-#### Impact Assessment
+**How it works:**
+- Instructions that cause exceptions are invalidated via `memwb_valid=0`
+- Register write enables check `memwb_valid` before committing
+- Flushed instructions cannot corrupt architectural state
+- Preserves 0-cycle trap latency from Session 6
 
-- **Compliance**: No impact - 81/81 official tests still pass ✅
-- **Regression**: No impact - 14/14 quick tests pass ✅
-- **Privilege Tests**: Minor impact - 1 test fails due to architectural limitation
-- **Functionality**: Trap handling significantly improved, edge case limitation documented
+**Previous Fixes (Sessions 4-6):**
+- Session 6: 0-cycle trap latency using `exception_gated`
+- Session 5: CSR write exception gating
+- Session 4: Exception propagation gating, trap target computation
 
-#### Proposed Solutions for Future Investigation
+#### Test Results
 
-1. **Instruction Writeback Gating** (moderate complexity)
-   - Add gating to register file write enable: `reg_we && !flush_after_writeback`
-   - Requires tracking which instructions are in "flushed but not yet cleared" state
-   - May introduce additional pipeline hazards
+**Before Session 7:**
+- `test_delegation_disable`: ❌ FAILED (register s0 corrupted)
+- Quick regression: 14/14 ✅
+- Compliance: 79/79 ✅
 
-2. **Shadow Register Checkpoint** (high complexity)
-   - Checkpoint register file state before trap-inducing instruction
-   - Restore on trap entry if next instruction already executed
-   - Requires additional storage and complex control logic
-
-3. **Speculative Execution with Rollback** (very high complexity)
-   - Allow next instruction to execute speculatively
-   - Roll back architectural state if preceding instruction traps
-   - Similar to modern out-of-order processors
-
-4. **Accept 1-Cycle Trap Latency** (pragmatic, recommended)
-   - Document as architectural characteristic
-   - Adjust test expectations for edge cases
-   - Focus on ensuring no side effects (CSR writes, memory writes already gated)
-   - **Current recommendation**: This limitation doesn't affect real-world code or compliance
-
-#### Next Steps (Future Sessions)
-
-- Consider instruction writeback gating approach (#1 above)
-- Analyze waveforms to verify exact timing of register writes
-- Evaluate if test expectations should be adjusted vs architectural fix
-- Investigate whether next instruction's register write can be blocked
+**After Session 7:**
+- `test_delegation_disable`: ✅ PASSED
+- Quick regression: 14/14 ✅
+- Compliance: 79/79 ✅
+- **Phase 6: 4/4 tests passing (100%)** ✅
 
 ---
 
@@ -246,16 +234,49 @@ assign trap_flush = exception_r && !exception_r_hold;
 - Issue discovered during Phase 6 implementation (Delegation Edge Cases)
 - Debug trace: `docs/debug/privilege_forwarding_trace_2025-10-26.log` (if saved)
 
----
+### 2. Test Infrastructure - Hex File Management (RESOLVED 2025-10-26)
 
-## Resolved Issues
+**Status**: FIXED ✅ via Auto-Rebuild (Session 7)
+**Priority**: HIGH - Caused frequent workflow disruptions
+**Affected**: All custom tests, especially after git operations
 
-(None yet - first issue tracking)
+#### Description
+
+Hex files were build artifacts (not tracked in git), causing frequent "hex file not found" errors:
+- Git operations (`checkout`, `pull`, etc.) deleted untracked hex files
+- No staleness detection - stale hex caused mysterious test failures
+- Manual rebuild workflow was error-prone
+- 184 .s files but only 121 .hex files (63 missing)
+
+#### Solution (Session 7)
+
+**Auto-Rebuild in Test Runner** (`tools/test_pipelined.sh`):
+- Automatically rebuilds missing hex files from source
+- Timestamp-based staleness detection (source newer than hex)
+- Graceful error messages for unbuildable tests
+
+**Smart Batch Rebuild** (`Makefile`):
+- `make rebuild-hex` - Only rebuilds changed/missing files
+- `make rebuild-hex-force` - Force rebuild all
+- Shows statistics: rebuilt/skipped/failed counts
+
+#### Impact
+
+**Before:**
+- Tests failed after `git checkout` with "hex file not found"
+- Manual `make rebuild-hex` needed frequently
+- Stale hex files caused confusing test failures
+
+**After:**
+- Tests "just work" regardless of git state ✅
+- Auto-rebuild only when needed (fast) ✅
+- Clear error messages when tests can't be built ✅
 
 ---
 
 ## Future Enhancements
 
-1. **Trap Latency Optimization**: Current implementation has 1-cycle trap latency. Consider optimizing to 0-cycle while maintaining correctness.
-2. **Coverage**: Need more edge case tests for privilege transitions
-3. **Documentation**: Better waveform examples for privilege mode state machine
+1. **Phase 7 Tests**: Implement stress and regression tests (2 pending)
+2. **Interrupt Logic**: Complete Phase 3 tests (3 tests need interrupt hardware)
+3. **Exception Coverage**: Complete Phase 4 tests (hardware limitations documented)
+4. **Documentation**: Waveform examples for privilege mode state machine

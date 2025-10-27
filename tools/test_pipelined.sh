@@ -64,11 +64,36 @@ echo "Test: $TEST_NAME"
 echo "Hex file: $HEX_FILE"
 echo ""
 
-# Check if hex file exists
+# Auto-rebuild hex file if missing or stale
+ASM_FILE="${TEST_DIR}/${TEST_NAME}.s"
+
 if [ ! -f "$HEX_FILE" ]; then
-    echo "Error: Hex file not found: $HEX_FILE"
-    echo "Please compile the test first"
-    exit 1
+    # Hex file missing - try to build it
+    if [ -f "$ASM_FILE" ]; then
+        echo "Hex file missing, building from source: $ASM_FILE"
+        if ! ./tools/asm_to_hex.sh "$ASM_FILE" 2>&1 | tail -5; then
+            echo ""
+            echo "Error: Failed to build $HEX_FILE"
+            echo "This test may require extensions not available in your toolchain"
+            exit 1
+        fi
+        echo ""
+    else
+        echo "Error: Neither hex file nor source found"
+        echo "  Hex:    $HEX_FILE"
+        echo "  Source: $ASM_FILE"
+        exit 1
+    fi
+elif [ -f "$ASM_FILE" ] && [ "$ASM_FILE" -nt "$HEX_FILE" ]; then
+    # Source is newer than hex - rebuild
+    echo "Source modified, rebuilding: $ASM_FILE"
+    if ! ./tools/asm_to_hex.sh "$ASM_FILE" 2>&1 | tail -5; then
+        echo ""
+        echo "Error: Failed to rebuild $HEX_FILE"
+        echo "This test may require extensions not available in your toolchain"
+        exit 1
+    fi
+    echo ""
 fi
 
 # Step 1: Compile with Icarus Verilog

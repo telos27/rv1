@@ -6,8 +6,8 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
-- **Privilege Tests**: 22/34 passing (65%) - Phases 1-2-5-6 substantially complete
-- **Recent Work**: Trap latency architectural analysis ⚙️ (2025-10-26 Session 6) - See `docs/KNOWN_ISSUES.md`
+- **Privilege Tests**: 23/34 passing (68%) - Phases 1-2-5-6 complete ✅
+- **Recent Work**: Writeback gating & test infrastructure ✅ (2025-10-26 Session 7) - See below
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -24,11 +24,19 @@ make catalog              # Regenerate test catalog
 env XLEN=32 ./tools/run_official_tests.sh all  # Full suite
 ```
 
+**✨ Auto-Rebuild Feature (2025-10-26):**
+- **Individual tests auto-rebuild hex files if missing or stale**
+- No more "hex file not found" errors after git operations
+- Tests detect when source (.s) is newer than hex and rebuild automatically
+- Use `make rebuild-hex` for batch smart rebuild (only changed files)
+- Use `make rebuild-hex-force` to force rebuild all
+
 **Workflow for Development:**
 1. Run `make test-quick` BEFORE changes (baseline)
 2. Make your changes
 3. Run `make test-quick` AFTER changes (verify)
 4. Before committing: Run full test suite
+5. **No need to manually rebuild hex files!** Tests auto-rebuild as needed
 
 ## Project Structure
 ```
@@ -88,12 +96,35 @@ rv1/
 | 3: Interrupt CSRs | 🚧 Partial | 3/6 | mip/sip/mie/sie (3 skipped - need interrupt logic) |
 | 4: Exception Coverage | 🚧 Partial | 2/8 | ECALL (4 blocked by hardware, 2 pending) |
 | 5: CSR Edge Cases | ✅ Complete | 4/4 | Read-only CSRs, WARL fields, side effects, validity |
-| 6: Delegation Edge Cases | ✅ Mostly Complete | 3/4 | Delegation to current mode, medeleg (1 trap timing issue) |
+| 6: Delegation Edge Cases | ✅ Complete | 4/4 | Delegation to current mode, medeleg (writeback gating fixed) |
 | 7: Stress & Regression | 🔵 Next | 0/2 | Pending |
 
-**Progress**: 22/34 tests passing (65%), 7 skipped/blocked, 1 timing issue
+**Progress**: 23/34 tests passing (68%), 7 skipped/blocked, 4 pending
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-26 (Session 7)**: Writeback Gating & Test Infrastructure FIXED ✅
+- **Problem**: Instructions after exceptions could write to registers before pipeline flush
+  - Git operations deleted untracked hex files
+  - No staleness detection - stale hex files caused mysterious test failures
+  - Manual rebuild workflow error-prone
+- **Root Cause**:
+  - Register write enable not gated by `memwb_valid`
+  - 1-cycle delay in `exception_taken_r` allowed next instruction to advance
+  - Hex files were build artifacts (not tracked), got deleted on `git checkout`
+  - No automatic rebuild when source files changed
+- **Solution**: Multi-part fix for robustness
+  - **Writeback Gating** (`rv32i_core_pipelined.v:853-867`): Gate register writes with `memwb_valid`
+  - **Auto-Rebuild** (`tools/test_pipelined.sh:67-97`): Tests auto-rebuild missing/stale hex files
+  - **Smart Rebuild** (`Makefile:350-399`): `make rebuild-hex` only rebuilds changed files
+  - **Force Rebuild** (`Makefile:378-399`): `make rebuild-hex-force` rebuilds everything
+- **Impact**:
+  - `test_delegation_disable` now PASSING ✅ (Phase 6 complete: 4/4 tests)
+  - No more "hex file not found" errors ✅
+  - Tests work after git operations (checkout, pull, etc.) ✅
+  - Quick regression: 14/14 passing ✅
+  - Compliance: 79/79 passing (100%) ✅
+- **Files**: `rtl/core/rv32i_core_pipelined.v`, `tools/test_pipelined.sh`, `Makefile`, `tools/README.md`
 
 **2025-10-26 (Session 4)**: Exception Gating & Trap Target Computation FIXED ✅
 - **Problem**: Exception propagation to subsequent instructions + trap delegation race condition
@@ -242,15 +273,14 @@ rv1/
 See `docs/KNOWN_ISSUES.md` for detailed tracking.
 
 **Active:**
-- Synchronous pipeline trap latency: 1-cycle delay between exception and pipeline flush
-  - Impact: `test_delegation_disable` fails (instruction after exception may execute)
-  - Root cause: Architectural limitation - synchronous pipeline registers
-  - Status: Analyzed in Session 6, documented with 4 proposed solutions
-  - Does NOT affect compliance tests (81/81 passing) or quick regression (14/14 passing)
-  - Recommended: Accept as architectural characteristic, focus on preventing side effects
+- None! All critical issues resolved ✅
+
+**Resolved (Session 7):**
+- ✅ Writeback gating for trap latency - FIXED
+- ✅ Hex file management and auto-rebuild - FIXED
 
 ## Future Enhancements
-- **NEXT SESSION**: Consider instruction writeback gating for trap latency fix (KNOWN_ISSUES.md #1)
+- **NEXT SESSION**: Phase 7 - Stress & Regression tests (2 tests pending)
 - Bit Manipulation (B), Vector (V), Crypto (K) extensions
 - Performance: Branch prediction, caching, out-of-order execution
 - System: Debug module, PMP, Hypervisor extension
