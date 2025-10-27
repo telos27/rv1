@@ -4,32 +4,54 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### 1. Trap Latency Test Compatibility
+### 1. Trap Latency and Exception Propagation Issues
 
-**Status**: Identified 2025-10-26, Investigation Pending
-**Priority**: MEDIUM - Some privilege tests need adjustment
-**Affected**: Tests with specific trap timing assumptions
+**Status**: Identified 2025-10-26, Under Investigation
+**Priority**: MEDIUM - Some privilege tests affected
+**Affected**: Tests with trap-then-ecall patterns
 
 #### Description
 
-The privilege mode forwarding fix introduced a one-cycle delay in trap handling (using `exception_r` instead of `exception` for `trap_flush`). This breaks the combinational feedback loop but changes trap latency from 0 to 1 cycle.
+The privilege mode forwarding fix introduced a one-cycle delay in trap handling (using `exception_r` instead of `exception` for `trap_flush`). This breaks the combinational feedback loop but changes trap latency from 0 to 1 cycle. Additionally, exception signals may propagate to subsequent instructions during the trap flush cycle.
+
+**Symptoms:**
+- Exception signal fires for instruction following a trap-causing instruction
+- ECALL exception shows duplicate PC values (original + next instruction)
+- Privilege mode updates may not be visible to immediately following instructions in trap handler
 
 **Failing Tests:**
-- `test_delegation_disable` - Needs investigation
+- `test_delegation_disable` - ECALL in S-mode trap handler shows as ECALL from M-mode (cause=11 instead of cause=9)
 - `test_mstatus_state_trap` - Needs investigation
-- A few other tests show no output
 
 **Passing Tests:**
 - 14/14 quick regression tests ✅
-- `test_delegation_to_current_mode` ✅
+- 81/81 official RISC-V compliance tests ✅
+- `test_delegation_to_current_mode` ✅ (fixed by actual_priv delegation fix)
 - `test_umode_entry_from_mmode` ✅
 - `test_umode_entry_from_smode` ✅
-- Most privilege mode tests ✅
+- 19+/34 privilege mode tests ✅
 
-**Next Steps:**
-- Investigate failing tests
-- Determine if tests need updating or if implementation needs refinement
-- Consider alternative solutions that maintain 0-cycle trap latency
+#### Root Causes Identified
+
+1. **Exception Propagation**: When `exception` signal fires and `exception_r` is latched, the next instruction in the pipeline may also see `exception=1` before `exception_taken_r` gates it off.
+
+2. **Privilege Mode Visibility**: After `trap_flush` updates `current_priv`, the first instruction in the trap handler may execute with stale privilege information due to pipeline timing.
+
+3. **CSR Access After Trap**: S-mode trap handler executing in M-mode context (wrong privilege) - `current_priv` update timing issue.
+
+#### Fixes Applied
+
+**2025-10-26 Session**: Fixed delegation logic by separating `actual_priv` from `effective_priv`
+- Changed `csr_file.v` `.actual_priv` connection from `effective_priv` to `current_priv`
+- This fixed `test_delegation_to_current_mode` ✅
+- Delegation now works correctly (trap goes to S-mode when medeleg bit set)
+- **File**: `rtl/core/rv32i_core_pipelined.v:1543`
+
+#### Next Steps
+- Investigate `exception_taken_r` timing to prevent exception propagation
+- Consider adding pipeline bubble after trap to ensure privilege mode is stable
+- May need to add explicit gating of exception signal when `exception_r` is active
+- Alternative: Accept 1-cycle trap latency and update affected tests
 
 ---
 

@@ -84,6 +84,9 @@ m_handler_stage5:
     # Stage 6: Prepare for test 2 (delegation disabled)
     li s0, 6
 
+    # Clear delegation for test 2 (must be done from M-mode)
+    csrw medeleg, zero
+
     # Enter S-mode again
     ENTER_SMODE_M smode_test2
 
@@ -113,10 +116,7 @@ s_trap_handler:
     li t1, CAUSE_ILLEGAL_INSTR
     bne t0, t1, test_fail
 
-    # Clear delegation for test 2
-    csrw medeleg, zero
-
-    # Stage 5: Return to M-mode via ecall
+    # Stage 5: Return to M-mode via ecall (cannot clear medeleg from S-mode)
     li s0, 5
     ecall                   # This will go to M-mode
 

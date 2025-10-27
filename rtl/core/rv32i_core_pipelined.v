@@ -1536,11 +1536,11 @@ module rv_core_pipelined #(
     .mstatus_spie(mstatus_spie),
     .illegal_csr(ex_illegal_csr),
     // Privilege mode tracking (Phase 1)
-    // Bug fix: Use effective_priv (with forwarding) for CSR access checks and trap delegation.
-    // The key is that effective_priv includes xRET forwarding but does NOT include
-    // the feedback from trap_target_priv -> current_priv (that happens on next clock edge).
-    .current_priv(effective_priv),      // For CSR privilege checks
-    .actual_priv(effective_priv),       // For trap delegation (same as CSR checks)
+    // Bug fix: Use effective_priv (with forwarding) for CSR access checks.
+    // For trap delegation, use current_priv (WITHOUT forwarding) to ensure delegation
+    // decisions are based on the actual privilege mode of the trapping instruction.
+    .current_priv(effective_priv),      // For CSR privilege checks (with xRET forwarding)
+    .actual_priv(current_priv),         // For trap delegation (WITHOUT xRET forwarding)
     .trap_target_priv(trap_target_priv),
     .mpp_out(mpp),
     .spp_out(spp),

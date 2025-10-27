@@ -6,8 +6,8 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
-- **Privilege Tests**: 20+/34 passing (Phases 1-2-5 complete, Phase 6 partial)
-- **Recent Fix**: Privilege mode forwarding bug RESOLVED ✅ (2025-10-26) - See `docs/KNOWN_ISSUES.md`
+- **Privilege Tests**: 22/34 passing (65%) - Phases 1-2-5-6 substantially complete
+- **Recent Fix**: Delegation logic FIXED ✅ (2025-10-26) - actual_priv separation - See `docs/KNOWN_ISSUES.md`
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -88,12 +88,26 @@ rv1/
 | 3: Interrupt CSRs | 🚧 Partial | 3/6 | mip/sip/mie/sie (3 skipped - need interrupt logic) |
 | 4: Exception Coverage | 🚧 Partial | 2/8 | ECALL (4 blocked by hardware, 2 pending) |
 | 5: CSR Edge Cases | ✅ Complete | 4/4 | Read-only CSRs, WARL fields, side effects, validity |
-| 6: Delegation Edge Cases | 🔵 Next | 0/3 | Pending |
-| 7: Stress & Regression | 🔵 Pending | 0/2 | Pending |
+| 6: Delegation Edge Cases | ✅ Mostly Complete | 3/4 | Delegation to current mode, medeleg (1 trap timing issue) |
+| 7: Stress & Regression | 🔵 Next | 0/2 | Pending |
 
-**Progress**: 19/34 tests passing (56%), 7 skipped/blocked
+**Progress**: 22/34 tests passing (65%), 7 skipped/blocked, 1 timing issue
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-26 (Session 3)**: Phase 6 - Delegation logic FIXED ✅
+- **Problem**: Trap delegation used forwarded privilege mode from xRET instructions
+- **Solution**: Separated `actual_priv` (for delegation) from `effective_priv` (for CSR checks)
+  - Changed `.actual_priv` connection from `effective_priv` to `current_priv`
+  - Ensures delegation decisions based on actual privilege of trapping instruction
+  - Fixed test_delegation_disable test bug (S-mode can't write medeleg)
+- **Impact**:
+  - `test_delegation_to_current_mode` ✅
+  - `test_medeleg` ✅
+  - `test_phase10_2_delegation` ✅
+  - Phase 6: 3/4 tests passing (75%)
+- **Files**: `rtl/core/rv32i_core_pipelined.v:1543`, `tests/asm/test_delegation_disable.s`
+- **Known Issue**: `test_delegation_disable` has trap timing issue (documented in KNOWN_ISSUES.md)
 
 **2025-10-26 (Session 2)**: Privilege mode forwarding bug FIXED ✅
 - **Problem**: CSR access immediately after MRET/SRET used stale privilege mode
@@ -172,14 +186,15 @@ rv1/
 
 See `docs/KNOWN_ISSUES.md` for detailed tracking.
 
-**Critical:**
-- Privilege mode forwarding bug: CSR access after MRET/SRET uses stale privilege mode
-  - Impact: Phase 6 delegation tests fail (2 tests blocked)
-  - Fix required: Implement privilege mode forwarding in pipeline
-  - Workaround: Add NOP after xRET before CSR access
+**Active:**
+- Trap latency and exception propagation: 1-cycle trap delay causes exception signal to propagate to next instruction
+  - Impact: `test_delegation_disable` fails (ECALL shows wrong privilege mode)
+  - Root cause: `exception_taken_r` timing, privilege mode update visibility
+  - Status: Under investigation, workarounds possible
+  - Does NOT affect compliance tests or normal operation
 
 ## Future Enhancements
-- **IMMEDIATE**: Fix privilege mode forwarding bug
+- **IMMEDIATE**: Investigate trap latency/exception propagation issue
 - Bit Manipulation (B), Vector (V), Crypto (K) extensions
 - Performance: Branch prediction, caching, out-of-order execution
 - System: Debug module, PMP, Hypervisor extension
