@@ -20,6 +20,21 @@ FILE *const stdin = (FILE *)0;
 FILE *const stdout = (FILE *)1;
 FILE *const stderr = (FILE *)2;
 
+/*
+ * Custom puts() implementation
+ * Override picolibc's puts() to avoid FILE pointer dereference issues
+ */
+int puts(const char *s)
+{
+    /* Write string to UART */
+    while (*s) {
+        uart_putc(*s++);
+    }
+    /* Add newline */
+    uart_putc('\n');
+    return 1;  /* Success */
+}
+
 /* Forward declarations */
 int _close(int file);
 int _fstat(int file, struct stat *st);

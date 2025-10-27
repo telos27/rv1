@@ -8,12 +8,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **PHASE 1.5 COMPLETE - 6/6 INTERRUPT TESTS PASSING** 🎉
 - **Achievement**: 🎉 **FREERTOS BOOTS - SCHEDULER RUNNING** 🎉
 - **Achievement**: ⚡ **BSS FAST-CLEAR - 2000x BOOT SPEEDUP** ⚡
+- **Achievement**: 🎊 **FIRST UART OUTPUT - CONSOLE CHARACTERS WORKING!** 🎊
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, UART output debugging needed
-- **Recent Work**: BSS Accelerator & Boot Progress (2025-10-27 Session 24) - See below
-- **Session 24 Summary**: Implemented simulation BSS fast-clear, FreeRTOS reaches main() and starts scheduler
-- **Next Step**: Session 25 - Debug UART output issue (printf not producing characters)
+- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, first UART output achieved!
+- **Recent Work**: UART Debug & First Output (2025-10-27 Session 25) - See below
+- **Session 25 Summary**: Fixed picolibc puts() issue, achieved first UART characters at cycle 145!
+- **Next Step**: Session 26 - Debug remaining exceptions, get full banner output
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -108,6 +109,16 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 25 (2025-10-27)**: UART Debug & First Output! 🎊
+- **Achievement**: First UART characters transmitted at cycle 145! (2 newlines successfully)
+- **Root Cause**: Picolibc's `puts()` dereferenced fake FILE pointer `stdout = (FILE *)1`
+- **Problem Chain**: `printf("const\n")` → GCC optimizes to `puts()` → dereference stdout+8 → jump to 0x0 → illegal instruction
+- **Solution**: Custom `puts()` implementation in `syscalls.c` with direct UART calls
+- **Instrumentation**: Added 91 lines of debug code to testbench (UART bus monitoring, function tracking, exception tracing)
+- **Validation**: UART hardware path fully functional (Core → Bus → UART → TX)
+- **Status**: First output ✅, remaining exceptions need debugging 🚧 (mepc=0x6 issue)
+- **Reference**: `docs/SESSION_25_UART_DEBUG.md`
 
 **Session 24 (2025-10-27)**: BSS Fast-Clear Accelerator & Boot Progress ⚡
 - **Achievement**: FreeRTOS boots successfully! main() reached at cycle 95, scheduler starts at cycle 1001

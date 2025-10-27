@@ -145,6 +145,92 @@ module tb_freertos;
     end
   end
 
+  // ========================================
+  // Session 25: UART Debug Instrumentation
+  // ========================================
+  // Monitor UART writes, function calls, and exceptions
+
+  // UART bus monitor - track all UART register accesses
+  always @(posedge clk) begin
+    if (reset_n && DUT.uart_req_valid) begin
+      if (DUT.uart_req_we) begin
+        // UART write detected
+        $display("[UART-BUS] Write to offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
+                 DUT.uart_req_addr, DUT.uart_req_wdata, cycle_count, pc);
+      end else begin
+        // UART read detected
+        $display("[UART-BUS] Read from offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
+                 DUT.uart_req_addr, DUT.uart_req_rdata, cycle_count, pc);
+      end
+    end
+  end
+
+  // Function entry tracking
+  reg uart_init_entered;
+  reg printf_entered;
+  reg puts_entered;
+  initial uart_init_entered = 0;
+  initial printf_entered = 0;
+  initial puts_entered = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // uart_init() entry: 0x23d6
+      if (!uart_init_entered && pc == 32'h000023d6) begin
+        uart_init_entered = 1;
+        $display("[FUNC-ENTRY] uart_init() entered at cycle %0d", cycle_count);
+      end
+
+      // puts() entry: 0x2610
+      if (pc == 32'h00002610) begin
+        if (!puts_entered) begin
+          puts_entered = 1;
+          $display("[FUNC-ENTRY] puts() FIRST CALL at cycle %0d", cycle_count);
+        end
+        $display("[FUNC-CALL] puts() called at cycle %0d", cycle_count);
+      end
+
+      // printf() entry: 0x25ea
+      if (pc == 32'h000025ea) begin
+        if (!printf_entered) begin
+          printf_entered = 1;
+          $display("[FUNC-ENTRY] printf() FIRST CALL at cycle %0d", cycle_count);
+        end
+        $display("[FUNC-CALL] printf() called at cycle %0d", cycle_count);
+      end
+
+      // Track key milestones in main()
+      if (pc == 32'h000022a4) begin
+        $display("[MAIN] Returned from uart_init() at cycle %0d", cycle_count);
+      end
+    end
+  end
+
+  // Exception/trap monitoring
+  reg [63:0] prev_mcause;
+  reg [31:0] prev_mepc;
+  initial prev_mcause = 0;
+  initial prev_mepc = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Monitor CSRs for trap entry
+      if (DUT.core.csr_file_inst.mcause_r != prev_mcause || DUT.core.csr_file_inst.mepc_r != prev_mepc) begin
+        if (DUT.core.csr_file_inst.mcause_r != 0) begin
+          $display("[TRAP] Exception/Interrupt detected at cycle %0d", cycle_count);
+          $display("       mcause = 0x%016h (interrupt=%b, code=%0d)",
+                   DUT.core.csr_file_inst.mcause_r,
+                   DUT.core.csr_file_inst.mcause_r[63],
+                   DUT.core.csr_file_inst.mcause_r[3:0]);
+          $display("       mepc   = 0x%08h", DUT.core.csr_file_inst.mepc_r);
+          $display("       PC     = 0x%08h", pc);
+        end
+        prev_mcause = DUT.core.csr_file_inst.mcause_r;
+        prev_mepc = DUT.core.csr_file_inst.mepc_r;
+      end
+    end
+  end
+
   // Progress indicator - print every 10k cycles and track key milestones
   reg main_reached;
   reg scheduler_reached;
@@ -288,19 +374,19 @@ module tb_freertos;
   end
 
   // Execute fast BSS clear in one cycle
+  integer bss_addr;
+  integer bss_mem_idx;
+
   always @(posedge clk) begin
     if (reset_n && bss_loop_active) begin
-      integer addr;
-      integer mem_idx;
-
       // Clear entire BSS region in one cycle
       // Memory is byte-addressable: DUT.dmem_adapter.dmem.mem[byte_index]
-      for (addr = bss_start_addr; addr < bss_end_addr; addr = addr + 4) begin
-        mem_idx = (addr - 32'h80000000);  // Convert to DMEM-relative address
-        DUT.dmem_adapter.dmem.mem[mem_idx]     = 8'h00;
-        DUT.dmem_adapter.dmem.mem[mem_idx + 1] = 8'h00;
-        DUT.dmem_adapter.dmem.mem[mem_idx + 2] = 8'h00;
-        DUT.dmem_adapter.dmem.mem[mem_idx + 3] = 8'h00;
+      for (bss_addr = bss_start_addr; bss_addr < bss_end_addr; bss_addr = bss_addr + 4) begin
+        bss_mem_idx = (bss_addr - 32'h80000000);  // Convert to DMEM-relative address
+        DUT.dmem_adapter.dmem.mem[bss_mem_idx]     = 8'h00;
+        DUT.dmem_adapter.dmem.mem[bss_mem_idx + 1] = 8'h00;
+        DUT.dmem_adapter.dmem.mem[bss_mem_idx + 2] = 8'h00;
+        DUT.dmem_adapter.dmem.mem[bss_mem_idx + 3] = 8'h00;
       end
 
       // Update t0 register to point past BSS (simulates loop completion)
