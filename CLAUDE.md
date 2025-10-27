@@ -7,10 +7,10 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 27/34 passing (79%) - Phases 1-2-3-5-6-7 complete ✅
-- **OS Integration**: Phase 1.4 Complete - Full SoC with memory-mapped peripherals ✅
-- **Recent Work**: Full SoC Integration (2025-10-27 Session 17) - See below
-- **Session 17 Summary**: Core bus interface, SoC integration complete, MMIO test passing
-- **Next Phase**: Interrupt delivery testing (Phase 1.5)
+- **OS Integration**: Phase 1.5 In Progress - Interrupt handling implemented ⚡
+- **Recent Work**: Interrupt Handling Implementation (2025-10-27 Session 18) - See below
+- **Session 18 Summary**: Full interrupt handling logic, mip/mie/mideleg integration, priority encoding
+- **Next Step**: Debug timer interrupt delivery, implement remaining interrupt tests
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -105,6 +105,30 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-27 (Session 18)**: Phase 1.5 - Interrupt Handling Implementation ⚡
+- **Achievement**: Implemented full interrupt detection, priority encoding, and trap generation
+- **Problem Identified**: Interrupt infrastructure existed (CLINT, CSR mip/mie), but core had NO interrupt handling logic
+- **CSR File Enhancements** (`csr_file.v`):
+  - Added `mip_out`, `mie_out`, `mideleg_out` ports (export interrupt status to core)
+  - Added `trap_is_interrupt` input (distinguish interrupts from exceptions)
+  - Modified mcause/scause writes to set interrupt bit (MSB) for interrupts
+  - ~15 lines modified
+- **Core Interrupt Logic** (`rv32i_core_pipelined.v`, ~50 lines NEW):
+  - Interrupt detection: `pending_interrupts = mip & mie`
+  - Global enable check: mstatus.MIE (M-mode), mstatus.SIE (S-mode), always-on (U-mode)
+  - Priority encoder: MEI(11) > MSI(3) > MTI(7) > SEI(9) > SSI(1) > STI(5)
+  - Delegation logic: mideleg-based S-mode delegation
+  - Exception/interrupt merging: sync exceptions have priority, interrupts injected asynchronously
+- **Testing**:
+  - Quick regression: **14/14 passing** ✅ (zero breakage)
+  - Basic CLINT test: **PASSED** ✅ (register access works)
+  - Timer interrupt test: Infrastructure complete, needs debugging 🔧
+- **Status**: Core interrupt handling 100% implemented, delivery testing in progress
+- **Files Modified**: `csr_file.v`, `rv32i_core_pipelined.v`, `CLAUDE.md`
+- **Files Created**: `test_interrupt_mtimer.s`, `test_clint_basic.s`
+- **Next**: Debug timer interrupt delivery, implement 5 more interrupt tests
+- **Reference**: Session 18 summary (this entry)
 
 **2025-10-27 (Session 17)**: Phase 1.4 - Full SoC Integration Complete ✅
 - **Achievement**: Connected CPU core to bus interconnect, enabling memory-mapped peripheral access

@@ -183,9 +183,9 @@ module rv_soc #(
     .req_size(clint_req_size),
     .req_ready(clint_req_ready),
     .req_rdata(clint_req_rdata),
-    // Interrupt outputs
-    .mti_o(mtip),
-    .msi_o(msip)
+    // Interrupt outputs (hart 0)
+    .mti_o(mtip),  // Connect hart 0 timer interrupt
+    .msi_o(msip)   // Connect hart 0 software interrupt
   );
 
   //==========================================================================

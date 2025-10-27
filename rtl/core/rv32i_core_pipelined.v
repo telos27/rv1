@@ -552,6 +552,9 @@ module rv_core_pipelined #(
   wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
   wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
   wire [XLEN-1:0] medeleg;            // Machine exception delegation register
+  wire [XLEN-1:0] mip;                // Machine Interrupt Pending register
+  wire [XLEN-1:0] mie;                // Machine Interrupt Enable register
+  wire [XLEN-1:0] mideleg;            // Machine Interrupt Delegation register
   // Note: csr_frm and csr_fflags are now connected to CSR file outputs
 
   //==========================================================================
@@ -1597,6 +1600,7 @@ module rv_core_pipelined #(
     .trap_entry(exception_gated),  // Use gated signal for immediate trap (0-cycle latency)
     .trap_pc(exception_pc),        // Use current exception PC (not registered)
     .trap_cause(exception_code),   // Use current exception code (not registered)
+    .trap_is_interrupt(combined_is_interrupt), // Indicate if this is an interrupt vs exception
     .trap_val(exception_val),      // Use current exception val (not registered)
     .trap_vector(trap_vector),
     .mret(exmem_is_mret && exmem_valid && !exception),
@@ -1634,11 +1638,84 @@ module rv_core_pipelined #(
     .mtip_in(mtip_in),
     .msip_in(msip_in),
     .meip_in(meip_in),
-    .seip_in(seip_in)
+    .seip_in(seip_in),
+    // Interrupt register outputs (Phase 1.5: Interrupt handling)
+    .mip_out(mip),
+    .mie_out(mie),
+    .mideleg_out(mideleg)
   );
 
   // Alias for MMU integration
   assign csr_satp = satp;
+
+  //==========================================================================
+  // Interrupt Handling (Phase 1.5)
+  //==========================================================================
+  // Interrupts are treated as asynchronous exceptions that can occur at any time
+  // Priority order (from highest to lowest, per RISC-V spec):
+  //   MEI (11) > MSI (3) > MTI (7) > SEI (9) > SSI (1) > STI (5)
+
+  // Compute pending and enabled interrupts
+  wire [XLEN-1:0] pending_interrupts = mip & mie;
+
+  // Check global interrupt enable based on current privilege mode
+  wire interrupts_globally_enabled =
+    (current_priv == 2'b11) ? mstatus_mie :  // M-mode: check MIE
+    (current_priv == 2'b01) ? mstatus_sie :  // S-mode: check SIE
+    1'b1;                                     // U-mode: always enabled
+
+  // Priority encoding for interrupts (RISC-V spec priority order)
+  wire interrupt_pending;
+  wire [4:0] interrupt_cause;
+  wire interrupt_is_s_mode;  // True if interrupt should trap to S-mode
+
+  // Check each interrupt in priority order
+  wire mei_pending = pending_interrupts[11];  // Machine External Interrupt
+  wire msi_pending = pending_interrupts[3];   // Machine Software Interrupt
+  wire mti_pending = pending_interrupts[7];   // Machine Timer Interrupt
+  wire sei_pending = pending_interrupts[9];   // Supervisor External Interrupt
+  wire ssi_pending = pending_interrupts[1];   // Supervisor Software Interrupt
+  wire sti_pending = pending_interrupts[5];   // Supervisor Timer Interrupt
+
+  // Priority encoder (highest priority wins)
+  assign interrupt_pending = interrupts_globally_enabled && |pending_interrupts;
+  assign interrupt_cause =
+    mei_pending ? 5'd11 :  // MEI
+    msi_pending ? 5'd3  :  // MSI
+    mti_pending ? 5'd7  :  // MTI
+    sei_pending ? 5'd9  :  // SEI
+    ssi_pending ? 5'd1  :  // SSI
+    sti_pending ? 5'd5  :  // STI
+    5'd0;                   // No interrupt
+
+  // Check if interrupt should be delegated to S-mode
+  // Only delegate if: (1) interrupt is delegated via mideleg, AND (2) currently in S or U mode
+  assign interrupt_is_s_mode = mideleg[interrupt_cause] && (current_priv <= 2'b01);
+
+  //==========================================================================
+  // Combined Exception/Interrupt Handling
+  //==========================================================================
+  // Merge synchronous exceptions with asynchronous interrupts
+  // Synchronous exceptions have priority over interrupts
+
+  wire combined_exception;
+  wire [4:0] combined_exception_code;
+  wire [XLEN-1:0] combined_exception_pc;
+  wire [XLEN-1:0] combined_exception_val;
+  wire combined_is_interrupt;
+
+  // Synchronous exception from exception_unit
+  wire sync_exception;
+  wire [4:0] sync_exception_code;
+  wire [XLEN-1:0] sync_exception_pc;
+  wire [XLEN-1:0] sync_exception_val;
+
+  // Priority: Synchronous exceptions > Interrupts
+  assign exception = sync_exception || interrupt_pending;
+  assign exception_code = sync_exception ? sync_exception_code : interrupt_cause;
+  assign exception_pc = sync_exception ? sync_exception_pc : pc_current;
+  assign exception_val = sync_exception ? sync_exception_val : {XLEN{1'b0}};
+  assign combined_is_interrupt = !sync_exception && interrupt_pending;
 
   //==========================================================================
   // Exception Unit (monitors all stages)
@@ -1675,11 +1752,11 @@ module rv_core_pipelined #(
     // Page fault inputs (Phase 3 - MMU integration)
     .mem_page_fault(mmu_req_page_fault),
     .mem_fault_vaddr(mmu_req_fault_vaddr),
-    // Outputs
-    .exception(exception),
-    .exception_code(exception_code),
-    .exception_pc(exception_pc),
-    .exception_val(exception_val)
+    // Outputs (connect to sync_exception signals, will be merged with interrupts)
+    .exception(sync_exception),
+    .exception_code(sync_exception_code),
+    .exception_pc(sync_exception_pc),
+    .exception_val(sync_exception_val)
   );
 
   // Determine if exception is from MEM stage (for precise exception handling)

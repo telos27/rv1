@@ -24,7 +24,8 @@ module csr_file #(
   // Trap handling interface
   input  wire             trap_entry,     // Trap is occurring
   input  wire [XLEN-1:0]  trap_pc,        // PC to save in mepc
-  input  wire [4:0]       trap_cause,     // Exception cause code
+  input  wire [4:0]       trap_cause,     // Exception/interrupt cause code
+  input  wire             trap_is_interrupt, // 1 if trap is an interrupt, 0 if exception
   input  wire [XLEN-1:0]  trap_val,       // mtval value (bad address, instruction, etc.)
   output wire [XLEN-1:0]  trap_vector,    // mtvec value (trap handler address)
 
@@ -68,7 +69,12 @@ module csr_file #(
   input  wire             mtip_in,        // Machine Timer Interrupt Pending
   input  wire             msip_in,        // Machine Software Interrupt Pending
   input  wire             meip_in,        // Machine External Interrupt Pending (from PLIC)
-  input  wire             seip_in         // Supervisor External Interrupt Pending (from PLIC)
+  input  wire             seip_in,        // Supervisor External Interrupt Pending (from PLIC)
+
+  // Interrupt status outputs (for interrupt handling in core)
+  output wire [XLEN-1:0]  mip_out,        // Machine Interrupt Pending register
+  output wire [XLEN-1:0]  mie_out,        // Machine Interrupt Enable register
+  output wire [XLEN-1:0]  mideleg_out     // Machine Interrupt Delegation register
 );
 
   // =========================================================================
@@ -388,10 +394,11 @@ module csr_file #(
         if (trap_target_priv == 2'b11) begin
           // Machine-mode trap
           mepc_r  <= trap_pc;
-          mcause_r <= {{(XLEN-5){1'b0}}, trap_cause};
+          // Set mcause: MSB = interrupt bit, lower bits = cause code
+          mcause_r <= {trap_is_interrupt, {(XLEN-6){1'b0}}, trap_cause};
           mtval_r  <= trap_val;
           `ifdef DEBUG_EXCEPTION
-          $display("[CSR_TRAP] Writing mcause=%0d mepc=%h", trap_cause, trap_pc);
+          $display("[CSR_TRAP] Writing mcause=%0d (interrupt=%b) mepc=%h", trap_cause, trap_is_interrupt, trap_pc);
           `endif
           mstatus_r[MSTATUS_MPIE_BIT] <= mstatus_mie_w;         // Save current MIE
           mstatus_r[MSTATUS_MIE_BIT]  <= 1'b0;                  // Disable interrupts
@@ -399,7 +406,8 @@ module csr_file #(
         end else if (trap_target_priv == 2'b01) begin
           // Supervisor-mode trap
           sepc_r  <= trap_pc;
-          scause_r <= {{(XLEN-5){1'b0}}, trap_cause};
+          // Set scause: MSB = interrupt bit, lower bits = cause code
+          scause_r <= {trap_is_interrupt, {(XLEN-6){1'b0}}, trap_cause};
           stval_r  <= trap_val;
           mstatus_r[MSTATUS_SPIE_BIT] <= mstatus_sie_w;         // Save current SIE
           mstatus_r[MSTATUS_SIE_BIT]  <= 1'b0;                  // Disable supervisor interrupts
@@ -574,6 +582,11 @@ module csr_file #(
   assign mpp_out     = mstatus_mpp_w;
   assign spp_out     = mstatus_spp_w;
   assign medeleg_out = medeleg_r;
+
+  // Interrupt register outputs
+  assign mip_out     = mip_value;     // Current interrupt pending (includes hardware inputs)
+  assign mie_out     = mie_r;         // Interrupt enable register
+  assign mideleg_out = mideleg_r;     // Interrupt delegation register
 
   // MMU-related outputs
   assign satp_out    = satp_r;
