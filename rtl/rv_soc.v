@@ -53,6 +53,8 @@ module rv_soc #(
     .reset_n(reset_n),
     .mtip_in(mtip),
     .msip_in(msip),
+    .meip_in(1'b0),      // TODO: Connect to PLIC MEI output (Phase 1.3)
+    .seip_in(1'b0),      // TODO: Connect to PLIC SEI output (Phase 1.3)
     .pc_out(pc_out),
     .instr_out(instr_out)
   );

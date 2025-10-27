@@ -7,10 +7,10 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 27/34 passing (79%) - Phases 1-2-3-5-6-7 complete ✅
-- **OS Integration**: Phase 1.2 Complete - UART + CLINT peripherals ✅
-- **Recent Work**: 16550 UART Implementation (2025-10-26 Session 15) - See below
-- **Session 15 Summary**: UART peripheral + testbench (12/12 ✅), SoC integration, Phase 1.2 complete
-- **Next Phase**: Bus interconnect (Phase 1.3) or FreeRTOS (Phase 2)
+- **OS Integration**: Phase 1.3 Foundation Complete - Bus + PLIC ready ✅
+- **Recent Work**: Bus Interconnect + PLIC (2025-10-27 Session 16) - See below
+- **Session 16 Summary**: Bus interconnect (10/10 ✅), PLIC implemented, MEI/SEI support
+- **Next Phase**: Full SoC integration (Phase 1.4) - Connect bus to core
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -130,6 +130,32 @@ rv1/
 - **Files Created**: `uart_16550.v`, `tb_uart.v`, `SESSION_15_SUMMARY.md`
 - **Files Modified**: `rv_soc.v`, `tb_soc.v`, `CLAUDE.md`
 - **Reference**: `docs/SESSION_15_SUMMARY.md`
+
+**2025-10-27 (Session 16)**: Phase 1.3 - Bus Interconnect & PLIC Foundation Complete ✅
+- **Achievement**: Built complete infrastructure for memory-mapped peripheral access
+- **Bus Interconnect** (`rtl/interconnect/simple_bus.v`, 254 lines):
+  - Single master (CPU) to multiple slaves (CLINT, UART, PLIC, DMEM)
+  - Priority-based address decoding for 4 peripheral ranges
+  - Single-cycle response, size adaptation (8/32/64-bit)
+  - Unmapped address handling (returns 0, ready)
+- **PLIC Implementation** (`rtl/peripherals/plic.v`, 390 lines):
+  - RISC-V PLIC spec compliant (32 interrupt sources, 0-7 priorities)
+  - Per-hart, per-mode configuration (M-mode and S-mode contexts)
+  - Claim/complete mechanism for interrupt acknowledgment
+  - MEI/SEI outputs for external interrupt delivery
+- **Core Interrupt Support**:
+  - Added MEI (bit 11) and SEI (bit 9) to mip register
+  - Added `meip_in` and `seip_in` ports to core and CSR file
+  - Updated MIP write mask to protect MEI/SEI from software writes
+  - Backward compatible (all testbenches updated)
+- **Testing**:
+  - Bus interconnect testbench: **10/10 tests passing** ✅
+  - Address decode verified for CLINT, UART, PLIC, DMEM
+  - Quick regression: **14/14 tests passing** ✅ (zero breakage)
+- **Status**: Foundation complete, SoC integration deferred to Phase 1.4
+- **Files Created**: `simple_bus.v`, `plic.v`, `tb_simple_bus.v`, `test_peripheral_mmio.s`
+- **Files Modified**: `rv32i_core_pipelined.v`, `csr_file.v`, `tb_core_pipelined.v`, `rv_soc.v`
+- **Reference**: `docs/SESSION_16_PHASE_1_3_SUMMARY.md`
 
 **2025-10-26 (Session 14)**: Phase 4 Exception Coverage Analysis & Delegation Test ✅
 - **Achievement**: Analyzed Phase 4 exception tests, identified hardware constraints, added delegation test

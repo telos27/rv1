@@ -64,9 +64,11 @@ module csr_file #(
   input  wire             fflags_we,      // Write enable for flag accumulation
   input  wire [4:0]       fflags_in,      // Exception flags from FPU
 
-  // External interrupt inputs (from CLINT)
+  // External interrupt inputs (from CLINT/PLIC)
   input  wire             mtip_in,        // Machine Timer Interrupt Pending
-  input  wire             msip_in         // Machine Software Interrupt Pending
+  input  wire             msip_in,        // Machine Software Interrupt Pending
+  input  wire             meip_in,        // Machine External Interrupt Pending (from PLIC)
+  input  wire             seip_in         // Supervisor External Interrupt Pending (from PLIC)
 );
 
   // =========================================================================
@@ -109,13 +111,14 @@ module csr_file #(
   reg [XLEN-1:0] mtval_r;
 
   // Machine Interrupt Pending (mip)
-  // Bits 7 (MTIP) and 3 (MSIP) are read-only and driven by external hardware (CLINT)
-  // Other bits are software-writable (for future external interrupts)
+  // Bits 11 (MEIP), 9 (SEIP), 7 (MTIP), 3 (MSIP) are read-only and driven by external hardware (CLINT/PLIC)
+  // Other bits are software-writable
   reg [XLEN-1:0] mip_r;
 
   // Combine hardware interrupt inputs with software-writable bits
+  // Bit layout: [XLEN-1:12] | MEIP(11) | [10] | SEIP(9) | [8] | MTIP(7) | [6:4] | MSIP(3) | [2:0]
   wire [XLEN-1:0] mip_value;
-  assign mip_value = {mip_r[XLEN-1:8], mtip_in, mip_r[6:4], msip_in, mip_r[2:0]};
+  assign mip_value = {mip_r[XLEN-1:12], meip_in, mip_r[10], seip_in, mip_r[8], mtip_in, mip_r[6:4], msip_in, mip_r[2:0]};
 
 
   // Floating-Point CSRs
@@ -439,8 +442,9 @@ module csr_file #(
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
           CSR_MIP: begin
-            // MIP: Mask out read-only bits (MTIP=7, MSIP=3) - these are driven by hardware
-            mip_r      <= csr_write_value & ~({{(XLEN-8){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0});
+            // MIP: Mask out read-only bits (MEIP=11, SEIP=9, MTIP=7, MSIP=3) - these are driven by hardware
+            // Mask format: bit 11, bit 9, bit 7, bit 3 = 1 (read-only)
+            mip_r      <= csr_write_value & ~({{(XLEN-12){1'b0}}, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 3'b0, 1'b1, 3'b0});
           end
           CSR_MEDELEG:  medeleg_r  <= csr_write_value;
           CSR_MIDELEG:  mideleg_r  <= csr_write_value;
