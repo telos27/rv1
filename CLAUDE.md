@@ -7,7 +7,9 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 25/34 passing (74%) - Phases 1-2-5-6-7 complete ✅
-- **Recent Work**: Refactoring Phase 2 Analysis - Stage extraction vs hybrid approach (2025-10-26 Session 10) - See below
+- **Recent Work**: OS Integration Planning + CLINT Implementation (2025-10-26 Session 11) - See below
+- **Session 11 Summary**: Created comprehensive OS roadmap (2400+ lines docs), implemented CLINT module (80% complete, MTIME working)
+- **Next Phase**: Interrupt infrastructure (CLINT + UART) for OS support 🚀
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -358,11 +360,53 @@ See `docs/KNOWN_ISSUES.md` for detailed tracking.
 - ✅ Hex file management and auto-rebuild - FIXED
 - ✅ Phase 7 tests implemented - COMPLETE
 
+## OS Integration Roadmap (NEW! 2025-10-26)
+
+**Goal**: Progressive OS validation from embedded RTOS to full Linux
+**Documentation**: See `docs/OS_INTEGRATION_PLAN.md`, `docs/MEMORY_MAP.md`
+
+### Phase 1: RV32 Interrupt Infrastructure (2-3 weeks) 🚧 IN PROGRESS
+- **CLINT**: Core-Local Interruptor (timer + software interrupts)
+- **UART**: 16550-compatible serial console
+- **SoC Integration**: Memory-mapped peripherals, address decoder
+- **Tests**: Complete 6 interrupt tests (privilege Phase 3)
+- **Milestone**: 34/34 privilege tests passing (100%)
+
+### Phase 2: FreeRTOS (1-2 weeks)
+- Port FreeRTOS to RV32IMAFDC
+- Demo applications (Blinky, Queue test, UART echo)
+- **Milestone**: Multitasking RTOS running
+
+### Phase 3: RV64 Upgrade (2-3 weeks)
+- Upgrade XLEN from 32 to 64 bits
+- Enhance MMU from Sv32 to Sv39 (3-level page tables)
+- Expand memory (1MB IMEM, 4MB DMEM)
+- **Milestone**: RV64 compliance (87/87 tests)
+
+### Phase 4: xv6-riscv (3-5 weeks)
+- Add PLIC (Platform-Level Interrupt Controller)
+- Add block storage (RAM disk initially)
+- Integrate OpenSBI firmware (M-mode SBI)
+- Port xv6-riscv Unix-like OS
+- **Milestone**: xv6 shell, usertests passing
+
+### Phase 5a: Linux nommu (Optional, 3-4 weeks)
+- Linux without MMU for embedded targets
+- Buildroot rootfs
+- **Milestone**: Busybox shell on nommu Linux
+
+### Phase 5b: Linux with MMU (4-6 weeks)
+- Full RV64 Linux with Sv39 MMU
+- OpenSBI + U-Boot boot flow
+- Buildroot with ext2 rootfs
+- Optional: Ethernet, GPIO peripherals
+- **Milestone**: Full Linux boot, interactive shell
+
+**Total Timeline**: 16-24 weeks
+
 ## Future Enhancements
-- **NEXT PRIORITIES**:
-  - Phase 3: Interrupt handling tests (requires interrupt injection capability)
-  - Phase 4: Exception coverage (EBREAK, misaligned access, page faults)
-  - Remaining privilege mode tests (9 tests in Phases 3-4)
+- **CURRENT PRIORITY**: OS Integration (see above) 🔥
+- **Remaining Privilege Tests**: 9 tests in Phases 3-4 (interrupt/exception coverage)
 - **Extensions**: Bit Manipulation (B), Vector (V), Crypto (K)
 - **Performance**: Branch prediction, caching, out-of-order execution
 - **System**: Debug module, PMP, Hypervisor extension

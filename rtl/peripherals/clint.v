@@ -1,0 +1,263 @@
+// clint.v - Core-Local Interruptor (CLINT)
+// Implements RISC-V CLINT specification for timer and software interrupts
+// Compatible with QEMU virt machine and SiFive devices
+// Author: RV1 Project
+// Date: 2025-10-26
+//
+// Memory Map (Base: 0x0200_0000):
+//   0x0000 - 0x3FFF: MSIP (Machine Software Interrupt Pending) - 4 bytes per hart
+//   0x4000 - 0xBFF7: MTIMECMP (Machine Timer Compare) - 8 bytes per hart
+//   0xBFF8 - 0xBFFF: MTIME (Machine Time Counter) - 8 bytes (shared)
+//
+// Features:
+// - 64-bit real-time counter (MTIME)
+// - Per-hart timer compare (MTIMECMP)
+// - Per-hart software interrupt (MSIP)
+// - Timer interrupt assertion when MTIME >= MTIMECMP
+// - Little-endian memory access
+
+`include "config/rv_config.vh"
+
+module clint #(
+  parameter NUM_HARTS = 1,                    // Number of hardware threads
+  parameter BASE_ADDR = 32'h0200_0000         // Base address (informational)
+) (
+  input  wire                       clk,
+  input  wire                       reset_n,
+
+  // Memory-mapped interface
+  input  wire                       req_valid,
+  input  wire [15:0]                req_addr,    // 16-bit offset from base (64KB range)
+  input  wire [63:0]                req_wdata,
+  input  wire                       req_we,
+  input  wire [2:0]                 req_size,    // 0=byte, 1=half, 2=word, 3=double
+  output reg                        req_ready,
+  output reg  [63:0]                req_rdata,
+
+  // Interrupt outputs (one per hart)
+  output wire [NUM_HARTS-1:0]       mti_o,       // Machine Timer Interrupt
+  output wire [NUM_HARTS-1:0]       msi_o        // Machine Software Interrupt
+);
+
+  //===========================================================================
+  // Register Definitions
+  //===========================================================================
+
+  // MTIME: 64-bit real-time counter (shared across all harts)
+  // Increments every clock cycle
+  reg [63:0] mtime;
+
+  // MTIMECMP: 64-bit timer compare register (one per hart)
+  // When mtime >= mtimecmp[i], mti_o[i] is asserted
+  reg [63:0] mtimecmp [0:NUM_HARTS-1];
+
+  // MSIP: Machine Software Interrupt Pending (one bit per hart)
+  // Software can write 1 to trigger interrupt, 0 to clear
+  reg [NUM_HARTS-1:0] msip;
+
+  //===========================================================================
+  // Address Decoding
+  //===========================================================================
+
+  // CLINT memory map offsets:
+  localparam MSIP_BASE     = 16'h0000;  // 0x0000 - 0x3FFF (4 bytes per hart)
+  localparam MTIMECMP_BASE = 16'h4000;  // 0x4000 - 0xBFF7 (8 bytes per hart)
+  localparam MTIME_ADDR    = 16'hBFF8;  // 0xBFF8 - 0xBFFF (8 bytes, shared)
+
+  wire is_msip;
+  wire is_mtimecmp;
+  wire is_mtime;
+  wire [7:0] hart_id;          // Hart ID for MSIP/MTIMECMP access
+  wire [3:0] mtimecmp_offset;  // Offset within MTIMECMP array
+
+  // Decode which register is being accessed
+  // Prioritize MTIME first (most specific), then MTIMECMP, then MSIP
+  assign is_mtime    = (req_addr >= 16'hBFF8) && (req_addr <= 16'hBFFF);  // 0xBFF8-0xBFFF (8 bytes)
+  assign is_mtimecmp = !is_mtime && (req_addr >= 16'h4000) && (req_addr < 16'hBFF8);  // 0x4000-0xBFF7
+  assign is_msip     = !is_mtime && !is_mtimecmp && (req_addr < 16'h4000);  // 0x0000-0x3FFF
+
+  // Calculate hart ID from address
+  // MSIP: 4 bytes per hart starting at 0x0000
+  // MTIMECMP: 8 bytes per hart starting at 0x4000
+  assign hart_id = is_msip ? (req_addr - MSIP_BASE) >> 2 :           // Divide by 4 for MSIP
+                   is_mtimecmp ? (req_addr - MTIMECMP_BASE) >> 3 :   // Divide by 8 for MTIMECMP
+                   8'h0;
+
+  // Calculate offset for MTIMECMP access (0-7 for 8-byte register)
+  assign mtimecmp_offset = req_addr[2:0] - 4'h0;  // Offset within 8-byte MTIMECMP
+
+  //===========================================================================
+  // MTIME Counter (Free-Running)
+  //===========================================================================
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      mtime <= 64'h0;
+    end else begin
+      // Increment MTIME every cycle
+      // Software can also write to MTIME (typically only at boot)
+      if (req_valid && req_we && is_mtime) begin
+        // Allow writes to MTIME (for initialization)
+        case (req_size)
+          3'h3: mtime <= req_wdata;                                      // 64-bit write
+          3'h2: begin                                                     // 32-bit write
+            if (req_addr[2] == 1'b0)
+              mtime[31:0] <= req_wdata[31:0];                            // Lower 32 bits
+            else
+              mtime[63:32] <= req_wdata[31:0];                           // Upper 32 bits
+          end
+          default: begin
+            // Byte/halfword writes not common for MTIME, but support them
+            if (req_addr[2:0] == 3'h0) mtime[7:0]   <= req_wdata[7:0];
+            if (req_addr[2:0] == 3'h1) mtime[15:8]  <= req_wdata[7:0];
+            if (req_addr[2:0] == 3'h2) mtime[23:16] <= req_wdata[7:0];
+            if (req_addr[2:0] == 3'h3) mtime[31:24] <= req_wdata[7:0];
+            if (req_addr[2:0] == 3'h4) mtime[39:32] <= req_wdata[7:0];
+            if (req_addr[2:0] == 3'h5) mtime[47:40] <= req_wdata[7:0];
+            if (req_addr[2:0] == 3'h6) mtime[55:48] <= req_wdata[7:0];
+            if (req_addr[2:0] == 3'h7) mtime[63:56] <= req_wdata[7:0];
+          end
+        endcase
+      end else begin
+        // Normal operation: increment every cycle
+        mtime <= mtime + 64'h1;
+      end
+    end
+  end
+
+  //===========================================================================
+  // MTIMECMP Registers (One per Hart)
+  //===========================================================================
+
+  integer i;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      for (i = 0; i < NUM_HARTS; i = i + 1) begin
+        mtimecmp[i] <= 64'hFFFF_FFFF_FFFF_FFFF;  // Initialize to max (no interrupt)
+      end
+    end else begin
+      // Handle writes to MTIMECMP
+      if (req_valid && req_we && is_mtimecmp && (hart_id < NUM_HARTS)) begin
+        case (req_size)
+          3'h3: begin  // 64-bit write
+            mtimecmp[hart_id] <= req_wdata;
+          end
+          3'h2: begin  // 32-bit write
+            if (req_addr[2] == 1'b0)
+              mtimecmp[hart_id][31:0] <= req_wdata[31:0];    // Lower 32 bits
+            else
+              mtimecmp[hart_id][63:32] <= req_wdata[31:0];   // Upper 32 bits
+          end
+          3'h1: begin  // 16-bit write
+            case (req_addr[2:1])
+              2'h0: mtimecmp[hart_id][15:0]  <= req_wdata[15:0];
+              2'h1: mtimecmp[hart_id][31:16] <= req_wdata[15:0];
+              2'h2: mtimecmp[hart_id][47:32] <= req_wdata[15:0];
+              2'h3: mtimecmp[hart_id][63:48] <= req_wdata[15:0];
+            endcase
+          end
+          3'h0: begin  // 8-bit write
+            case (req_addr[2:0])
+              3'h0: mtimecmp[hart_id][7:0]   <= req_wdata[7:0];
+              3'h1: mtimecmp[hart_id][15:8]  <= req_wdata[7:0];
+              3'h2: mtimecmp[hart_id][23:16] <= req_wdata[7:0];
+              3'h3: mtimecmp[hart_id][31:24] <= req_wdata[7:0];
+              3'h4: mtimecmp[hart_id][39:32] <= req_wdata[7:0];
+              3'h5: mtimecmp[hart_id][47:40] <= req_wdata[7:0];
+              3'h6: mtimecmp[hart_id][55:48] <= req_wdata[7:0];
+              3'h7: mtimecmp[hart_id][63:56] <= req_wdata[7:0];
+            endcase
+          end
+        endcase
+      end
+    end
+  end
+
+  //===========================================================================
+  // MSIP Registers (Software Interrupt Pending)
+  //===========================================================================
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      msip <= {NUM_HARTS{1'b0}};
+    end else begin
+      // Handle writes to MSIP
+      if (req_valid && req_we && is_msip && (hart_id < NUM_HARTS)) begin
+        // Only bit 0 is writable, rest are reserved
+        msip[hart_id] <= req_wdata[0];
+      end
+    end
+  end
+
+  //===========================================================================
+  // Memory Read Logic
+  //===========================================================================
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      req_rdata <= 64'h0;
+      req_ready <= 1'b0;
+    end else begin
+      req_ready <= req_valid;  // Single-cycle response
+
+      if (req_valid && !req_we) begin
+        // Handle reads
+        if (is_mtime) begin
+          // Read MTIME (64-bit)
+          req_rdata <= mtime;
+        end else if (is_mtimecmp && (hart_id < NUM_HARTS)) begin
+          // Read MTIMECMP for specific hart
+          req_rdata <= mtimecmp[hart_id];
+        end else if (is_msip && (hart_id < NUM_HARTS)) begin
+          // Read MSIP for specific hart (only bit 0 valid)
+          req_rdata <= {63'h0, msip[hart_id]};
+        end else begin
+          // Invalid address or out-of-range hart ID
+          req_rdata <= 64'h0;
+        end
+      end else if (req_valid && req_we) begin
+        // Write operations don't return data, but set ready
+        req_rdata <= 64'h0;
+      end else begin
+        req_rdata <= 64'h0;
+      end
+    end
+  end
+
+  //===========================================================================
+  // Interrupt Generation Logic
+  //===========================================================================
+
+  // Generate timer interrupt for each hart
+  // MTI[i] is asserted when mtime >= mtimecmp[i]
+  genvar g;
+  generate
+    for (g = 0; g < NUM_HARTS; g = g + 1) begin : gen_interrupts
+      assign mti_o[g] = (mtime >= mtimecmp[g]);
+    end
+  endgenerate
+
+  // Software interrupts are directly driven by MSIP register
+  assign msi_o = msip;
+
+  //===========================================================================
+  // Debug Monitoring (Optional)
+  //===========================================================================
+
+  `ifdef DEBUG_CLINT
+  // Monitor for debugging (Icarus Verilog compatible)
+  always @(posedge clk) begin
+    if (req_valid && req_we && is_mtime) begin
+      $display("DEBUG: MTIME write at time %t: 0x%016h", $time, req_wdata);
+    end
+    if (req_valid && req_we && is_mtimecmp) begin
+      $display("DEBUG: MTIMECMP[%0d] write at time %t: 0x%016h", hart_id, $time, req_wdata);
+    end
+    if (req_valid && req_we && is_msip) begin
+      $display("DEBUG: MSIP[%0d] write at time %t: %b", hart_id, $time, req_wdata[0]);
+    end
+  end
+  `endif
+
+endmodule

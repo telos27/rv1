@@ -276,7 +276,7 @@ Hex files were build artifacts (not tracked in git), causing frequent "hex file 
 
 ## Future Enhancements
 
-1. **Phase 7 Tests**: Implement stress and regression tests (2 pending)
-2. **Interrupt Logic**: Complete Phase 3 tests (3 tests need interrupt hardware)
-3. **Exception Coverage**: Complete Phase 4 tests (hardware limitations documented)
-4. **Documentation**: Waveform examples for privilege mode state machine
+1. **Phase 3 Tests**: Interrupt handling tests (3 tests need interrupt injection capability)
+2. **Phase 4 Tests**: Exception coverage (6 tests pending, some blocked by hardware limitations)
+3. **Documentation**: Waveform examples for privilege mode state machine
+4. **Performance**: Consider branch prediction, caching optimizations

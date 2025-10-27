@@ -1,8 +1,8 @@
 # RV1 Documentation Index
 
 **Project**: RV1 RISC-V Processor (RV32IMAFDC)
-**Status**: 100% Compliance (81/81 official tests) ✅
-**Last Updated**: 2025-10-23
+**Status**: 100% Compliance (81/81 official tests) ✅ | Privilege Tests: 25/34 (74%)
+**Last Updated**: 2025-10-26
 
 ---
 
@@ -88,9 +88,10 @@ docs/
 
 | Document | Description |
 |----------|-------------|
-| `sessions/SESSION25_SUMMARY.md` | Test infrastructure enhancement (current session) |
-| `sessions/SESSION24_C_EXTENSION_CONFIG_CLARIFICATION.md` | C extension configuration docs |
-| `sessions/SESSION23_100_PERCENT_RV32D.md` | **🎉 100% Compliance achieved!** |
+| `SESSIONS_8_9_10_SUMMARY.md` | **⭐ Phase 7 Complete + Refactoring** (2025-10-26) |
+| `PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md` | Privilege test suite - 25/34 tests (74%) |
+| `REFACTORING_SESSION_10.md` | Stage extraction analysis & hybrid approach |
+| `REFACTORING_PLAN.md` | Code organization roadmap |
 
 **Older sessions**: See `archive/SESSION_*.md` for complete history
 
