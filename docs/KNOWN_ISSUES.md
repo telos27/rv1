@@ -4,23 +4,25 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### 1. ECALL Detection in Trap Handlers
+### 1. Register Preservation During Traps - test_delegation_disable
 
-**Status**: Identified 2025-10-26, Under Investigation
+**Status**: Identified 2025-10-26 Session 5, Under Investigation
 **Priority**: LOW - Single privilege test affected, compliance tests pass
-**Affected**: `test_delegation_disable` (ECALL in S-mode trap handler not detected)
+**Affected**: `test_delegation_disable` (M-mode handler receives incorrect register values)
 
 #### Description
 
-ECALL exceptions are not being detected when executed within trap handlers, causing `test_delegation_disable` to fail. The S-mode trap handler executes ECALL to return to M-mode, but the exception is not latched/processed, causing the test flow to break.
+The `test_delegation_disable` test fails because the M-mode trap handler receives an incorrect value in register `s0`. The S-mode handler sets `s0=5` before executing ECALL, but when the M-mode handler runs, `s0` appears to have a different value, causing the handler to take the wrong branch and fail.
 
 **Symptoms:**
-- ECALL instruction in trap handler does not generate exception
-- No ECALL exception (cause=8/9/11) appears in debug output
-- Test branches to failure path because expected M-mode transition doesn't occur
+- S-mode handler sets `s0=5` before ECALL
+- M-mode handler checks `s0` value and expects 5
+- BEQ branch at M-handler+0x04 doesn't take (s0 != 5)
+- Handler falls through to TEST_FAIL path
+- Final `s0` value is 7, suggesting partial test progression
 
 **Failing Tests:**
-- `test_delegation_disable` - S-mode handler ECALL not detected (stage 5, line 121)
+- `test_delegation_disable` - M-mode handler stage check fails
 
 **Passing Tests:**
 - 14/14 quick regression tests ✅
@@ -32,11 +34,19 @@ ECALL exceptions are not being detected when executed within trap handlers, caus
 
 #### Root Causes Under Investigation
 
-1. **Pipeline Flush Timing**: ECALL may be flushed from pipeline during trap handling before exception is detected
-2. **Exception Gating Overly Aggressive**: `exception_gated` logic may be blocking valid ECALL exceptions
-3. **CSR Write Race Condition**: CSR writes and exception detection happening at same clock edge may cause timing issues
+1. **Register Corruption During Trap**: Register `s0` may be corrupted during trap entry/exit
+2. **Trap Timing Issue**: ECALL trap may occur before `s0=5` write commits
+3. **Pipeline State Management**: Pipeline flush or stall may affect register writeback timing
 
-#### Fixes Applied (2025-10-26 Session 4)
+#### Fixes Applied (2025-10-26 Session 5)
+
+**CSR Write Exception Gating** (`rv32i_core_pipelined.v:1563`):
+- Added `&& !exception` to CSR write enable
+- Prevents CSR writes from committing when instruction causes exception
+- **Impact**: ECALL detection now works correctly ✅
+- This fixed the PRIMARY issue (CSR writes committing despite illegal instruction exceptions)
+
+**Previous Fixes (Session 4):**
 
 **Exception Propagation Fix** (`rv32i_core_pipelined.v:452`):
 - Added `exception_gated = exception && !exception_r && !exception_taken_r`
@@ -58,15 +68,26 @@ ECALL exceptions are not being detected when executed within trap handlers, caus
 
 - **Compliance**: No impact - 81/81 official tests still pass ✅
 - **Regression**: No impact - 14/14 quick tests pass ✅
-- **Privilege Tests**: Minor impact - 1 test fails due to ECALL detection issue
-- **Functionality**: Exception gating and delegation logic significantly improved
+- **Privilege Tests**: Minor impact - 1 test fails due to register timing issue
+- **Functionality**: CSR write exception handling significantly improved
+
+#### Progress Summary
+
+**Session 4** (2025-10-26):
+- Fixed exception propagation (exception_gated logic)
+- Fixed trap delegation timing (core-side compute_trap_target)
+- Added medeleg_out export from CSR file
+
+**Session 5** (2025-10-26):
+- Fixed CSR write exception gating ✅
+- ECALL detection now working correctly ✅
+- Identified new issue: register `s0` timing in trap handler
 
 #### Next Steps
-- Investigate ECALL exception detection timing in trap handlers
-- Check pipeline flush behavior during trap entry
-- Verify exception_gated doesn't block valid exceptions
-- Analyze waveforms for test_delegation_disable to pinpoint ECALL issue
-- Consider adding explicit pipeline state for "in trap handler" to handle ECALL specially
+- Investigate register writeback timing during trap entry
+- Check if ECALL trap occurs before `li s0, 5` commits to register file
+- Analyze pipeline state during trap sequence with register file debug
+- Consider waveform analysis for precise timing verification
 
 ---
 

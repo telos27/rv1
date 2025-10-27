@@ -7,7 +7,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 22/34 passing (65%) - Phases 1-2-5-6 substantially complete
-- **Recent Fixes**: Exception gating + trap target computation ✅ (2025-10-26 Session 4) - See `docs/KNOWN_ISSUES.md`
+- **Recent Fixes**: CSR write exception gating ✅ (2025-10-26 Session 5) - See `docs/KNOWN_ISSUES.md`
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -111,7 +111,23 @@ rv1/
   - Quick regression: 14/14 passing ✅
   - Compliance: 81/81 still passing ✅
 - **Files**: `rtl/core/rv32i_core_pipelined.v`, `rtl/core/csr_file.v`
-- **Remaining Issue**: `test_delegation_disable` - ECALL in trap handler not detected (under investigation)
+- **Remaining Issue**: `test_delegation_disable` - ECALL not detected initially
+
+**2025-10-26 (Session 5)**: CSR Write Exception Gating FIXED ✅
+- **Problem**: CSR writes committing even when instruction causes illegal instruction exception
+- **Root Cause**: `csr_we` signal not gated by exception detection
+  - When CSR instruction caused illegal exception, CSR write still executed
+  - Example: `csrw medeleg, zero` from S-mode → illegal exception, but write committed
+- **Solution**: Added exception gating to CSR write enable (`rv32i_core_pipelined.v:1563`)
+  - Changed: `.csr_we(idex_csr_we && idex_valid)`
+  - To: `.csr_we(idex_csr_we && idex_valid && !exception)`
+- **Impact**:
+  - ECALL detection now working ✅ (cause=9 correctly generated)
+  - CSR corruption on illegal access FIXED ✅
+  - Quick regression: 14/14 passing ✅
+  - Compliance: 81/81 still passing ✅
+- **Files**: `rtl/core/rv32i_core_pipelined.v:1563`
+- **Remaining Issue**: `test_delegation_disable` - register `s0` timing issue (M-handler receives wrong value)
 
 **2025-10-26 (Session 3)**: Phase 6 - Delegation logic FIXED ✅
 - **Problem**: Trap delegation used forwarded privilege mode from xRET instructions
@@ -205,14 +221,14 @@ rv1/
 See `docs/KNOWN_ISSUES.md` for detailed tracking.
 
 **Active:**
-- ECALL detection in trap handlers: ECALL exceptions not being detected when executed within trap handlers
-  - Impact: `test_delegation_disable` fails (S-mode handler ECALL not seen)
-  - Root causes under investigation: Pipeline flush timing, exception gating, CSR write races
-  - Status: Under investigation (Session 4 fixed exception propagation/delegation, ECALL issue remains)
+- Register preservation during traps: Register `s0` timing issue in `test_delegation_disable`
+  - Impact: `test_delegation_disable` fails (M-handler receives wrong `s0` value)
+  - Root causes under investigation: Register writeback timing, trap timing, pipeline state
+  - Status: Under investigation (Session 5 fixed CSR write exception gating, ECALL now works)
   - Does NOT affect compliance tests (81/81 passing) or quick regression (14/14 passing)
 
 ## Future Enhancements
-- **IMMEDIATE**: Investigate ECALL detection in trap handlers (test_delegation_disable)
+- **IMMEDIATE**: Investigate register writeback timing during trap entry (test_delegation_disable)
 - Bit Manipulation (B), Vector (V), Crypto (K) extensions
 - Performance: Branch prediction, caching, out-of-order execution
 - System: Debug module, PMP, Hypervisor extension

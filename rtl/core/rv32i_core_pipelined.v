@@ -1560,7 +1560,7 @@ module rv_core_pipelined #(
     .csr_addr(idex_csr_addr),
     .csr_wdata(ex_csr_wdata_forwarded),  // Use forwarded value
     .csr_op(idex_funct3),           // funct3 encodes CSR operation
-    .csr_we(idex_csr_we && idex_valid),
+    .csr_we(idex_csr_we && idex_valid && !exception),  // Don't commit CSR writes on exceptions
     .csr_access(idex_is_csr && idex_valid),
     .csr_rdata(ex_csr_rdata),
     .trap_entry(exception_r && !exception_r_hold),  // Pulse for one cycle only
