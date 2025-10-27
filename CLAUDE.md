@@ -7,7 +7,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 25/34 passing (74%) - Phases 1-2-5-6-7 complete ✅
-- **Recent Work**: Refactoring Phase 1 (Task 1.1) - CSR constants extraction ✅ (2025-10-26 Session 9) - See below
+- **Recent Work**: Refactoring Phase 2 Analysis - Stage extraction vs hybrid approach (2025-10-26 Session 10) - See below
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -102,6 +102,45 @@ rv1/
 **Progress**: 25/34 tests passing (74%), 7 skipped/blocked, 2 pending
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-26 (Session 10)**: Refactoring Phase 2 Analysis - Stage Extraction vs Hybrid Approach ⚙️
+- **Goal**: Split rv32i_core_pipelined.v (2455 lines) into stage-based modules
+- **Analysis**: Full pipeline stage extraction would require 250+ I/O ports
+  - IF Stage: ~30 ports
+  - ID Stage: ~80+ ports (decoder, register files, forwarding)
+  - EX Stage: ~100+ ports (ALU, mul/div, atomic, FPU, CSR, exceptions)
+  - MEM Stage: ~40 ports
+  - WB Stage: ~20 ports
+- **Issues Identified**:
+  - Signal explosion - more interface ports than current signal count
+  - Forwarding complexity - data forwarding crosses all 4 stage boundaries
+  - Testing risk - breaking 100% compliant design for organizational change
+  - Questionable value - 5 files with 50+ ports vs 1 well-organized file
+- **Pivot Decision**: Hybrid approach - extract functional modules, not stages
+- **Existing Modularization** (already good):
+  - ✅ `hazard_detection_unit.v` (~301 lines)
+  - ✅ `forwarding_unit.v` (~297 lines)
+  - ✅ Pipeline registers (4 modules)
+- **New Module Created**: `csr_priv_coordinator.v` (~267 lines) - reference implementation
+  - Privilege mode state machine (28 lines from core)
+  - CSR MRET/SRET forwarding (155 lines from core)
+  - Privilege mode forwarding (45 lines from core)
+  - MSTATUS reconstruction (39 lines from core)
+- **Decision**: Integration DEFERRED
+  - Current code already well-organized with clear comments
+  - Only 10% size reduction (252 lines)
+  - No functional benefit, only organizational
+  - "If it ain't broke, don't fix it"
+- **Deliverables**:
+  - ✅ `rtl/core/csr_priv_coordinator.v` (reference, not integrated)
+  - ✅ `docs/REFACTORING_SESSION_10.md` (detailed analysis)
+  - ✅ Updated `docs/REFACTORING_PLAN.md`
+- **Lessons Learned**:
+  - Always analyze before refactoring - avoid premature optimization
+  - Port count indicates coupling - high I/O means tight integration
+  - Sometimes the best refactoring is no refactoring
+  - Document analysis even if changes aren't made
+- **Reference**: `docs/REFACTORING_SESSION_10.md`, `docs/REFACTORING_PLAN.md` - Phase 2 analysis
 
 **2025-10-26 (Session 9)**: Refactoring Phase 1 - CSR Constants & Configuration Parameters ✅
 - **Task 1.1 Complete**: CSR constants extraction successful ✅

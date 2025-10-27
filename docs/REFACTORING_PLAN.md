@@ -750,21 +750,80 @@ endproperty
 
 ---
 
-### Phase 2: Major Restructure (Session 10+)
-**Time:** 6-8 hours
-**Tasks:**
-1. Task 1.3: Split main core into stage modules (6-8 hours)
-   - Extract incrementally (IF, ID, EX, MEM, WB, forwarding)
-   - Test after each extraction
-   - Update documentation
+### Phase 2: Stage-Based Refactoring Analysis (Session 10)
+**Time:** 1.75 hours (analysis + module creation)
+**Status:** ANALYSIS COMPLETE - Integration deferred
+**Date:** 2025-10-26
 
-**Testing:** Full regression after each stage extraction
+**Initial Plan**: Full pipeline stage extraction (IF, ID, EX, MEM, WB stages as separate modules)
 
-**Deliverables:**
-- 7 new stage/forwarding modules
-- Restructured main core (600-800 lines)
-- Updated architecture docs
-- All tests passing
+**Analysis Results**:
+After detailed code analysis, determined that full stage extraction would create more complexity than benefit:
+
+**Complexity Discovered**:
+- IF Stage: ~30 I/O ports
+- ID Stage: ~80+ I/O ports (decoder, register files, forwarding)
+- EX Stage: ~100+ I/O ports (ALU, mul/div, atomic, FPU, CSR, exceptions)
+- MEM Stage: ~40 I/O ports
+- WB Stage: ~20 I/O ports
+- **Total**: 250+ ports, complex wire routing between stages
+
+**Issues Identified**:
+1. Signal explosion - more interface ports than current signal count
+2. Forwarding complexity - data forwarding crosses all 4 stage boundaries
+3. Module overhead - interface complexity obscures logic flow
+4. Testing risk - breaking 100% compliant design for organizational change
+5. Questionable value - Is 5 files with 50+ ports better than 1 well-organized file?
+
+**Revised Approach: Hybrid Refactoring**
+
+Instead of horizontal stage splits, extract vertical functional modules:
+
+**Existing Modularization** (already separate):
+- `hazard_detection_unit.v` - Load-use hazards, stalls (~301 lines)
+- `forwarding_unit.v` - ID and EX forwarding (~297 lines)
+- Pipeline registers - ifid, idex, exmem, memwb
+
+**New Module Created**:
+- `csr_priv_coordinator.v` - CSR/privilege coordination (~267 lines)
+  - Privilege mode state machine (28 lines from core)
+  - CSR MRET/SRET forwarding (155 lines from core)
+  - Privilege mode forwarding (45 lines from core)
+  - MSTATUS reconstruction (39 lines from core)
+
+**Impact**:
+- **Lines extracted**: ~267 from main core
+- **Projected core size**: 2455 → ~2203 lines (10% reduction)
+- **Complexity**: Much lower than full stage extraction
+- **Risk**: Low (encapsulates existing logic)
+
+**Decision**: **Integration DEFERRED**
+
+**Rationale**:
+1. Current code is already well-organized with clear section comments
+2. Modular doesn't always mean better - sometimes integrated code is clearer
+3. 252-line reduction is modest (10% of file)
+4. No functional benefit, only organizational
+5. "If it ain't broke, don't fix it" applies
+
+**Deliverables**:
+- ✅ `rtl/core/csr_priv_coordinator.v` (reference implementation)
+- ✅ `docs/REFACTORING_SESSION_10.md` (detailed analysis)
+- ✅ Updated REFACTORING_PLAN.md (this section)
+- ❌ Integration not performed (deferred)
+
+**Lessons Learned**:
+1. Always analyze before refactoring - avoid premature optimization
+2. Port count indicates coupling - high count suggests tight integration
+3. Test coverage enables confident analysis
+4. Sometimes the best refactoring is no refactoring
+5. Document analysis even if changes aren't made
+
+**Future Consideration**:
+Keep `csr_priv_coordinator.v` as reference. Consider integration when:
+- Adding new privilege features (hypervisor extension)
+- Debugging CSR timing issues
+- Creating reusable RISC-V privilege core library
 
 ---
 
