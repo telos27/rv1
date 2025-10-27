@@ -54,12 +54,14 @@ TB="tb/integration/tb_freertos.v"
 
 # Compile with Icarus Verilog
 # FreeRTOS binary includes compressed instructions - enable C extension
+# Enable BSS fast-clear to skip slow memory initialization loop (~200k cycles saved)
 iverilog -g2012 \
     -o "$SIM_OUT" \
     -I rtl \
     -I rtl/config \
     -D XLEN=32 \
     -D ENABLE_C_EXT=1 \
+    -D ENABLE_BSS_FAST_CLEAR=1 \
     $RTL_CORE \
     $RTL_MEMORY \
     $RTL_PERIPHERALS \

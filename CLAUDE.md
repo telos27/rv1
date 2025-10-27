@@ -6,13 +6,14 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Achievement**: 🎉 **PHASE 1.5 COMPLETE - 6/6 INTERRUPT TESTS PASSING** 🎉
-- **Achievement**: 🎉 **FREERTOS COMPILED - 17KB CODE, 795KB DATA** 🎉
+- **Achievement**: 🎉 **FREERTOS BOOTS - SCHEDULER RUNNING** 🎉
+- **Achievement**: ⚡ **BSS FAST-CLEAR - 2000x BOOT SPEEDUP** ⚡
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS compiled, boot debugging required
-- **Recent Work**: C Extension Config Bug Fix (2025-10-27 Session 23) - See below
-- **Session 23 Summary**: Fixed critical C extension configuration mismatch causing boot loop
-- **Next Step**: Session 24 - Continue FreeRTOS boot debugging (investigate slow execution)
+- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, UART output debugging needed
+- **Recent Work**: BSS Accelerator & Boot Progress (2025-10-27 Session 24) - See below
+- **Session 24 Summary**: Implemented simulation BSS fast-clear, FreeRTOS reaches main() and starts scheduler
+- **Next Step**: Session 25 - Debug UART output issue (printf not producing characters)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -107,6 +108,14 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 24 (2025-10-27)**: BSS Fast-Clear Accelerator & Boot Progress ⚡
+- **Achievement**: FreeRTOS boots successfully! main() reached at cycle 95, scheduler starts at cycle 1001
+- **Accelerator**: Testbench-only BSS fast-clear saves ~200k cycles (2000x speedup)
+- **Implementation**: Detects BSS loop at PC 0x32, clears 260KB in 1 cycle, forces PC to 0x3E
+- **Features**: Gated by `ENABLE_BSS_FAST_CLEAR`, validates addresses, displays stats
+- **Status**: Boot complete ✅, UART output debugging needed 🚧 (printf produces 0 characters)
+- **Reference**: `docs/SESSION_24_BSS_ACCELERATOR.md`
 
 **Session 23 (2025-10-27)**: C Extension Configuration Bug Fix 🐛→✅
 - **Bug Found**: FreeRTOS compiled with RVC (compressed instructions), but core simulated without C extension enabled

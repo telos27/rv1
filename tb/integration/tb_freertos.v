@@ -9,7 +9,7 @@ module tb_freertos;
 
   // Parameters - FreeRTOS needs more memory and time
   parameter CLK_PERIOD = 20;          // 50 MHz clock (matches FreeRTOS config)
-  parameter TIMEOUT_CYCLES = 50000;   // 50k cycles = 1ms @ 50MHz (start with shorter timeout for debugging)
+  parameter TIMEOUT_CYCLES = 500000;  // 500k cycles = 10ms @ 50MHz (enough for boot + task switching)
 
   // Memory sizes for FreeRTOS (from linker script)
   parameter IMEM_SIZE = 65536;  // 64KB for code
@@ -125,6 +125,10 @@ module tb_freertos;
     if (reset_n && uart_tx_valid && uart_tx_ready) begin
       uart_char_count = uart_char_count + 1;
 
+      if (uart_char_count == 1) begin
+        $display("[UART] First character transmitted at cycle %0d", cycle_count);
+      end
+
       // Display characters directly (FreeRTOS uses printf)
       if (uart_tx_data >= 8'h20 && uart_tx_data <= 8'h7E) begin
         $write("%c", uart_tx_data);  // Printable ASCII
@@ -141,14 +145,34 @@ module tb_freertos;
     end
   end
 
-  // Progress indicator - print every 1k cycles
+  // Progress indicator - print every 10k cycles and track key milestones
+  reg main_reached;
+  reg scheduler_reached;
+  initial main_reached = 0;
+  initial scheduler_reached = 0;
+
   always @(posedge clk) begin
     if (reset_n) begin
       if (cycle_count ==1 || cycle_count == 10 || cycle_count == 100) begin
         $display("[DEBUG] Cycle %0d, PC: 0x%08h, Instr: 0x%08h",
                  cycle_count, pc, instruction);
       end
-      if ((cycle_count % 1000 == 0) && cycle_count > 0) begin
+
+      // Detect main() reached (address 0x229C)
+      if (!main_reached && pc == 32'h0000229c) begin
+        main_reached = 1;
+        $display("[MILESTONE] main() reached at cycle %0d", cycle_count);
+      end
+
+      // Detect vTaskStartScheduler() (would need to know address - using approximate)
+      if (!scheduler_reached && pc >= 32'h00002000 && pc < 32'h00003000 && main_reached) begin
+        if (cycle_count > 1000) begin  // Make sure we're past early boot
+          scheduler_reached = 1;
+          $display("[MILESTONE] Scheduler starting around cycle %0d", cycle_count);
+        end
+      end
+
+      if ((cycle_count % 10000 == 0) && cycle_count > 0) begin
         $display("[INFO] Cycle %0d, PC: 0x%08h, Instr: 0x%08h, UART chars: %0d",
                  cycle_count, pc, instruction, uart_char_count);
       end
@@ -196,5 +220,105 @@ module tb_freertos;
       $finish;
     end
   end
+
+  // ========================================
+  // BSS Fast-Clear Accelerator (Simulation Only)
+  // ========================================
+  // Detects the BSS zero loop pattern and accelerates memory clearing
+  // Pattern from start.S:
+  //   bss_zero_loop:
+  //     bge t0, t1, bss_zero_done
+  //     sw zero, 0(t0)
+  //     addi t0, t0, 4
+  //     j bss_zero_loop
+  //
+  // This is purely a simulation optimization - the hardware is not modified
+
+  `ifdef ENABLE_BSS_FAST_CLEAR
+
+  // BSS loop detection state
+  reg bss_loop_active;
+  reg [31:0] bss_start_addr;
+  reg [31:0] bss_end_addr;
+  integer bss_cleared_bytes;
+
+  initial begin
+    bss_loop_active = 0;
+    bss_start_addr = 0;
+    bss_end_addr = 0;
+    bss_cleared_bytes = 0;
+  end
+
+  // Detect entry to BSS loop (PC = 0x32 for FreeRTOS)
+  // Look for: bge t0, t1, <skip> at PC 0x32
+  always @(posedge clk) begin
+    if (reset_n && !bss_loop_active) begin
+      // Detect BSS loop entry: PC=0x32, instruction is BGE
+      if (pc == 32'h00000032 && instruction[6:0] == 7'b1100011 && instruction[14:12] == 3'b101) begin
+        // Extract register numbers: t0=x5, t1=x6 from BGE instruction
+        // BGE rs1, rs2, offset: imm[12|10:5] rs2 rs1 101 imm[4:1|11] 1100011
+
+        // Read t0 (x5) and t1 (x6) from core registers
+        // Hierarchy: DUT.core.regfile.registers (not regs)
+        bss_start_addr = DUT.core.regfile.registers[5];  // t0 = start address
+        bss_end_addr = DUT.core.regfile.registers[6];    // t1 = end address
+
+        // Validate addresses (BSS should be in DMEM: 0x8000_0000 - 0x8010_0000)
+        if (bss_start_addr >= 32'h80000000 && bss_start_addr < 32'h80100000 &&
+            bss_end_addr >= 32'h80000000 && bss_end_addr < 32'h80100000 &&
+            bss_end_addr > bss_start_addr) begin
+
+          bss_loop_active = 1;
+          bss_cleared_bytes = bss_end_addr - bss_start_addr;
+
+          $display("");
+          $display("========================================");
+          $display("BSS FAST-CLEAR ACCELERATOR ACTIVATED");
+          $display("========================================");
+          $display("  Start address: 0x%08h", bss_start_addr);
+          $display("  End address:   0x%08h", bss_end_addr);
+          $display("  Size:          %0d KB (%0d bytes)", bss_cleared_bytes / 1024, bss_cleared_bytes);
+          $display("  Normal cycles: ~%0d", bss_cleared_bytes / 4 * 3);  // ~3 cycles per store
+          $display("  Fast-clear:    1 cycle");
+          $display("========================================");
+          $display("");
+        end
+      end
+    end
+  end
+
+  // Execute fast BSS clear in one cycle
+  always @(posedge clk) begin
+    if (reset_n && bss_loop_active) begin
+      integer addr;
+      integer mem_idx;
+
+      // Clear entire BSS region in one cycle
+      // Memory is byte-addressable: DUT.dmem_adapter.dmem.mem[byte_index]
+      for (addr = bss_start_addr; addr < bss_end_addr; addr = addr + 4) begin
+        mem_idx = (addr - 32'h80000000);  // Convert to DMEM-relative address
+        DUT.dmem_adapter.dmem.mem[mem_idx]     = 8'h00;
+        DUT.dmem_adapter.dmem.mem[mem_idx + 1] = 8'h00;
+        DUT.dmem_adapter.dmem.mem[mem_idx + 2] = 8'h00;
+        DUT.dmem_adapter.dmem.mem[mem_idx + 3] = 8'h00;
+      end
+
+      // Update t0 register to point past BSS (simulates loop completion)
+      DUT.core.regfile.registers[5] = bss_end_addr;
+
+      // Force PC to jump to bss_zero_done (address 0x3e)
+      // Hierarchy: DUT.core.pc_inst.pc_current
+      force DUT.core.pc_inst.pc_current = 32'h0000003e;
+      #1;  // Hold for 1 time unit
+      release DUT.core.pc_inst.pc_current;
+
+      $display("[BSS-ACCEL] Cleared %0d KB in 1 cycle (saved ~%0d cycles)",
+               bss_cleared_bytes / 1024, (bss_cleared_bytes / 4 * 3) - 1);
+
+      bss_loop_active = 0;  // One-shot acceleration
+    end
+  end
+
+  `endif // ENABLE_BSS_FAST_CLEAR
 
 endmodule

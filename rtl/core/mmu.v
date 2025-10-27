@@ -316,11 +316,11 @@ module mmu #(
             // Check if translation is enabled
             if (!translation_enabled) begin
               // Bare mode: direct mapping (req_ready and req_paddr already set in default)
-              $display("MMU: Bare mode, VA=0x%h -> PA=0x%h", req_vaddr, req_vaddr);
+              // $display("MMU: Bare mode, VA=0x%h -> PA=0x%h", req_vaddr, req_vaddr);
               // Note: req_paddr and req_ready are set in the default case above
             end else begin
               // Check TLB
-              $display("MMU: Translation mode, VA=0x%h, TLB hit=%b", req_vaddr, tlb_hit);
+              // $display("MMU: Translation mode, VA=0x%h, TLB hit=%b", req_vaddr, tlb_hit);
               if (tlb_hit) begin
                 // TLB hit: check permissions
                 if (check_permission(tlb_pte_out, req_is_store, req_is_fetch,
