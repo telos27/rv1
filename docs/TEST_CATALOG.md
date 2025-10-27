@@ -232,7 +232,7 @@
 
 #### Miscellaneous
 
-**Tests**: 136
+**Tests**: 146
 
 - **branch_test.s** ✅
   - Branch Instructions Test
@@ -289,6 +289,10 @@
 - **test_branch_forward.s** ✅
   - Test forwarding after branch
   - Lines: 21
+
+- **test_clint_basic.s** ✅
+  - test_clint_basic.s - Basic CLINT Register Access Test
+  - Lines: 31
 
 - **test_copy_simple.s** ✅
   - Simple test: Add two numbers
@@ -416,13 +420,41 @@
   - Test Integer Load (sanity check)
   - Lines: 17
 
+- **test_interrupt_delegation_msi.s** ❌
+  - test_interrupt_delegation_msi.s - MSI Delegation to S-mode Test
+  - Lines: 66
+
+- **test_interrupt_delegation_mti.s** ✅
+  - test_interrupt_delegation_mti.s - MTI Delegation to S-mode Test
+  - Lines: 69
+
 - **test_interrupt_masking.s** ✅
   - Test 3.5: Interrupt Masking
   - Lines: 92
 
+- **test_interrupt_mie_masking.s** ❌
+  - test_interrupt_mie_masking.s - Test mstatus.MIE masking in M-mode
+  - Lines: 68
+
+- **test_interrupt_msi_priority.s** ❌
+  - test_interrupt_msi_priority.s - MSI > MTI Priority Test
+  - Lines: 91
+
+- **test_interrupt_mtimer.s** ✅
+  - test_interrupt_mtimer.s - Machine Timer Interrupt Test
+  - Lines: 76
+
+- **test_interrupt_nested_mmode.s** ❌
+  - test_interrupt_nested_mmode.s - Nested Interrupts in M-mode Test
+  - Lines: 111
+
 - **test_interrupt_pending.s** ✅
   - Test 3.4: Interrupt Pending Bits
   - Lines: 83
+
+- **test_interrupt_sie_masking.s** ❌
+  - test_interrupt_sie_masking.s - Test mstatus.SIE masking in S-mode
+  - Lines: 85
 
 - **test_interrupt_software.s** ✅
   - Test 3.1: Software Interrupt CSRs
@@ -517,6 +549,10 @@
   - test_mixed_real.s - Real mixed 16-bit and 32-bit instructions
   - Lines: 15
 
+- **test_mmio_peripherals.s** ✅
+  - test_mmio_peripherals.s - Memory-Mapped Peripheral Access Test
+  - Lines: 54
+
 - **test_mret_simple.s** ✅
   - Simple MRET test
   - Lines: 25
@@ -577,6 +613,10 @@
 - **test_page_fault_smode.s** ✅
   - Page Fault in S-mode
   - Lines: 54
+
+- **test_peripheral_mmio.s** ❌
+  - test_peripheral_mmio.s - Memory-Mapped Peripheral Access Test
+  - Lines: 84
 
 - **test_phase10_2_csr.s** ✅
   - Phase 10.2 - Supervisor Mode CSRs
@@ -866,6 +906,8 @@
   - Category: Atomic Operations
 - **test_branch_forward** - Test forwarding after branch
   - Category: Miscellaneous
+- **test_clint_basic** - test_clint_basic.s - Basic CLINT Register Access Test
+  - Category: Miscellaneous
 - **test_copy_simple** - Simple test: Add two numbers
   - Category: Miscellaneous
 - **test_csr_basic** - Test CSR instructions
@@ -984,9 +1026,23 @@
   - Category: Miscellaneous
 - **test_int_load** - Test Integer Load (sanity check)
   - Category: Miscellaneous
+- **test_interrupt_delegation_msi** - test_interrupt_delegation_msi.s - MSI Delegation to S-mode Test
+  - Category: Miscellaneous
+- **test_interrupt_delegation_mti** - test_interrupt_delegation_mti.s - MTI Delegation to S-mode Test
+  - Category: Miscellaneous
 - **test_interrupt_masking** - Test 3.5: Interrupt Masking
   - Category: Miscellaneous
+- **test_interrupt_mie_masking** - test_interrupt_mie_masking.s - Test mstatus.MIE masking in M-mode
+  - Category: Miscellaneous
+- **test_interrupt_msi_priority** - test_interrupt_msi_priority.s - MSI > MTI Priority Test
+  - Category: Miscellaneous
+- **test_interrupt_mtimer** - test_interrupt_mtimer.s - Machine Timer Interrupt Test
+  - Category: Miscellaneous
+- **test_interrupt_nested_mmode** - test_interrupt_nested_mmode.s - Nested Interrupts in M-mode Test
+  - Category: Miscellaneous
 - **test_interrupt_pending** - Test 3.4: Interrupt Pending Bits
+  - Category: Miscellaneous
+- **test_interrupt_sie_masking** - test_interrupt_sie_masking.s - Test mstatus.SIE masking in S-mode
   - Category: Miscellaneous
 - **test_interrupt_software** - Test 3.1: Software Interrupt CSRs
   - Category: Miscellaneous
@@ -1054,6 +1110,8 @@
   - Category: Miscellaneous
 - **test_mixed_real** - test_mixed_real.s - Real mixed 16-bit and 32-bit instructions
   - Category: Miscellaneous
+- **test_mmio_peripherals** - test_mmio_peripherals.s - Memory-Mapped Peripheral Access Test
+  - Category: Miscellaneous
 - **test_mmu_enabled** - Verify MMU is actually enabled and translating
   - Category: MMU/Virtual Memory
 - **test_mret_simple** - Simple MRET test
@@ -1085,6 +1143,8 @@
 - **test_page_fault_invalid** - Page Fault - Invalid Page (V=0)
   - Category: Miscellaneous
 - **test_page_fault_smode** - Page Fault in S-mode
+  - Category: Miscellaneous
+- **test_peripheral_mmio** - test_peripheral_mmio.s - Memory-Mapped Peripheral Access Test
   - Category: Miscellaneous
 - **test_phase10_2_csr** - Phase 10.2 - Supervisor Mode CSRs
   - Category: Miscellaneous
@@ -1267,17 +1327,17 @@ Official RISC-V compliance tests from riscv-tests repository.
 | C Extension | 0 |
 | CSR/Privilege | 9 |
 | Edge Cases | 6 |
-| **Total Custom** | **187** |
+| **Total Custom** | **197** |
 
 ### Hex File Status
-- Assembly files (.s): 187
-- Hex files (.hex): 179
-- Missing hex files: 8
+- Assembly files (.s): 197
+- Hex files (.hex): 185
+- Missing hex files: 12
 
 ### Overall Summary
-- **Custom Tests**: 187
+- **Custom Tests**: 197
 - **Official Tests**: 81
-- **Total Tests**: 268
+- **Total Tests**: 278
 - **Compliance**: 100% (81/81 official tests passing) ✅
 
 ---
@@ -1316,5 +1376,5 @@ make test-d    # D extension
 
 ---
 
-**Last Generated**: Sun Oct 26 23:05:42 PDT 2025
+**Last Generated**: Mon Oct 27 12:02:22 PDT 2025
 **Generator**: tools/generate_test_catalog.sh

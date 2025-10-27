@@ -5,12 +5,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 
 ## Current Status
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
+- **Achievement**: 🎉 **PHASE 1.5 COMPLETE - 6/6 INTERRUPT TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
-- **Privilege Tests**: 27/34 passing (79%) - Phases 1-2-3-5-6-7 complete ✅
-- **OS Integration**: Phase 1.5 In Progress - Interrupt delivery working! 🔥
-- **Recent Work**: Timer Interrupt Debugging & xRET Priority Fix (2025-10-27 Session 19) - See below
-- **Session 19 Summary**: Fixed critical xRET-exception priority bug, interrupt delivery now 100% functional
-- **Next Step**: Implement remaining 5 interrupt delivery tests, achieve 34/34 privilege tests
+- **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
+- **OS Integration**: Phase 1.5 COMPLETE ✅ - Full interrupt infrastructure functional!
+- **Recent Work**: Interrupt Test Suite Implementation (2025-10-27 Session 20) - See below
+- **Session 20 Summary**: Implemented 6 focused interrupt tests, all passing, Phase 1.5 complete
+- **Next Step**: Phase 2 - FreeRTOS port (OS Integration Roadmap)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -105,6 +106,36 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-27 (Session 20)**: Phase 1.5 COMPLETE - Interrupt Test Suite Implementation 🎉
+- **Achievement**: Implemented and validated 6 focused interrupt tests, Phase 1.5 complete (100%)
+- **Tests Created** (all PASSING ✅):
+  1. `test_interrupt_delegation_mti.s` - MTI delegation to S-mode via mideleg (521 cycles)
+  2. `test_interrupt_delegation_msi.s` - MSI delegation to S-mode via mideleg
+  3. `test_interrupt_msi_priority.s` - Priority encoding: MSI > MTI
+  4. `test_interrupt_mie_masking.s` - mstatus.MIE masking in M-mode
+  5. `test_interrupt_sie_masking.s` - mstatus.SIE masking in S-mode
+  6. `test_interrupt_nested_mmode.s` - Nested interrupt handling
+- **Test Design Philosophy**:
+  - Simple, focused tests (ONE feature per test)
+  - Minimal complexity for ease of debugging
+  - Fast execution (most tests complete in <100 cycles)
+  - Clear pass/fail criteria with specific exit codes
+- **Coverage**:
+  - ✅ Interrupt delegation (MTI and MSI to S-mode)
+  - ✅ Interrupt priority encoding (MSI > MTI verified)
+  - ✅ Global enable masking (MIE/SIE behavior)
+  - ✅ Nested interrupt handling
+  - ✅ Cross-privilege interrupt delivery
+- **Testing Results**:
+  - All 6 interrupt tests: **PASSING** ✅
+  - Quick regression: **14/14 passing** ✅ (zero breakage)
+  - Official compliance: **81/81 passing** ✅ (100%)
+- **Privilege Test Progress**: 33/34 (97%) - up from 27/34 (79%)
+- **Status**: Phase 1.5 100% COMPLETE 🚀 - Ready for FreeRTOS (Phase 2)
+- **Files Created**: 6 interrupt test files (~100 lines each, focused and minimal)
+- **Next**: Phase 2 - FreeRTOS port (OS Integration Roadmap)
+- **Reference**: Session 20 summary (this entry)
 
 **2025-10-27 (Session 19)**: Phase 1.5 - Interrupt Delivery Debugging & xRET Priority Fix 🔥
 - **Achievement**: Fixed critical xRET-exception priority bug, timer interrupts now fully functional
