@@ -582,10 +582,14 @@ module rv_core_pipelined #(
   // Use GATED exception for immediate flush to prevent next instruction from executing
   // The exception_gated signal prevents propagation to subsequent instructions
   // Note: We use exception_gated (not exception_r) to get 0-cycle trap latency
-  assign trap_flush = exception_gated;  // Immediate flush when exception first detected
-  // xRET only flushes if there's no exception (exceptions take priority)
-  assign mret_flush = exmem_is_mret && exmem_valid && !exception && !exception_r;  // MRET in MEM stage
-  assign sret_flush = exmem_is_sret && exmem_valid && !exception && !exception_r;  // SRET in MEM stage
+
+  // xRET flushes unconditionally when in MEM stage - has priority over exceptions
+  // This prevents spurious exceptions from instructions fetched after xRET
+  assign mret_flush = exmem_is_mret && exmem_valid;  // MRET in MEM stage
+  assign sret_flush = exmem_is_sret && exmem_valid;  // SRET in MEM stage
+
+  // Trap flush only if not executing xRET (xRET has priority)
+  assign trap_flush = exception_gated && !mret_flush && !sret_flush;
 
   // Track exception to prevent re-triggering
   // Set when exception first occurs, clear one cycle after trap flush
@@ -1677,8 +1681,25 @@ module rv_core_pipelined #(
   wire ssi_pending = pending_interrupts[1];   // Supervisor Software Interrupt
   wire sti_pending = pending_interrupts[5];   // Supervisor Timer Interrupt
 
+  // Mask interrupts during xRET execution to prevent race condition
+  // When MRET/SRET is in the pipeline, we need to prevent new interrupts from firing
+  // until the xRET completes and updates privilege mode. Otherwise, the interrupt
+  // would use the old privilege mode and could cause incorrect delegation.
+  wire xret_in_pipeline = (idex_is_mret || idex_is_sret) && idex_valid ||
+                          (exmem_is_mret || exmem_is_sret) && exmem_valid;
+
+  reg xret_completing;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      xret_completing <= 1'b0;
+    else
+      xret_completing <= xret_in_pipeline;
+  end
+
   // Priority encoder (highest priority wins)
-  assign interrupt_pending = interrupts_globally_enabled && |pending_interrupts;
+  // Mask interrupts while xRET is in pipeline or completing
+  assign interrupt_pending = interrupts_globally_enabled && |pending_interrupts &&
+                             !xret_in_pipeline && !xret_completing;
   assign interrupt_cause =
     mei_pending ? 5'd11 :  // MEI
     msi_pending ? 5'd3  :  // MSI
@@ -1691,6 +1712,56 @@ module rv_core_pipelined #(
   // Check if interrupt should be delegated to S-mode
   // Only delegate if: (1) interrupt is delegated via mideleg, AND (2) currently in S or U mode
   assign interrupt_is_s_mode = mideleg[interrupt_cause] && (current_priv <= 2'b01);
+
+  // Debug interrupt handling
+  `ifdef DEBUG_INTERRUPT
+  reg [31:0] debug_cycle_intr;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      debug_cycle_intr <= 0;
+    else
+      debug_cycle_intr <= debug_cycle_intr + 1;
+  end
+
+  always @(posedge clk) begin
+    // Debug every 100 cycles to show interrupt status
+    if (debug_cycle_intr % 100 == 50) begin
+      $display("[CORE_INTR] cycle=%0d mtip_in=%b msip_in=%b meip_in=%b seip_in=%b",
+               debug_cycle_intr, mtip_in, msip_in, meip_in, seip_in);
+    end
+    if (mtip_in || msip_in) begin
+      $display("[INTR_IN] cycle=%0d mtip_in=%b msip_in=%b meip_in=%b seip_in=%b",
+               debug_cycle_intr, mtip_in, msip_in, meip_in, seip_in);
+      $display("[INTR_VAL] mip=%h mie=%h pending=%h",
+               mip, mie, pending_interrupts);
+    end
+    if (|pending_interrupts) begin
+      $display("[INTR] mip=%h mie=%h pending=%h mti=%b mstatus_mie=%b globally_en=%b intr_pend=%b",
+               mip, mie, pending_interrupts, mti_pending, mstatus_mie, interrupts_globally_enabled, interrupt_pending);
+      $display("[INTR] current_priv=%b exception_gated=%b exception_taken_r=%b trap_flush=%b PC=%h",
+               current_priv, exception_gated, exception_taken_r, trap_flush, pc_current);
+    end
+    // Track PC when trap occurs
+    if (exception_gated) begin
+      $display("[TRAP] cycle=%0d exception_gated=1 PC=%h trap_vector=%h mepc=%h",
+               debug_cycle_intr, pc_current, trap_vector, mepc);
+    end
+    // Track PC after trap (next cycle)
+    if (exception_taken_r) begin
+      $display("[TRAP_PC] cycle=%0d exception_taken PC=%h mepc=%h", debug_cycle_intr, pc_current, mepc);
+    end
+    // Track MRET
+    if (exmem_is_mret && exmem_valid) begin
+      $display("[MRET_MEM] cycle=%0d exmem_PC=%h mepc=%h mret_flush=%b exception=%b interrupt_pending=%b xret_in_pipe=%b xret_completing=%b",
+               debug_cycle_intr, exmem_pc, mepc, mret_flush, exception, interrupt_pending, xret_in_pipeline, xret_completing);
+    end
+    // Track PC jumps around cycle 520
+    if (debug_cycle_intr >= 515 && debug_cycle_intr <= 545) begin
+      $display("[PC_TRACE] cycle=%0d IF_PC=%h pc_next=%h trap_flush=%b mret_flush=%b",
+               debug_cycle_intr, pc_current, pc_next, trap_flush, mret_flush);
+    end
+  end
+  `endif
 
   //==========================================================================
   // Combined Exception/Interrupt Handling

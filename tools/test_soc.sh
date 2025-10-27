@@ -39,6 +39,9 @@ fi
 if [ ! -z "$DEBUG_CLINT" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_CLINT"
 fi
+if [ ! -z "$DEBUG_INTERRUPT" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_INTERRUPT"
+fi
 
 # SoC test configuration
 # Enable all extensions to match test compilation (rv32imafc)

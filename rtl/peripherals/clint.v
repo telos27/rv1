@@ -247,6 +247,18 @@ module clint #(
   // Software interrupts are directly driven by MSIP register
   assign msi_o = msip;
 
+  // Debug interrupt generation
+  `ifdef DEBUG_CLINT
+  always @(posedge clk) begin
+    if (mtime % 100 == 0 && mtime > 0 && mtime < 1000) begin
+      $display("[CLINT] mtime=%0d mtimecmp[0]=%0d mti_o[0]=%b", mtime, mtimecmp[0], mti_o[0]);
+    end
+    if (mti_o[0] && mtime < 1000) begin
+      $display("[CLINT] TIMER INTERRUPT ASSERTED: mtime=%0d >= mtimecmp[0]=%0d", mtime, mtimecmp[0]);
+    end
+  end
+  `endif
+
   //===========================================================================
   // Debug Monitoring (Optional)
   //===========================================================================

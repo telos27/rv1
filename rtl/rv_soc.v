@@ -34,11 +34,17 @@ module rv_soc #(
   // Internal Signals
   //==========================================================================
 
-  // Interrupt signals
-  wire             mtip;              // Machine Timer Interrupt (from CLINT)
-  wire             msip;              // Machine Software Interrupt (from CLINT)
+  // Interrupt signals (from peripherals)
+  wire [NUM_HARTS-1:0] mtip_vec;      // Machine Timer Interrupt vector (from CLINT)
+  wire [NUM_HARTS-1:0] msip_vec;      // Machine Software Interrupt vector (from CLINT)
+  wire             mtip;              // Machine Timer Interrupt for hart 0
+  wire             msip;              // Machine Software Interrupt for hart 0
   wire             meip;              // Machine External Interrupt (from PLIC)
   wire             seip;              // Supervisor External Interrupt (from PLIC)
+
+  // Extract hart 0 interrupts from vectors
+  assign mtip = mtip_vec[0];
+  assign msip = msip_vec[0];
   wire             uart_irq;          // UART interrupt
 
   // Bus signals - Master (Core)
@@ -183,9 +189,9 @@ module rv_soc #(
     .req_size(clint_req_size),
     .req_ready(clint_req_ready),
     .req_rdata(clint_req_rdata),
-    // Interrupt outputs (hart 0)
-    .mti_o(mtip),  // Connect hart 0 timer interrupt
-    .msi_o(msip)   // Connect hart 0 software interrupt
+    // Interrupt outputs (all harts)
+    .mti_o(mtip_vec),  // Machine timer interrupt vector
+    .msi_o(msip_vec)   // Machine software interrupt vector
   );
 
   //==========================================================================
@@ -264,5 +270,16 @@ module rv_soc #(
     .req_ready(dmem_req_ready),
     .req_rdata(dmem_req_rdata)
   );
+
+  //===========================================================================
+  // Debug Monitoring
+  //===========================================================================
+  `ifdef DEBUG_CLINT
+  always @(posedge clk) begin
+    if (mtip_vec[0] || mtip) begin
+      $display("[SOC] mtip_vec=%b mtip=%b msip_vec=%b msip=%b", mtip_vec, mtip, msip_vec, msip);
+    end
+  end
+  `endif
 
 endmodule
