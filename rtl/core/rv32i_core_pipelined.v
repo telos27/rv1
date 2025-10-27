@@ -559,23 +559,29 @@ module rv_core_pipelined #(
   assign pc_increment = if_is_compressed ? pc_plus_2 : pc_plus_4;
 
   // Trap and xRET handling
-  // Use the REGISTERED exception to allow privilege/target latching before trap
-  // This breaks the combinational feedback loop: exception -> trap_flush -> current_priv -> trap_target_priv
-  assign trap_flush = exception_r && !exception_r_hold;  // Use registered exception (one cycle delay)
+  // Use GATED exception for immediate flush to prevent next instruction from executing
+  // The exception_gated signal prevents propagation to subsequent instructions
+  // Note: We use exception_gated (not exception_r) to get 0-cycle trap latency
+  assign trap_flush = exception_gated;  // Immediate flush when exception first detected
   // xRET only flushes if there's no exception (exceptions take priority)
   assign mret_flush = exmem_is_mret && exmem_valid && !exception && !exception_r;  // MRET in MEM stage
   assign sret_flush = exmem_is_sret && exmem_valid && !exception && !exception_r;  // SRET in MEM stage
 
   // Track exception to prevent re-triggering
-  // Set when exception first occurs, stay high until exception_r fully processed
+  // Set when exception first occurs, clear one cycle after trap flush
   reg exception_taken_r;
+  reg trap_flush_r;  // Register trap_flush for clearing exception_taken_r
   always @(posedge clk or negedge reset_n) begin
-    if (!reset_n)
+    if (!reset_n) begin
       exception_taken_r <= 1'b0;
-    else if (exception_gated)
-      exception_taken_r <= 1'b1;  // Set on first exception (using gated signal)
-    else if (!exception_r && exception_r_hold)
-      exception_taken_r <= 1'b0;  // Clear only after exception_r is fully done
+      trap_flush_r <= 1'b0;
+    end else begin
+      trap_flush_r <= trap_flush;  // Latch trap_flush
+      if (exception_gated)
+        exception_taken_r <= 1'b1;  // Set on first exception (using gated signal)
+      else if (trap_flush_r)
+        exception_taken_r <= 1'b0;  // Clear one cycle after trap flush
+    end
   end
 
   //==========================================================================
@@ -588,10 +594,10 @@ module rv_core_pipelined #(
     end else begin
       if (trap_flush) begin
         // On trap entry, move to target privilege level
-        // Use latched target privilege to avoid combinational feedback loop
-        current_priv <= exception_target_priv_r;
+        // With 0-cycle trap latency, use current (un-latched) target privilege
+        current_priv <= current_trap_target;
         `ifdef DEBUG_PRIV
-        $display("[PRIV] Time=%0t TRAP: priv %b -> %b (latched)", $time, current_priv, exception_target_priv_r);
+        $display("[PRIV] Time=%0t TRAP: priv %b -> %b (current)", $time, current_priv, current_trap_target);
         `endif
       end else if (mret_flush) begin
         // On MRET, restore privilege from MSTATUS.MPP
@@ -1563,10 +1569,10 @@ module rv_core_pipelined #(
     .csr_we(idex_csr_we && idex_valid && !exception),  // Don't commit CSR writes on exceptions
     .csr_access(idex_is_csr && idex_valid),
     .csr_rdata(ex_csr_rdata),
-    .trap_entry(exception_r && !exception_r_hold),  // Pulse for one cycle only
-    .trap_pc(exception_pc_r),
-    .trap_cause(exception_code_r),
-    .trap_val(exception_val_r),
+    .trap_entry(exception_gated),  // Use gated signal for immediate trap (0-cycle latency)
+    .trap_pc(exception_pc),        // Use current exception PC (not registered)
+    .trap_cause(exception_code),   // Use current exception code (not registered)
+    .trap_val(exception_val),      // Use current exception val (not registered)
     .trap_vector(trap_vector),
     .mret(exmem_is_mret && exmem_valid && !exception),
     .mepc_out(mepc),
@@ -1607,8 +1613,6 @@ module rv_core_pipelined #(
   //==========================================================================
   // Exception Unit (monitors all stages)
   //==========================================================================
-  // Note: Exception unit needs valid flags to be properly connected
-  // For now, using conservative approach: exceptions in EX stage for ECALL/EBREAK/illegal
   exception_unit #(
     .XLEN(XLEN)
   ) exception_unit_inst (

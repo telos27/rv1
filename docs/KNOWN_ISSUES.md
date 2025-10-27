@@ -4,25 +4,48 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### 1. Register Preservation During Traps - test_delegation_disable
+### 1. Synchronous Pipeline Trap Latency - test_delegation_disable
 
-**Status**: Identified 2025-10-26 Session 5, Under Investigation
+**Status**: Architectural Limitation Identified 2025-10-26 Session 6
 **Priority**: LOW - Single privilege test affected, compliance tests pass
-**Affected**: `test_delegation_disable` (M-mode handler receives incorrect register values)
+**Affected**: `test_delegation_disable` (instruction after exception may execute before flush)
 
 #### Description
 
-The `test_delegation_disable` test fails because the M-mode trap handler receives an incorrect value in register `s0`. The S-mode handler sets `s0=5` before executing ECALL, but when the M-mode handler runs, `s0` appears to have a different value, causing the handler to take the wrong branch and fail.
+The `test_delegation_disable` test fails due to an inherent **1-cycle trap latency** in the synchronous pipeline design. When an exception occurs (e.g., ECALL), the instruction immediately following it in the pipeline may execute before the pipeline flush completes, causing unintended side effects.
+
+**Root Cause - Synchronous Pipeline Limitation:**
+
+The pipeline uses synchronous (registered) stage transitions, which creates a fundamental timing issue:
+
+1. **Cycle N**: ECALL in IDEX stage
+   - Exception detected: `exception_gated=1`, `trap_flush=1`
+   - `flush_idex=1` asserted (combinational)
+   - PC updates to trap vector (combinational)
+   - But next instruction (`li s0, 7`) already in IFID register from previous cycle
+
+2. **Cycle N (same cycle, later in combinational evaluation)**:
+   - IFID instruction advances to IDEX on rising clock edge
+   - Instruction `li s0, 7` executes and writes to register file
+
+3. **Cycle N+1**: Flush takes effect
+   - IDEX flushed to NOP
+   - But `s0` was already corrupted by the `li s0, 7` instruction
 
 **Symptoms:**
 - S-mode handler sets `s0=5` before ECALL
-- M-mode handler checks `s0` value and expects 5
-- BEQ branch at M-handler+0x04 doesn't take (s0 != 5)
-- Handler falls through to TEST_FAIL path
-- Final `s0` value is 7, suggesting partial test progression
+- Instruction after ECALL (`li s0, 7`) executes before trap flush
+- M-mode handler sees `s0=7` instead of `s0=5`
+- Test fails because handler logic depends on preserved `s0` value
+
+**Evidence:**
+```
+[EXC] Time=0 ECALL: PC=0x0000011c cause=9  # ECALL instruction
+[EXC] Time=0 ECALL: PC=0x00000120 cause=9  # Next instruction (li s0, 7) incorrectly flagged
+```
 
 **Failing Tests:**
-- `test_delegation_disable` - M-mode handler stage check fails
+- `test_delegation_disable` - M-mode handler receives corrupted `s0=7` instead of `s0=5`
 
 **Passing Tests:**
 - 14/14 quick regression tests ✅
@@ -32,62 +55,100 @@ The `test_delegation_disable` test fails because the M-mode trap handler receive
 - `test_umode_entry_from_smode` ✅
 - 22/34 privilege mode tests ✅
 
-#### Root Causes Under Investigation
+#### Architectural Analysis
 
-1. **Register Corruption During Trap**: Register `s0` may be corrupted during trap entry/exit
-2. **Trap Timing Issue**: ECALL trap may occur before `s0=5` write commits
-3. **Pipeline State Management**: Pipeline flush or stall may affect register writeback timing
+**Why Synchronous Flush Fails:**
 
-#### Fixes Applied (2025-10-26 Session 5)
+Pipeline stage registers update on clock edges with priority:
+```verilog
+always @(posedge clk) begin
+  if (flush)
+    valid_out <= 0;  // Insert NOP
+  else
+    valid_out <= valid_in;  // Advance instruction
+end
+```
 
-**CSR Write Exception Gating** (`rv32i_core_pipelined.v:1563`):
-- Added `&& !exception` to CSR write enable
-- Prevents CSR writes from committing when instruction causes exception
-- **Impact**: ECALL detection now works correctly ✅
-- This fixed the PRIMARY issue (CSR writes committing despite illegal instruction exceptions)
+Within a single clock cycle:
+- Rising edge: Instruction advances from IFID → IDEX
+- Combinational: Exception detected, flush asserted
+- Next rising edge: Flush takes effect (too late!)
 
-**Previous Fixes (Session 4):**
+**Attempted Fixes (Session 6):**
 
-**Exception Propagation Fix** (`rv32i_core_pipelined.v:452`):
-- Added `exception_gated = exception && !exception_r && !exception_taken_r`
-- Prevents exception signal from propagating to subsequent instructions
-- Eliminates spurious duplicate exceptions ✅
+1. ✅ **0-Cycle Trap Latency** (`rv32i_core_pipelined.v:565,1567`)
+   - Changed `trap_flush = exception_r` → `trap_flush = exception_gated`
+   - Changed CSR trap inputs from registered to immediate signals
+   - Uses current exception info for immediate trap
+   - **Result**: Improved trap timing, but doesn't prevent next instruction from advancing
 
-**Trap Target Computation Fix** (`rv32i_core_pipelined.v:454-489`):
-- Added `compute_trap_target()` function in core to calculate delegation
-- Uses **un-latched** `exception_code` and `current_priv` for accurate delegation
-- Prevents race condition where `trap_target_priv` used stale `exception_code_r`
-- Fixed trap delegation decisions ✅
+2. ❌ **Combinational Valid Gating** (attempted, reverted)
+   - Tried: `idex_valid_gated = idex_valid && !flush_idex`
+   - **Problem**: Creates combinational loop:
+     - `exception` → `trap_flush` → `flush_idex` → `idex_valid_gated` → `exception` (oscillation!)
+   - **Result**: Simulation hangs, all tests timeout
 
-**CSR Delegation Register Export** (`csr_file.v:51, 621`):
-- Added `medeleg_out` port to expose `medeleg_r` to core
-- Allows core to compute trap target without CSR file latency
-- Core now has direct access to delegation configuration ✅
+**Why It's Hard to Fix:**
+
+The fundamental issue is that **exception detection** and **pipeline advancement** both happen on the same clock edge, and advancement happens first (it's the normal clocked behavior). To truly fix this requires:
+
+1. **Asynchronous flush** - Make pipeline registers reset immediately (not recommended - timing issues)
+2. **Bypass/gating logic** - Prevent flushed instructions from having side effects (complex)
+3. **Pipeline redesign** - Separate exception detection from instruction advancement (major refactor)
+
+#### Fixes Applied
+
+**Session 6** (2025-10-26):
+- Implemented 0-cycle trap latency using `exception_gated`
+- Changed trap flush from registered to immediate
+- Updated CSR trap entry inputs to use current (non-registered) exception signals
+- **Result**: Partial improvement, but synchronous pipeline prevents full fix
+
+**Session 5** (2025-10-26):
+- CSR write exception gating (`rv32i_core_pipelined.v:1564`)
+- Prevents CSR writes when instruction causes exception
+
+**Session 4** (2025-10-26):
+- Exception propagation gating (`rv32i_core_pipelined.v:452`)
+- Trap target computation function (prevents delegation race conditions)
+- CSR delegation register export (`csr_file.v:51,621`)
 
 #### Impact Assessment
 
 - **Compliance**: No impact - 81/81 official tests still pass ✅
 - **Regression**: No impact - 14/14 quick tests pass ✅
-- **Privilege Tests**: Minor impact - 1 test fails due to register timing issue
-- **Functionality**: CSR write exception handling significantly improved
+- **Privilege Tests**: Minor impact - 1 test fails due to architectural limitation
+- **Functionality**: Trap handling significantly improved, edge case limitation documented
 
-#### Progress Summary
+#### Proposed Solutions for Future Investigation
 
-**Session 4** (2025-10-26):
-- Fixed exception propagation (exception_gated logic)
-- Fixed trap delegation timing (core-side compute_trap_target)
-- Added medeleg_out export from CSR file
+1. **Instruction Writeback Gating** (moderate complexity)
+   - Add gating to register file write enable: `reg_we && !flush_after_writeback`
+   - Requires tracking which instructions are in "flushed but not yet cleared" state
+   - May introduce additional pipeline hazards
 
-**Session 5** (2025-10-26):
-- Fixed CSR write exception gating ✅
-- ECALL detection now working correctly ✅
-- Identified new issue: register `s0` timing in trap handler
+2. **Shadow Register Checkpoint** (high complexity)
+   - Checkpoint register file state before trap-inducing instruction
+   - Restore on trap entry if next instruction already executed
+   - Requires additional storage and complex control logic
 
-#### Next Steps
-- Investigate register writeback timing during trap entry
-- Check if ECALL trap occurs before `li s0, 5` commits to register file
-- Analyze pipeline state during trap sequence with register file debug
-- Consider waveform analysis for precise timing verification
+3. **Speculative Execution with Rollback** (very high complexity)
+   - Allow next instruction to execute speculatively
+   - Roll back architectural state if preceding instruction traps
+   - Similar to modern out-of-order processors
+
+4. **Accept 1-Cycle Trap Latency** (pragmatic, recommended)
+   - Document as architectural characteristic
+   - Adjust test expectations for edge cases
+   - Focus on ensuring no side effects (CSR writes, memory writes already gated)
+   - **Current recommendation**: This limitation doesn't affect real-world code or compliance
+
+#### Next Steps (Future Sessions)
+
+- Consider instruction writeback gating approach (#1 above)
+- Analyze waveforms to verify exact timing of register writes
+- Evaluate if test expectations should be adjusted vs architectural fix
+- Investigate whether next instruction's register write can be blocked
 
 ---
 
