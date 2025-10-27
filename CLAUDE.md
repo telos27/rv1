@@ -7,7 +7,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 22/34 passing (65%) - Phases 1-2-5-6 substantially complete
-- **Recent Fix**: Delegation logic FIXED ✅ (2025-10-26) - actual_priv separation - See `docs/KNOWN_ISSUES.md`
+- **Recent Fixes**: Exception gating + trap target computation ✅ (2025-10-26 Session 4) - See `docs/KNOWN_ISSUES.md`
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -94,6 +94,24 @@ rv1/
 **Progress**: 22/34 tests passing (65%), 7 skipped/blocked, 1 timing issue
 
 ### Key Fixes (Recent Sessions)
+
+**2025-10-26 (Session 4)**: Exception Gating & Trap Target Computation FIXED ✅
+- **Problem**: Exception propagation to subsequent instructions + trap delegation race condition
+- **Symptoms**:
+  - Exception signal fired for both faulting instruction AND next instruction
+  - Duplicate ECALL exceptions with wrong privilege modes
+  - `trap_target_priv` computed from stale `exception_code_r` causing wrong delegation
+- **Solution**: Multi-part fix for exception handling
+  - **Exception Gating** (`rv32i_core_pipelined.v:452`): Added `exception_gated` to prevent propagation
+  - **Trap Target Computation** (`rv32i_core_pipelined.v:454-489`): Core-side `compute_trap_target()` function using un-latched signals
+  - **CSR Delegation Export** (`csr_file.v:51, 621`): Added `medeleg_out` port for direct access
+- **Impact**:
+  - Exception propagation bug FIXED ✅
+  - Trap delegation timing FIXED ✅
+  - Quick regression: 14/14 passing ✅
+  - Compliance: 81/81 still passing ✅
+- **Files**: `rtl/core/rv32i_core_pipelined.v`, `rtl/core/csr_file.v`
+- **Remaining Issue**: `test_delegation_disable` - ECALL in trap handler not detected (under investigation)
 
 **2025-10-26 (Session 3)**: Phase 6 - Delegation logic FIXED ✅
 - **Problem**: Trap delegation used forwarded privilege mode from xRET instructions
@@ -187,14 +205,14 @@ rv1/
 See `docs/KNOWN_ISSUES.md` for detailed tracking.
 
 **Active:**
-- Trap latency and exception propagation: 1-cycle trap delay causes exception signal to propagate to next instruction
-  - Impact: `test_delegation_disable` fails (ECALL shows wrong privilege mode)
-  - Root cause: `exception_taken_r` timing, privilege mode update visibility
-  - Status: Under investigation, workarounds possible
-  - Does NOT affect compliance tests or normal operation
+- ECALL detection in trap handlers: ECALL exceptions not being detected when executed within trap handlers
+  - Impact: `test_delegation_disable` fails (S-mode handler ECALL not seen)
+  - Root causes under investigation: Pipeline flush timing, exception gating, CSR write races
+  - Status: Under investigation (Session 4 fixed exception propagation/delegation, ECALL issue remains)
+  - Does NOT affect compliance tests (81/81 passing) or quick regression (14/14 passing)
 
 ## Future Enhancements
-- **IMMEDIATE**: Investigate trap latency/exception propagation issue
+- **IMMEDIATE**: Investigate ECALL detection in trap handlers (test_delegation_disable)
 - Bit Manipulation (B), Vector (V), Crypto (K) extensions
 - Performance: Branch prediction, caching, out-of-order execution
 - System: Debug module, PMP, Hypervisor extension

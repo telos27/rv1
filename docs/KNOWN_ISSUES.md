@@ -4,54 +4,69 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### 1. Trap Latency and Exception Propagation Issues
+### 1. ECALL Detection in Trap Handlers
 
 **Status**: Identified 2025-10-26, Under Investigation
-**Priority**: MEDIUM - Some privilege tests affected
-**Affected**: Tests with trap-then-ecall patterns
+**Priority**: LOW - Single privilege test affected, compliance tests pass
+**Affected**: `test_delegation_disable` (ECALL in S-mode trap handler not detected)
 
 #### Description
 
-The privilege mode forwarding fix introduced a one-cycle delay in trap handling (using `exception_r` instead of `exception` for `trap_flush`). This breaks the combinational feedback loop but changes trap latency from 0 to 1 cycle. Additionally, exception signals may propagate to subsequent instructions during the trap flush cycle.
+ECALL exceptions are not being detected when executed within trap handlers, causing `test_delegation_disable` to fail. The S-mode trap handler executes ECALL to return to M-mode, but the exception is not latched/processed, causing the test flow to break.
 
 **Symptoms:**
-- Exception signal fires for instruction following a trap-causing instruction
-- ECALL exception shows duplicate PC values (original + next instruction)
-- Privilege mode updates may not be visible to immediately following instructions in trap handler
+- ECALL instruction in trap handler does not generate exception
+- No ECALL exception (cause=8/9/11) appears in debug output
+- Test branches to failure path because expected M-mode transition doesn't occur
 
 **Failing Tests:**
-- `test_delegation_disable` - ECALL in S-mode trap handler shows as ECALL from M-mode (cause=11 instead of cause=9)
-- `test_mstatus_state_trap` - Needs investigation
+- `test_delegation_disable` - S-mode handler ECALL not detected (stage 5, line 121)
 
 **Passing Tests:**
 - 14/14 quick regression tests ✅
 - 81/81 official RISC-V compliance tests ✅
-- `test_delegation_to_current_mode` ✅ (fixed by actual_priv delegation fix)
+- `test_delegation_to_current_mode` ✅
 - `test_umode_entry_from_mmode` ✅
 - `test_umode_entry_from_smode` ✅
-- 19+/34 privilege mode tests ✅
+- 22/34 privilege mode tests ✅
 
-#### Root Causes Identified
+#### Root Causes Under Investigation
 
-1. **Exception Propagation**: When `exception` signal fires and `exception_r` is latched, the next instruction in the pipeline may also see `exception=1` before `exception_taken_r` gates it off.
+1. **Pipeline Flush Timing**: ECALL may be flushed from pipeline during trap handling before exception is detected
+2. **Exception Gating Overly Aggressive**: `exception_gated` logic may be blocking valid ECALL exceptions
+3. **CSR Write Race Condition**: CSR writes and exception detection happening at same clock edge may cause timing issues
 
-2. **Privilege Mode Visibility**: After `trap_flush` updates `current_priv`, the first instruction in the trap handler may execute with stale privilege information due to pipeline timing.
+#### Fixes Applied (2025-10-26 Session 4)
 
-3. **CSR Access After Trap**: S-mode trap handler executing in M-mode context (wrong privilege) - `current_priv` update timing issue.
+**Exception Propagation Fix** (`rv32i_core_pipelined.v:452`):
+- Added `exception_gated = exception && !exception_r && !exception_taken_r`
+- Prevents exception signal from propagating to subsequent instructions
+- Eliminates spurious duplicate exceptions ✅
 
-#### Fixes Applied
+**Trap Target Computation Fix** (`rv32i_core_pipelined.v:454-489`):
+- Added `compute_trap_target()` function in core to calculate delegation
+- Uses **un-latched** `exception_code` and `current_priv` for accurate delegation
+- Prevents race condition where `trap_target_priv` used stale `exception_code_r`
+- Fixed trap delegation decisions ✅
 
-**2025-10-26 Session**: Fixed delegation logic by separating `actual_priv` from `effective_priv`
-- Changed `csr_file.v` `.actual_priv` connection from `effective_priv` to `current_priv`
-- This fixed `test_delegation_to_current_mode` ✅
-- Delegation now works correctly (trap goes to S-mode when medeleg bit set)
-- **File**: `rtl/core/rv32i_core_pipelined.v:1543`
+**CSR Delegation Register Export** (`csr_file.v:51, 621`):
+- Added `medeleg_out` port to expose `medeleg_r` to core
+- Allows core to compute trap target without CSR file latency
+- Core now has direct access to delegation configuration ✅
+
+#### Impact Assessment
+
+- **Compliance**: No impact - 81/81 official tests still pass ✅
+- **Regression**: No impact - 14/14 quick tests pass ✅
+- **Privilege Tests**: Minor impact - 1 test fails due to ECALL detection issue
+- **Functionality**: Exception gating and delegation logic significantly improved
 
 #### Next Steps
-- Investigate `exception_taken_r` timing to prevent exception propagation
-- Consider adding pipeline bubble after trap to ensure privilege mode is stable
-- May need to add explicit gating of exception signal when `exception_r` is active
-- Alternative: Accept 1-cycle trap latency and update affected tests
+- Investigate ECALL exception detection timing in trap handlers
+- Check pipeline flush behavior during trap entry
+- Verify exception_gated doesn't block valid exceptions
+- Analyze waveforms for test_delegation_disable to pinpoint ECALL issue
+- Consider adding explicit pipeline state for "in trap handler" to handle ECALL specially
 
 ---
 

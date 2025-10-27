@@ -48,6 +48,7 @@ module csr_file #(
   output wire [1:0]       trap_target_priv, // Target privilege for trap
   output wire [1:0]       mpp_out,        // Machine Previous Privilege
   output wire             spp_out,        // Supervisor Previous Privilege
+  output wire [XLEN-1:0]  medeleg_out,    // Machine exception delegation register
 
   // MMU-related status outputs
   output wire [XLEN-1:0]  satp_out,       // SATP register (for MMU)
@@ -617,6 +618,7 @@ module csr_file #(
   // Privilege mode outputs
   assign mpp_out     = mstatus_mpp_w;
   assign spp_out     = mstatus_spp_w;
+  assign medeleg_out = medeleg_r;
 
   // MMU-related outputs
   assign satp_out    = satp_r;

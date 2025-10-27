@@ -447,6 +447,47 @@ module rv_core_pipelined #(
   reg [1:0]       exception_priv_r;  // Privilege mode when exception occurred
   reg [1:0]       exception_target_priv_r;  // Target privilege for trap (latched)
 
+  // Gate exception signal to prevent propagation to subsequent instructions
+  // Once exception_r is latched, ignore new exceptions until fully processed
+  wire exception_gated = exception && !exception_r && !exception_taken_r;
+
+  // Compute trap target privilege for the CURRENT exception (not latched)
+  // This must use the un-latched exception_code and current_priv to get correct delegation
+  function [1:0] compute_trap_target;
+    input [4:0] cause;
+    input [1:0] curr_priv;
+    input [XLEN-1:0] medeleg;
+    begin
+      `ifdef DEBUG_EXCEPTION
+      $display("[CORE_DELEG] compute_trap_target: cause=%0d curr_priv=%b medeleg=%h medeleg[cause]=%b",
+               cause, curr_priv, medeleg, medeleg[cause]);
+      `endif
+      // M-mode traps never delegate
+      if (curr_priv == 2'b11) begin
+        compute_trap_target = 2'b11;  // M-mode
+        `ifdef DEBUG_EXCEPTION
+        $display("[CORE_DELEG] -> M-mode (curr_priv==M)");
+        `endif
+      end
+      // Check if exception is delegated to S-mode
+      else if (medeleg[cause] && (curr_priv <= 2'b01)) begin
+        compute_trap_target = 2'b01;  // S-mode
+        `ifdef DEBUG_EXCEPTION
+        $display("[CORE_DELEG] -> S-mode (delegated)");
+        `endif
+      end
+      else begin
+        compute_trap_target = 2'b11;  // M-mode (default)
+        `ifdef DEBUG_EXCEPTION
+        $display("[CORE_DELEG] -> M-mode (no delegation)");
+        `endif
+      end
+    end
+  endfunction
+
+  // Compute target privilege from current (un-latched) exception
+  wire [1:0] current_trap_target = compute_trap_target(exception_code, current_priv, medeleg);
+
   // Exception signal registration
   // Latch exception signals when exception first occurs, hold for one cycle
   always @(posedge clk or negedge reset_n) begin
@@ -459,18 +500,18 @@ module rv_core_pipelined #(
       exception_priv_r       <= 2'b11;  // Default to M-mode
       exception_target_priv_r <= 2'b11;  // Default to M-mode
     end else begin
-      // Latch exception info when exception FIRST asserts
-      if (exception && !exception_taken_r) begin
+      // Latch exception info when exception FIRST asserts (using gated signal)
+      if (exception_gated) begin
         exception_r            <= 1'b1;  // Will pulse for one cycle
         exception_code_r       <= exception_code;
         exception_pc_r         <= exception_pc;
         exception_val_r        <= exception_val;
         exception_priv_r       <= current_priv;  // Latch current privilege at time of exception
-        exception_target_priv_r <= trap_target_priv;  // Latch target privilege
+        exception_target_priv_r <= current_trap_target;  // Use computed target (not CSR's trap_target_priv)
         exception_r_hold       <= 1'b0;
         `ifdef DEBUG_EXCEPTION
         $display("[EXC_LATCH] Latching exception code=%0d PC=%h priv=%b target=%b (exception=%b taken=%b)",
-                 exception_code, exception_pc, current_priv, trap_target_priv, exception, exception_taken_r);
+                 exception_code, exception_pc, current_priv, current_trap_target, exception, exception_taken_r);
         `endif
       end else begin
         // Clear exception_r after one cycle
@@ -493,6 +534,7 @@ module rv_core_pipelined #(
   wire            mstatus_spie;
   wire [2:0]      csr_frm;            // FP rounding mode from frm CSR
   wire [4:0]      csr_fflags;         // FP exception flags from fflags CSR
+  wire [XLEN-1:0] medeleg;            // Machine exception delegation register
   // Note: csr_frm and csr_fflags are now connected to CSR file outputs
 
   //==========================================================================
@@ -530,8 +572,8 @@ module rv_core_pipelined #(
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
       exception_taken_r <= 1'b0;
-    else if (exception && !exception_taken_r)
-      exception_taken_r <= 1'b1;  // Set on first exception
+    else if (exception_gated)
+      exception_taken_r <= 1'b1;  // Set on first exception (using gated signal)
     else if (!exception_r && exception_r_hold)
       exception_taken_r <= 1'b0;  // Clear only after exception_r is fully done
   end
@@ -1544,6 +1586,7 @@ module rv_core_pipelined #(
     .trap_target_priv(trap_target_priv),
     .mpp_out(mpp),
     .spp_out(spp),
+    .medeleg_out(medeleg),              // For early trap target computation in core
     // MMU-related outputs (for Phase 3)
     .satp_out(satp),
     .mstatus_sum(mstatus_sum),
@@ -1607,10 +1650,11 @@ module rv_core_pipelined #(
 
   // Determine if exception is from MEM stage (for precise exception handling)
   // MEM-stage exceptions: Load/Store misaligned (4,6), Load/Store page faults (13,15)
-  wire exception_from_mem = exception && ((exception_code == 5'd4) ||  // Load misaligned
-                                           (exception_code == 5'd6) ||  // Store misaligned
-                                           (exception_code == 5'd13) || // Load page fault
-                                           (exception_code == 5'd15));  // Store page fault
+  // Use gated exception to prevent spurious exception detection
+  wire exception_from_mem = exception_gated && ((exception_code == 5'd4) ||  // Load misaligned
+                                                 (exception_code == 5'd6) ||  // Store misaligned
+                                                 (exception_code == 5'd13) || // Load page fault
+                                                 (exception_code == 5'd15));  // Store page fault
 
   //==========================================================================
   // FPU (Floating-Point Unit) - F/D Extension
