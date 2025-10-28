@@ -669,6 +669,11 @@ module rv_core_pipelined #(
   );
 
   // Instruction Memory (writable for FENCE.I support)
+  // IMEM write enable - only for addresses in IMEM range (0x0-0xFFFF for 64KB IMEM)
+  // This prevents DMEM stores (e.g., 0x80000000) from corrupting IMEM
+  wire imem_write_enable = exmem_mem_write && exmem_valid && !exception &&
+                           (exmem_alu_result < IMEM_SIZE);
+
   instruction_memory #(
     .XLEN(XLEN),
     .MEM_SIZE(IMEM_SIZE),
@@ -678,7 +683,7 @@ module rv_core_pipelined #(
     .addr(pc_current),
     .instruction(if_instruction_raw),
     // Write interface for self-modifying code (FENCE.I)
-    .mem_write(exmem_mem_write && exmem_valid && !exception),
+    .mem_write(imem_write_enable),
     .write_addr(exmem_alu_result),
     .write_data(exmem_mem_write_data),
     .funct3(exmem_funct3)

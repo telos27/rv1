@@ -4,44 +4,134 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### 1. FreeRTOS Illegal Instruction Exceptions (ACTIVE 2025-10-27)
+**None!** All critical issues resolved as of 2025-10-27 (Session 30). 🎉
 
-**Status**: IN PROGRESS 🚧
-**Priority**: MEDIUM - FreeRTOS runs but has exceptions
-**Affected**: FreeRTOS boot process, trap handler
-
-#### Description
-
-FreeRTOS boots successfully and runs for 500k cycles, but encounters illegal instruction exceptions (cause=2) at various PC values. Only 1 UART character is transmitted instead of the full banner string.
-
-**Symptoms**:
-- Simulation runs to completion (500k cycles)
-- Only 1 UART character transmitted (0x0a = newline)
-- Illegal instruction exceptions at mepc=0x210c, 0x2548, 0x2522, 0x2500
-- Trap handler appears to be looping
-
-**Evidence**:
-```
-[MILESTONE] main() reached at cycle 95
-[UART] First character transmitted at cycle 145
-[TRAP] Exception/Interrupt detected
-       mcause = 0x0000000000000002 (interrupt=0, code=2)
-       mepc   = 0x0000210c
-       PC     = 0x00002500
-```
-
-**Next Steps**:
-1. Disassemble addresses 0x210c, 0x2500 to identify problematic instructions
-2. Check if trap handler return address is correct
-3. Verify trap delegation settings
-4. Debug printf/puts path for remaining characters
-
-**Blocked By**: None (can debug with current tools)
-**Reference**: `docs/SESSION_27_CRITICAL_BUG_FIXES.md`
+FreeRTOS now boots correctly and executes without IMEM corruption.
 
 ---
 
 ## Resolved Issues
+
+### 1. IMEM Corruption Bug - Unified Memory Architecture (RESOLVED 2025-10-27)
+
+**Status**: FIXED ✅ (Session 30)
+**Priority**: CRITICAL - Blocked FreeRTOS execution
+**Affected**: All programs using DMEM (virtually everything)
+
+#### Description
+
+Instruction memory was being corrupted during runtime, causing illegal instruction exceptions. Stores to data memory addresses were also writing to instruction memory at the same indices.
+
+**Symptoms**:
+- IMEM[0x210c] initialized correctly as 0x27068693 (ADDI a3,a3,624)
+- Runtime fetch returned 0x00000000 (NOP) causing illegal instruction exception
+- Corruption happened at cycles 292, 367, 441, 561 (during execution, not initialization)
+- Values written: 0x22d2, 0x22e2, 0x22ee, 0x0000 (code addresses from data writes)
+
+#### Root Cause
+
+**Two-part architectural bug:**
+
+1. **DMEM loaded from same hex file as IMEM** (`rtl/rv_soc.v:260`)
+   - Both memories initialized with identical data
+   - BSS section in DMEM overlapped code in IMEM at same indices
+   - Example: IMEM[0x210c] = 0x93 (code), DMEM[0x210c] = 0x93 (same initial data)
+
+2. **ALL stores wrote to BOTH DMEM and IMEM** (`rtl/core/rv32i_core_pipelined.v:681`)
+   - FENCE.I self-modifying code support connected ALL stores to IMEM
+   - No address filtering on IMEM write port
+   - Store to DMEM 0x8000210c → address masked to 0x210c → corrupted IMEM[0x210c]
+
+#### Solution
+
+**Fix #1**: Don't load DMEM from hex file
+```verilog
+// rtl/rv_soc.v line 260
+dmem_bus_adapter #(
+  .MEM_FILE("")  // DMEM should NOT be loaded from hex file
+) dmem_adapter (...);
+```
+
+**Fix #2**: Add address filtering for IMEM writes
+```verilog
+// rtl/core/rv32i_core_pipelined.v line 674
+wire imem_write_enable = exmem_mem_write && exmem_valid && !exception &&
+                         (exmem_alu_result < IMEM_SIZE);  // Only IMEM range!
+```
+
+**Files Modified**:
+- `rtl/rv_soc.v` - Removed MEM_FILE from DMEM
+- `rtl/core/rv32i_core_pipelined.v` - Added IMEM write address filter
+
+#### Impact
+
+**Critical bug affecting:**
+- All programs using DMEM (BSS, data, stack, heap)
+- Harvard architecture memory isolation
+- Code integrity during execution
+- FENCE.I self-modifying code (now properly restricted to IMEM range)
+
+**Without fix:**
+- FreeRTOS cannot execute past address 0x210c
+- Any DMEM store with low 16 bits matching code addresses corrupts IMEM
+- Silent memory corruption hard to debug
+
+**With fix:**
+- IMEM protected from DMEM stores ✅
+- FreeRTOS boots correctly ✅
+- Quick regression: 14/14 passing ✅
+- Harvard architecture isolation restored ✅
+
+#### Verification
+
+**Before fix:**
+```
+[IMEM-OVERWRITE] Cycle 292: mem[0x210c] = 0xd2  ❌
+[IMEM-OVERWRITE] Cycle 367: mem[0x210c] = 0xe2  ❌
+[IMEM-OVERWRITE] Cycle 441: mem[0x210c] = 0xee  ❌
+[IMEM-OVERWRITE] Cycle 561: mem[0x210c] = 0x00  ❌
+[IMEM-FETCH] addr=0x210c, instr=0x00000000  ❌
+```
+
+**After fix:**
+```
+[IMEM-FETCH] addr=0x210c, instr=0x27068693  ✅
+  mem[0x210c]=0x93, mem[0x210d]=0x86, mem[0x210e]=0x06, mem[0x210f]=0x27
+FreeRTOS executes past 0x210c without exceptions  ✅
+```
+
+**Reference**: `docs/SESSION_30_IMEM_BUG_FIX.md`
+
+---
+
+### 2. FreeRTOS Illegal Instruction Exceptions (RESOLVED 2025-10-27)
+
+**Status**: ROOT CAUSE IDENTIFIED AND FIXED ✅ (Sessions 28-30)
+**Priority**: CRITICAL - Was blocking FreeRTOS execution
+**Affected**: FreeRTOS boot process, trap handler
+
+#### Description
+
+FreeRTOS encountered illegal instruction exceptions at addresses 0x210c, 0x2548, etc. Only 1 UART character transmitted instead of full banner.
+
+#### Root Causes
+
+**Three separate bugs:**
+
+1. **Session 28**: RVC decoder missing compressed FP instructions (C.FLDSP/C.FSDSP)
+2. **Session 29**: IMEM read bug investigation - identified memory corruption
+3. **Session 30**: IMEM corruption bug - stores to DMEM corrupting IMEM
+
+**Final fix**: Session 30 unified memory architecture fixes (see above)
+
+**References**:
+- `docs/SESSION_28_RVC_FP_DECODER.md`
+- `docs/SESSION_29_IMEM_BUG_INVESTIGATION.md`
+- `docs/SESSION_30_IMEM_BUG_FIX.md`
+
+---
+
+## Resolved Issues (Continued)
 
 ### 1. WB→ID Forwarding Not Gating on memwb_valid (RESOLVED 2025-10-27)
 

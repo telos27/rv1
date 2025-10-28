@@ -11,13 +11,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎊 **FIRST UART OUTPUT - CONSOLE CHARACTERS WORKING!** 🎊
 - **Achievement**: ✅ **TWO CRITICAL BUGS FIXED - FORWARDING & ADDRESS DECODE** ✅
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
-- **CRITICAL BUG**: 🔥 **IMEM READ BUG IDENTIFIED - RETURNS ZEROS AT RUNTIME** 🔥
+- **Achievement**: 🎯 **IMEM CORRUPTION BUG FIXED - UNIFIED MEMORY ARCHITECTURE** 🎯
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 BLOCKED 🚧 - Critical IMEM bug blocks FreeRTOS execution
-- **Recent Work**: IMEM Bug Investigation (2025-10-27 Session 29) - See below
-- **Session 29 Summary**: Root cause identified - instruction memory returns zeros for addresses ≥0x210c despite correct initialization
-- **Next Step**: Session 30 - Fix IMEM read bug (array indexing or memory organization issue)
+- **OS Integration**: Phase 2 IN PROGRESS 🚀 - IMEM bug fixed, FreeRTOS can now execute!
+- **Recent Work**: IMEM Corruption Bug Fixed (2025-10-27 Session 30) - See below
+- **Session 30 Summary**: Fixed critical unified memory bug - DMEM stores were corrupting IMEM due to missing address filtering
+- **Next Step**: Continue FreeRTOS integration and debugging
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -112,6 +112,22 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 30 (2025-10-27)**: IMEM Corruption Bug - FIXED! 🎯✅
+- **Achievement**: Fixed critical unified memory bug blocking FreeRTOS execution!
+- **Problem**: IMEM corrupted during runtime - stores to DMEM were also writing to IMEM
+- **Root Cause #1**: DMEM loaded from same hex file as IMEM, causing BSS section overlap
+- **Root Cause #2**: FENCE.I support connected ALL stores to IMEM without address filtering
+- **Discovery**: IMEM overwrite detector showed corruption at cycles 292, 367, 441, 561 with data addresses
+- **Fix #1**: Removed MEM_FILE from DMEM initialization in `rtl/rv_soc.v` (line 260)
+- **Fix #2**: Added address filtering for IMEM writes: `(exmem_alu_result < IMEM_SIZE)` in `rtl/core/rv32i_core_pipelined.v` (line 674)
+- **Verification**:
+  - IMEM[0x210c] now reads correctly: 0x27068693 (ADDI a3,a3,624) ✓
+  - FreeRTOS executes past address 0x210c without exceptions ✓
+  - Quick regression: 14/14 passing ✓
+- **Impact**: CRITICAL - affects all programs using DMEM, fixes Harvard architecture isolation
+- **Status**: FIXED ✅, FreeRTOS can now boot!
+- **Reference**: `docs/SESSION_30_IMEM_BUG_FIX.md`
 
 **Session 29 (2025-10-27)**: IMEM Read Bug Investigation 🔍🔥
 - **Achievement**: Root cause of mtval=NOP mystery identified - critical IMEM read bug!

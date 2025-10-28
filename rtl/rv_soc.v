@@ -257,7 +257,7 @@ module rv_soc #(
     .XLEN(XLEN),
     .FLEN(`FLEN),
     .MEM_SIZE(DMEM_SIZE),
-    .MEM_FILE(MEM_FILE)
+    .MEM_FILE("")  // DMEM should NOT be loaded from hex file (unified memory fix)
   ) dmem_adapter (
     .clk(clk),
     .reset_n(reset_n),
