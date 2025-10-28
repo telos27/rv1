@@ -10,19 +10,20 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: ⚡ **BSS FAST-CLEAR - 2000x BOOT SPEEDUP** ⚡
 - **Achievement**: 🎊 **PRINTF WORKING - STRING CONSTANTS ACCESSIBLE!** 🎊
 - **Achievement**: 🚌 **IMEM ON BUS - HARVARD ARCHITECTURE COMPLETE** 🚌
-- **Achievement**: ✅ **UART DUPLICATION FIXED - CLEAN TEXT OUTPUT!** ✅
 - **Achievement**: 🔧 **ATOMIC OPS FIXED - WRITE PULSE EXCEPTION** 🔧
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
 - **Achievement**: 🎯 **CRITICAL PIPELINE BUG FIXED - ONE-SHOT WRITE PULSES** 🎯
 - **Achievement**: 🎯 **IMEM BYTE-SELECT - STRINGS READABLE FROM .TEXT!** 🎯
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, strings readable, task exec needed
-- **Recent Work**: IMEM Byte-Select Fix (2025-10-28 Session 36) - See below
-- **Session 36 Summary**: Fixed byte-stride issue - strings now readable from IMEM!
-- **FreeRTOS Status**: Strings readable ("FATAL: Malloc failed!", etc.), minor duplication remains
-- **Known Issue**: FENCE.I test failing (pre-existing since Session 33, low priority)
-- **Next Step**: Investigate minor UART duplication in FreeRTOS (different from Session 34 bug)
+- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, strings readable, UART fix needed
+- **Recent Work**: UART FIFO Debug (2025-10-28 Session 37) - See below
+- **Session 37 Summary**: Root cause identified - FIFO read-during-write hazard in uart_16550.v
+- **FreeRTOS Status**: Boots successfully, scheduler running, UART character duplication under investigation
+- **Known Issues**:
+  - ⚠️ FENCE.I test failing (pre-existing since Session 33, low priority)
+  - 🔍 UART TX FIFO read-during-write hazard (Session 37, requires dual-port RAM fix)
+- **Next Step**: Implement dual-port RAM for UART TX FIFO (Session 37 recommended solution)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -119,6 +120,33 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 37 (2025-10-28)**: UART FIFO Debug - Root Cause Identified 🔍
+- **Achievement**: Identified read-during-write hazard in UART TX FIFO - root cause confirmed!
+- **Problem**: FreeRTOS UART output shows character duplication/alternation
+  - Expected: "FreeRTOS Blinky Demo"
+  - Actual: "  eeeeOSOSliliy ymomorgrg..." (alternating/duplicate characters)
+  - Different from Session 34 bug (core-level, already fixed)
+- **Investigation**: Added bus-level and FIFO pointer monitoring
+  - Core issues exactly ONE bus write per character ✅ (Session 34 fix working)
+  - UART receives each write correctly ✅
+  - FIFO wptr==rptr at every transaction (always empty)
+- **Root Cause**: Read-during-write hazard in `uart_16550.v` TX FIFO logic
+  - When FIFO empty: write increments wptr, TX sees non-empty combinatorially
+  - TX reads from FIFO[rptr] in SAME cycle as write to FIFO[wptr]
+  - Since wptr==rptr before increment, both access same array index!
+  - Icarus Verilog memory arrays: undefined read-during-write behavior
+- **Attempted Fixes** (all unsuccessful):
+  1. Delayed write pointer (`tx_fifo_wptr_prev`) - caused character skipping
+  2. Restructured TX state machine - still had same-cycle issue
+  3. Write-this-cycle flag - combinatorial timing conflict
+  4. Multiple other approaches - fundamental timing problem
+- **Recommended Solution**: Implement synchronous dual-port RAM with separate read/write ports
+  - Clean separation, synthesizable, defined behavior
+  - 1-cycle read latency buffered by FIFO
+- **Verification**: Quick regression 14/14 PASSED ✅ (no regressions)
+- **Status**: Root cause confirmed, architectural fix needed for next session
+- **Reference**: `docs/SESSION_37_UART_FIFO_DEBUG.md`
 
 **Session 36 (2025-10-28)**: IMEM Byte-Select Fix - String Access Working! ✅🎯
 - **Achievement**: Fixed byte-stride issue - strings now readable from IMEM!
