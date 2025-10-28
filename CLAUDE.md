@@ -18,14 +18,15 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
 - **Achievement**: 🔧 **BUS HANDSHAKING IMPLEMENTED** 🔧
 - **Achievement**: ✅ **PRINTF DUPLICATION BUG FIXED - UART OUTPUT CLEAN!** ✅
-- **OS Integration**: Phase 2 NEARLY COMPLETE 🎯 - FreeRTOS boots, UART clean, scheduler starts (assertion to debug)
-- **Recent Work**: Printf Duplication Debug (2025-10-28 Session 43) - See below
-- **Session 43 Summary**: Root cause found (picolibc printf calling _write twice), workaround with puts()
+- **OS Integration**: Phase 2 BLOCKED 🚧 - FreeRTOS boots, UART clean, but MULHU bug blocks scheduler
+- **Recent Work**: FreeRTOS Assertion Debug (2025-10-28 Session 44) - See below
+- **Session 44 Summary**: Root cause found - MULHU returns wrong value in FreeRTOS context (context-specific bug)
 - **UART Status**: ✅ COMPLETELY CLEAN - No duplication, readable output, hardware working perfectly!
 - **Known Issues**:
-  - 🔍 **FreeRTOS assertion failure** (Session 43, scheduler-related, to investigate in Session 44)
+  - 🔥 **MULHU context-specific bug** (Session 44, CRITICAL - blocks FreeRTOS scheduler)
   - ⚠️ FENCE.I test failing (pre-existing since Session 33, low priority)
-- **Next Step**: DEBUG FREERTOS ASSERTION - Investigate scheduler/task assertion failure
+  - ⚠️ picolibc printf() duplication (Session 43, workaround active with puts())
+- **Next Step**: FIX MULHU BUG - Debug multiplier/forwarding issue (Session 45)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -122,6 +123,34 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 44 (2025-10-28)**: FreeRTOS Assertion Debug - MULHU Bug Identified 🔍🔥
+- **Achievement**: Root cause of FreeRTOS assertion failure identified!
+- **Problem**: FreeRTOS scheduler fails assertion immediately after "Starting FreeRTOS scheduler..."
+- **Investigation**: Added assertion tracking to identify exact failure location
+  - Assertion in `xQueueGenericReset()` at queue creation
+  - Overflow check: `if (mulhu(queueLength, itemSize) != 0) assert_fail()`
+  - Queue parameters: queueLength=1, itemSize=84 ✅ (valid)
+- **Root Cause**: **MULHU instruction returns wrong value!**
+  - Input: MULHU 1, 84 (should return 0 since 1×84=84 fits in 32 bits)
+  - Expected result: 0
+  - Actual result: 10 (0x0A) ❌ **WRONG!**
+- **Critical Discovery**: Bug is context-specific!
+  - ✅ Official `rv32um-p-mulhu` test: PASSES
+  - ✅ Isolated `test_mulhu_1_84`: PASSES (returns 0 correctly)
+  - ❌ Same operation in FreeRTOS: FAILS (returns 10)
+- **Hypothesis**: Load-use hazard or forwarding bug
+  - Instruction sequence: `LW a4, 64(s0)` → `MULHU a5, a5, a4`
+  - Load immediately before MULHU may trigger forwarding issue
+  - Multiplier state corruption possible
+- **Instrumentation**: Added comprehensive MULHU tracking to testbench
+  - Tracks assertion calls with return address
+  - Monitors queue parameters and MULHU inputs/outputs
+  - Confirmed inputs correct (1, 84), output wrong (10)
+- **Status**: Bug identified ✅, fix pending 🚧
+- **Impact**: CRITICAL - Final blocker for Phase 2 (FreeRTOS Integration)
+- **Next Steps**: Debug `mul_div_unit.v`, check forwarding paths, capture waveforms
+- **Reference**: `docs/SESSION_44_FREERTOS_ASSERTION_DEBUG.md`
 
 **Session 43 (2025-10-28)**: Printf Character Duplication - FIXED! ✅🎉
 - **Achievement**: Root cause identified and fixed - UART output now completely clean!

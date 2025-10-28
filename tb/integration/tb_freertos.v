@@ -539,4 +539,67 @@ module tb_freertos;
 
   `endif // ENABLE_BSS_FAST_CLEAR
 
+  // ========================================
+  // Session 44: Assertion Tracking
+  // ========================================
+  // Track PC around assertion time to find where assertion is called from
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Check for vApplicationAssertionFailed entry at ANY time
+      if (pc == 32'h00001cdc) begin
+        $display("[ASSERTION] *** vApplicationAssertionFailed() called at cycle %0d ***", cycle_count);
+        $display("[ASSERTION] Return address (ra) = 0x%08h", DUT.core.regfile.registers[1]);
+
+        // Decode which assertion based on ra
+        if (DUT.core.regfile.registers[1] == 32'h00001238) begin
+          $display("[ASSERTION] Called from xQueueGenericCreateStatic -> xQueueGenericReset");
+          $display("[ASSERTION] Checking which assert in xQueueGenericReset...");
+          $display("[ASSERTION] Possible: 0x11c8 (queue==NULL) or 0x11cc (size check)");
+        end
+      end
+
+      // Track entry to xQueueGenericReset to see parameters
+      if (pc == 32'h0000115e) begin
+        $display("[QUEUE-RESET] xQueueGenericReset called at cycle %0d", cycle_count);
+        $display("[QUEUE-RESET] a0 (queue ptr) = 0x%08h", DUT.core.regfile.registers[10]);
+        $display("[QUEUE-RESET] a1 (reset type) = 0x%08h", DUT.core.regfile.registers[11]);
+      end
+
+      // Track check at 0x116c (beqz a5,11cc) - checks if queueLength is zero
+      if (pc == 32'h0000116c) begin
+        $display("[QUEUE-CHECK] PC=0x116c: queueLength (a5) = 0x%08h", DUT.core.regfile.registers[15]);
+        if (DUT.core.regfile.registers[15] == 0) begin
+          $display("[QUEUE-CHECK] *** ASSERTION WILL FAIL: queueLength is ZERO! ***");
+        end
+      end
+
+      // Track where a5 gets loaded from memory at 0x1168
+      if (pc == 32'h00001168) begin
+        $display("[LOAD-CHECK] PC=0x1168: Loading queueLength from offset 60");
+        $display("[LOAD-CHECK]   s0 (base ptr) = 0x%08h", DUT.core.regfile.registers[8]);
+        $display("[LOAD-CHECK]   Will load from addr = 0x%08h", DUT.core.regfile.registers[8] + 60);
+      end
+
+      // Track multiplication inputs at 0x1170 (mulhu a5,a5,a4)
+      if (pc == 32'h00001170) begin
+        $display("[QUEUE-CHECK] PC=0x1170: About to execute MULHU:");
+        $display("[QUEUE-CHECK]   a5 (queueLength) = %0d (0x%08h)",
+                 DUT.core.regfile.registers[15], DUT.core.regfile.registers[15]);
+        $display("[QUEUE-CHECK]   a4 (itemSize) = %0d (0x%08h)",
+                 DUT.core.regfile.registers[14], DUT.core.regfile.registers[14]);
+        $display("[QUEUE-CHECK]   Expected product (a5*a4) = %0d",
+                 DUT.core.regfile.registers[15] * DUT.core.regfile.registers[14]);
+      end
+
+      // Track check at 0x1174 (bnez a5,11cc) - checks if multiplication overflows
+      if (pc == 32'h00001174) begin
+        $display("[QUEUE-CHECK] PC=0x1174: mulhu result (a5) = 0x%08h", DUT.core.regfile.registers[15]);
+        if (DUT.core.regfile.registers[15] != 0) begin
+          $display("[QUEUE-CHECK] *** ASSERTION WILL FAIL: queueLength * itemSize OVERFLOWS! ***");
+        end
+      end
+    end
+  end
+
 endmodule

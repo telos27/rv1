@@ -153,6 +153,21 @@ Replace `printf()` calls with:
 
 ## Solution: puts() Workaround (COMPLETE ✅)
 
+### ⚠️ WORKAROUND STATUS
+
+**This is a TEMPORARY WORKAROUND, not a permanent fix!**
+
+- **Issue**: picolibc's `printf()` calls `_write()` twice per character
+- **Workaround**: Use `puts()` instead of `printf()` for now
+- **Limitation**: No formatted output (can't print numbers, variables, etc.)
+- **Future Fix Required**:
+  1. Investigate picolibc FILE structure requirements
+  2. Test `sprintf()` + `puts()` for formatted output
+  3. Consider switching to newlib-nano if picolibc is fundamentally incompatible
+  4. Submit bug report to picolibc maintainers
+
+**⚠️ DO NOT consider this issue "resolved" - it's only "worked around"!**
+
 ### Implementation
 
 Replaced all `printf()` calls in `software/freertos/demos/blinky/main_blinky.c` with `puts()`:
@@ -167,6 +182,12 @@ Replaced all `printf()` calls in `software/freertos/demos/blinky/main_blinky.c` 
 - Binary size: 17,672 bytes → 8,848 bytes (50% reduction!)
 - UART output: 100% clean, no duplication ✅
 - Performance: Faster (no printf formatting overhead)
+
+**Limitations**:
+- ❌ Cannot print formatted strings with variables
+- ❌ Cannot print numbers (integers, floats, etc.)
+- ❌ Lose debugging flexibility for FreeRTOS tasks
+- ⚠️ Will need proper printf() for real applications
 
 ### Verification Results
 

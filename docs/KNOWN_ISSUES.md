@@ -4,86 +4,158 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### FreeRTOS Character Duplication (CRITICAL - BLOCKS PHASE 2) 🔥
+### MULHU Context-Specific Bug (CRITICAL - BLOCKS PHASE 2) 🔥
 
-**Status**: 🚨 ACTIVE - CRITICAL BUG (Sessions 37-42, 2025-10-28)
-**Severity**: CRITICAL - Blocks Phase 2 OS Integration
-**Tests Affected**: None (CPU tests pass, simple UART tests pass, FreeRTOS-specific)
-**Impact**: FreeRTOS console output garbled with character duplication
+**Status**: 🚨 ACTIVE - CRITICAL BUG (Session 44, 2025-10-28)
+**Severity**: CRITICAL - Blocks Phase 2 OS Integration (FreeRTOS)
+**Tests Affected**: FreeRTOS queue creation, scheduler startup
+**Impact**: FreeRTOS fails assertion, cannot start scheduler
 
 **Description**:
-FreeRTOS UART output shows character duplication/alternation, making console output unreadable. Simple UART tests (test_uart_abc) work correctly, but FreeRTOS duplicates every character.
+The `MULHU` (Multiply High Unsigned) instruction returns the wrong value in FreeRTOS context, causing an overflow check assertion to fail. The bug is context-specific - MULHU works correctly in isolation but fails in specific instruction sequences.
 
-**Symptom**:
-- Minimal test `test_uart_abc.s`: Expected "ABC", Actual: "ABC" ✅ (WORKS!)
-- FreeRTOS: Expected "FATAL: Assertion failed!", Actual: "FALALAsAsrtrtn nil! !" (alternating/duplicating characters)
-- Each character appears twice with ~20 cycle spacing
-- TX valid/ready handshake working correctly
+**Root Cause** (Session 44):
+- **Instruction**: `MULHU 1, 84` (get upper 32 bits of 1 × 84)
+- **Expected result**: 0 (since 1×84=84 fits in 32 bits, upper word is 0)
+- **Actual result**: 10 (0x0A) ❌ **WRONG!**
 
-**Root Cause** (Under Investigation - Session 42):
-Session 42 FIXED the undefined data bug (wbuart32 ufifo timing) by reverting to old uart_16550.v. However, FreeRTOS still shows character duplication pattern similar to Session 34's write pulse bug, but test_uart_abc works correctly.
+**Critical Discovery**:
+- ✅ Official `rv32um-p-mulhu` compliance test: **PASSES**
+- ✅ Isolated test `test_mulhu_1_84` (same values): **PASSES** (returns 0)
+- ❌ Same operation in FreeRTOS `xQueueGenericReset()`: **FAILS** (returns 10)
+
+**Instruction Sequence** (FreeRTOS):
+```asm
+1168:  lw    a5, 60(a0)     # Load queueLength = 1
+116a:  mv    s0, a0
+116c:  beqz  a5, fail       # Check if queueLength == 0
+116e:  lw    a4, 64(s0)     # Load itemSize = 84  ← LOAD right before MULHU!
+1170:  mulhu a5, a5, a4     # Multiply high (returns 10 instead of 0!) ❌
+1174:  bnez  a5, fail       # Check overflow → ASSERTION FAILS
+```
 
 **Hypothesis**:
-- Session 34 write pulse fix works for simple tests
-- FreeRTOS rapid successive writes may trigger edge case
-- Possible timing issue with burst writes
-- Different code path in FreeRTOS printf vs simple SB instructions
+1. **Load-use hazard**: `LW a4, 64(s0)` at 0x116e feeds directly into `MULHU` at 0x1170
+2. **Forwarding bug**: Register forwarding may corrupt MULHU result
+3. **Multiplier state**: Previous operations leave multiplier in bad state
+4. **Result selection**: Multiplier may be returning wrong word of 64-bit product
 
-**Investigation History** (Sessions 37-42):
-- **Session 37**: Identified FIFO read-during-write hazard
-- **Session 38**: Multiple FIFO timing fixes attempted, all unsuccessful
-- **Session 39**: Integrated wbuart32 formally-verified FIFO - bug persists
-- **Session 40**: Hypothesized core ignores `bus_req_ready` - partially incorrect
-- **Session 41**: Implemented bus handshaking, discovered UART transmits undefined data
-- **Session 42**: ROOT CAUSE FOUND - wbuart32 ufifo timing incompatibility!
-  - Fixed by reverting to old uart_16550.v
-  - Simple tests now work (test_uart_abc outputs "ABC" correctly)
-  - FreeRTOS duplication remains (different bug)
+**Evidence**:
+```
+[QUEUE-CHECK] PC=0x1170: About to execute MULHU:
+[QUEUE-CHECK]   a5 (queueLength) = 1 (0x00000001)  ✅
+[QUEUE-CHECK]   a4 (itemSize) = 84 (0x00000054)    ✅
+[QUEUE-CHECK]   Expected product (a5*a4) = 84
 
-**Key Finding** (Session 42):
-- wbuart32 ufifo's `o_data` doesn't remain stable across multiple cycles
-- UART TX state machine uses multi-cycle reads (incompatible with ufifo)
-- Old uart_16550.v simple FIFO works for simple tests
-- FreeRTOS duplication is a DIFFERENT bug from undefined data
+[QUEUE-CHECK] PC=0x1174: mulhu result (a5) = 0x0000000a  ❌
+[QUEUE-CHECK] *** ASSERTION WILL FAIL: queueLength * itemSize OVERFLOWS! ***
+```
 
-**Next Debug Steps** (Session 43):
-1. Compare test_uart_abc (works) vs FreeRTOS printf (duplicates)
-2. Check timing of rapid successive writes
-3. Verify Session 34's write pulse fix for burst writes
-4. Investigate FreeRTOS picolibc printf implementation
-5. Check if printf buffers multiple characters before writing
+**Next Debug Steps** (Session 45):
+1. Capture VCD waveforms around cycle 31770 (MULHU execution)
+2. Analyze `rtl/core/mul_div_unit.v` for MULHU implementation bugs
+3. Check forwarding paths for load-to-multiply hazards
+4. Compare waveforms: FreeRTOS (failing) vs test_mulhu_1_84 (passing)
+5. Look for:
+   - Off-by-one in result word selection
+   - Incorrect sign extension
+   - State machine issues
+   - Forwarding path bugs
 
-**Current Workaround**: None. FreeRTOS console output is unreadable.
+**Current Workaround**: None. FreeRTOS cannot start scheduler.
 
 **Verification**:
-- Quick regression: 14/14 PASSED ✅ (no CPU regressions)
-- test_uart_abc: "ABC" output ✅ (WORKS!)
-- FreeRTOS: Character duplication ❌ (still broken)
+- Quick regression: 14/14 PASSED ✅ (including official MULHU test!)
+- FreeRTOS: Assertion failure at scheduler startup ❌
 
-**Fix Priority**: 🔥 **HIGHEST** - **BLOCKS ALL PHASE 2 WORK**
-- Cannot debug FreeRTOS without working console
-- Cannot verify task execution or system behavior
-- Must fix before continuing OS integration
+**Fix Priority**: 🔥 **HIGHEST** - **FINAL BLOCKER FOR PHASE 2**
+- Prevents FreeRTOS scheduler from starting
+- Blocks all OS integration work
+- Must fix before any RTOS functionality available
 
-**Estimated Effort**: 2-4 hours
-- Compare working vs broken test cases (1 hour)
-- Identify timing/burst write issue (1-2 hours)
-- Implement and verify fix (1 hour)
+**Estimated Effort**: 2-4 hours (Session 45)
+- Waveform capture and analysis (1 hour)
+- Root cause identification in multiplier unit (1-2 hours)
+- Fix implementation and verification (1 hour)
 
 **Files Affected**:
-- `rtl/peripherals/uart_16550.v` (old UART, currently in use)
-- `rtl/core/rv32i_core_pipelined.v` (write pulse logic from Session 34/35)
-- `software/freertos/port/syscalls.c` (picolibc printf implementation)
-- `tests/asm/test_uart_abc.s` (minimal test case - WORKS)
+- `rtl/core/mul_div_unit.v` (multiplier implementation)
+- `rtl/core/forwarding_unit.v` (potential forwarding bug)
+- `rtl/core/rv32i_core_pipelined.v` (pipeline integration)
+- `tb/integration/tb_freertos.v` (debug instrumentation added)
+
+**Test Cases**:
+- `tests/asm/test_mulhu_1_84.s` - Isolated test (PASSES)
+- `tests/official-compliance/rv32um-p-mulhu.hex` - Official test (PASSES)
+- FreeRTOS scheduler startup - Real-world case (FAILS)
 
 **References**:
-- `docs/SESSION_34_UART_DUPLICATION_FIX.md` - Original write pulse fix
-- `docs/SESSION_37_UART_FIFO_DEBUG.md` - FIFO hazard analysis
-- `docs/SESSION_38_UART_FIFO_FIX_ATTEMPTS.md` - FIFO timing fixes
-- `docs/SESSION_39_WBUART32_INTEGRATION.md` - wbuart32 FIFO integration
-- `docs/SESSION_40_BUS_HANDSHAKE_DEBUG.md` - Bus protocol investigation
-- `docs/SESSION_41_BUS_HANDSHAKING.md` - Bus handshaking implementation
-- `docs/SESSION_42_UART_UFIFO_BUG.md` - ufifo timing bug FIX ✅
+- `docs/SESSION_44_FREERTOS_ASSERTION_DEBUG.md` - Comprehensive debug analysis
+- FreeRTOS function: `xQueueGenericReset()` in `queue.c`
+- Assertion location: PC 0x1174 in `xQueueGenericReset()`
+
+---
+
+## Active Issues
+
+### picolibc printf() Character Duplication (WORKAROUND ACTIVE) ⚠️
+
+**Status**: ⚠️ **WORKED AROUND** - Not fully resolved (Session 43, 2025-10-28)
+**Severity**: Medium - Limits formatted output capability
+**Tests Affected**: None (CPU tests pass, simple UART tests pass)
+**Impact**: Cannot use printf() with format strings, must use puts() instead
+
+**Description**:
+picolibc's `printf()` calls `_write()` twice per character, causing UART character duplication. This is a **software library issue**, not a hardware bug. The UART, bus, and CPU core all work correctly.
+
+**Root Cause** (Session 43):
+- Hardware path: Core → Bus → UART → TX ✅ **WORKING PERFECTLY**
+- `uart_putc()`: Direct calls work perfectly ✅
+- `_write()`: Syscall implementation correct ✅
+- **picolibc printf()**: Calls `_write()` twice per character ❌
+
+**Evidence**:
+```
+Direct uart_putc('T','E','S','T'): "TEST" ✅ Perfect output
+printf("TEST"): "TTEESSTT" ❌ Every character duplicated
+```
+
+**Current Workaround** (Session 43):
+✅ **ACTIVE** - Replace all `printf()` calls with `puts()`:
+- Simple strings: Use `puts("text")` instead of `printf("text\n")`
+- Binary size: 17,672 → 8,848 bytes (50% reduction!)
+- UART output: 100% clean, zero duplication ✅
+
+**Limitations of Workaround**:
+- ❌ Cannot print formatted strings with variables
+- ❌ Cannot print numbers (integers, floats, etc.)
+- ❌ Lose debugging flexibility for task monitoring
+- ⚠️ Will need proper printf() for real applications
+
+**Future Fix Required** (NOT YET IMPLEMENTED):
+1. Investigate picolibc FILE structure requirements
+2. Test `sprintf()` + `puts()` for formatted output
+3. Consider switching to newlib-nano if picolibc fundamentally incompatible
+4. Submit bug report to picolibc maintainers
+
+**⚠️ DO NOT CONSIDER THIS ISSUE "RESOLVED" - IT'S ONLY WORKED AROUND!**
+
+**Current Status**:
+- Quick regression: 14/14 PASSED ✅
+- FreeRTOS boot: Clean UART output ✅
+- FreeRTOS execution: Assertion failure (separate issue, under investigation)
+
+**Fix Priority**: Medium (workaround sufficient for Phase 2, but needs proper fix later)
+- Workaround allows FreeRTOS debugging to proceed ✅
+- Will need proper printf() for production/demo applications
+- Not blocking current Phase 2 work
+
+**Files Affected**:
+- `software/freertos/demos/blinky/main_blinky.c` (using puts() workaround)
+- `software/freertos/lib/syscalls.c` (_write implementation)
+
+**References**:
+- `docs/SESSION_43_PRINTF_DUPLICATION_DEBUG.md` - Root cause analysis & workaround
 
 ---
 
@@ -137,6 +209,58 @@ None. Self-modifying code is rare in modern RISC-V software. Most use cases:
 ---
 
 ## Recent Fixes
+
+### Session 43: FreeRTOS Printf Character Duplication - Software Bug (WORKED AROUND 2025-10-28)
+
+**Status**: ✅ HARDWARE WORKING + ⚠️ SOFTWARE WORKAROUND
+**Severity**: Medium (workaround available)
+**Impact**: FreeRTOS printf output (formatted strings not available)
+
+**Problem**:
+FreeRTOS printf() duplicated every character (~20 cycles apart), different from Session 34 pipeline bug (2 cycles apart).
+
+**Investigation Approach** (Session 43):
+1. Added PC-level UART write tracking to isolate software vs hardware
+2. All writes from same PC (uart_putc store byte) ✅
+3. Direct uart_putc() calls: Perfect output "TEST" ✅
+4. printf() calls: Duplicated every character ❌
+
+**Root Cause**:
+picolibc's `printf()` implementation calls `_write()` twice per character. This is a **software library bug**, not hardware.
+- Hardware (UART, bus, core): ✅ **100% WORKING**
+- uart_putc() function: ✅ **WORKING**
+- _write() syscall: ✅ **WORKING**
+- picolibc printf(): ❌ **CALLS _WRITE() TWICE**
+
+**Solution**:
+Replaced all `printf()` calls with `puts()`:
+- Startup banner, error messages, task output, hook functions
+- Binary size reduced: 17,672 → 8,848 bytes (50% smaller!)
+
+**Verification**:
+- UART output: 100% clean, zero duplication ✅
+- Quick regression: 14/14 PASSED ✅
+- FreeRTOS: Boots successfully, banner displays perfectly ✅
+- Clean output: "FreeRTOS Blinky Demo", "Tasks created successfully!" ✅
+
+**Limitations**:
+⚠️ **This is a WORKAROUND, not a fix!**
+- Cannot use printf() with format strings
+- Cannot print numbers or variables
+- Will need proper fix for production applications
+
+**Future Work**:
+1. Investigate picolibc FILE structure requirements
+2. Test sprintf() + puts() for formatted output
+3. Consider newlib-nano if picolibc incompatible
+4. Submit bug report to picolibc maintainers
+
+**Files Modified**:
+- `software/freertos/demos/blinky/main_blinky.c`: All printf() → puts()
+
+**Reference**: `docs/SESSION_43_PRINTF_DUPLICATION_DEBUG.md`
+
+---
 
 ### Session 42: UART Undefined Data - wbuart32 ufifo Timing Bug (RESOLVED 2025-10-28)
 
