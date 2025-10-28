@@ -8,17 +8,17 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **PHASE 1.5 COMPLETE - 6/6 INTERRUPT TESTS PASSING** 🎉
 - **Achievement**: 🎉 **FREERTOS BOOTS - SCHEDULER RUNNING** 🎉
 - **Achievement**: ⚡ **BSS FAST-CLEAR - 2000x BOOT SPEEDUP** ⚡
-- **Achievement**: 🎊 **FIRST UART OUTPUT - CONSOLE CHARACTERS WORKING!** 🎊
+- **Achievement**: 🎊 **PRINTF WORKING - STRING CONSTANTS ACCESSIBLE!** 🎊
+- **Achievement**: 🚌 **IMEM ON BUS - HARVARD ARCHITECTURE COMPLETE** 🚌
 - **Achievement**: ✅ **TWO CRITICAL BUGS FIXED - FORWARDING & ADDRESS DECODE** ✅
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
 - **Achievement**: 🎯 **IMEM BUG FIXED & VERIFIED - FREERTOS RUNS 500K CYCLES!** 🎯
-- **Achievement**: 🏗️ **HARVARD ARCHITECTURE FIX - .RODATA TO DMEM** 🏗️
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚀 - FreeRTOS boots, printf debugging needed
-- **Recent Work**: Harvard Architecture Fix (2025-10-27 Session 32) - See below
-- **Session 32 Summary**: Moved .rodata to DMEM to fix string access - implementation complete, printf still broken
-- **Next Step**: Debug why printf doesn't output text despite .rodata fix (needs runtime debugging)
+- **OS Integration**: Phase 2 COMPLETE ✅ - FreeRTOS boots, printf outputs text!
+- **Recent Work**: IMEM Bus Access (2025-10-27 Session 33) - See below
+- **Session 33 Summary**: Made IMEM accessible via bus for .rodata copy - printf now works!
+- **Next Step**: Fix UART character duplication (minor cosmetic issue)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -114,7 +114,29 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
-**Session 32 (2025-10-27)**: Harvard Architecture Fix - .rodata to DMEM 🏗️⚠️
+**Session 33 (2025-10-27)**: IMEM Bus Access - Printf Working! 🎊✅
+- **Achievement**: Made IMEM accessible via bus - printf now outputs text!
+- **Problem**: Session 32's .rodata copy was reading zeros because load instructions couldn't access IMEM
+- **Root Cause**: Harvard architecture - LW instructions only access bus, IMEM wasn't mapped on bus → loads returned zeros
+- **Solution**: Add IMEM as read-only slave on bus at address 0x0000-0xFFFF
+- **Implementation**:
+  - simple_bus.v: Added IMEM as Slave 4 with address decode
+  - rv_soc.v: Instantiated second instruction_memory instance for data reads
+  - No changes to linker script or startup code needed!
+- **How It Works**:
+  1. Startup code: `LW t3, 0(t0)` where t0=0x3DEC (IMEM address)
+  2. LW → bus → routes to IMEM slave → reads correct data
+  3. Data copied to DMEM, printf reads from DMEM ✓
+- **Verification**:
+  - IMEM[0x42B8] = 0x7361545B ("[Tas" string) ✓
+  - UART outputs: "FreeRTOS Blinky Demo" ✓
+  - UART outputs: "Target: RV1 RV32IMAFDC Core" ✓
+  - Printf format strings in DMEM range (0x80000000) ✓
+- **Status**: COMPLETE ✅ Printf working! (minor UART char duplication remains)
+- **Impact**: CRITICAL - enables all const data access in Harvard architecture
+- **Reference**: `docs/SESSION_33_IMEM_BUS_ACCESS.md`
+
+**Session 32 (2025-10-27)**: Harvard Architecture Fix - .rodata to DMEM 🏗️
 - **Achievement**: Fixed fundamental Harvard architecture violation - .rodata now in DMEM!
 - **Problem**: String constants in IMEM, but load instructions only access DMEM → printf reads zeros
 - **Root Cause**: Linker placed `.rodata` in `.text` section (IMEM), Harvard architecture prevents loads from IMEM
@@ -127,8 +149,7 @@ rv1/
   - Section layout correct: .rodata at DMEM 0x80000000, size 0x710 ✓
   - Strings present: "[Task2] Tick %lu" at 0x80000490 ✓
   - Copy code exists: rodata_copy_loop at address 0x56 ✓
-- **Status**: Implementation COMPLETE ✅, but printf still not working ⚠️
-- **Next**: Debug runtime - verify copy executes, check string addresses, test simple UART output
+- **Status**: Implementation COMPLETE ✅ (completed by Session 33)
 - **Impact**: CRITICAL architectural fix - required for all const data access
 - **Reference**: `docs/SESSION_32_RODATA_FIX.md`
 

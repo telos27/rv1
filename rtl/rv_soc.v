@@ -91,6 +91,12 @@ module rv_soc #(
   wire             plic_req_ready;
   wire [31:0]      plic_req_rdata;
 
+  // Bus signals - Slave 4 (IMEM) - for .rodata copy
+  wire             imem_req_valid;
+  wire [XLEN-1:0]  imem_req_addr;
+  wire             imem_req_ready;
+  wire [31:0]      imem_req_rdata;
+
   //==========================================================================
   // CPU Core
   //==========================================================================
@@ -168,7 +174,12 @@ module rv_soc #(
     .plic_req_wdata(plic_req_wdata),
     .plic_req_we(plic_req_we),
     .plic_req_ready(plic_req_ready),
-    .plic_req_rdata(plic_req_rdata)
+    .plic_req_rdata(plic_req_rdata),
+    // Slave 4: IMEM
+    .imem_req_valid(imem_req_valid),
+    .imem_req_addr(imem_req_addr),
+    .imem_req_ready(imem_req_ready),
+    .imem_req_rdata(imem_req_rdata)
   );
 
   //==========================================================================
@@ -248,6 +259,46 @@ module rv_soc #(
     .mei_o(meip),  // Machine External Interrupt
     .sei_o(seip)   // Supervisor External Interrupt
   );
+
+  //==========================================================================
+  // Instruction Memory (Bus Adapter - Read-only for .rodata copy)
+  //==========================================================================
+
+  // IMEM bus adapter allows data loads from instruction memory
+  // This is needed for .rodata section copy during startup
+  // We create a second read port by instantiating a second instruction_memory
+  // that shares the same hex file (read-only, so no coherency issues)
+
+  wire [31:0] imem_data_port_instruction;
+
+  instruction_memory #(
+    .XLEN(XLEN),
+    .MEM_SIZE(IMEM_SIZE),
+    .MEM_FILE(MEM_FILE)
+  ) imem_data_port (
+    .clk(clk),
+    .addr(imem_req_addr),
+    .instruction(imem_data_port_instruction),
+    // Write interface unused (read-only port)
+    .mem_write(1'b0),
+    .write_addr({XLEN{1'b0}}),
+    .write_data({XLEN{1'b0}}),
+    .funct3(3'b0)
+  );
+
+  // Debug: Check what's in IMEM data port at .rodata addresses
+  initial begin
+    #1;  // Wait for memory to load
+    $display("[SOC-IMEM-DATA-PORT] Checking .rodata section in IMEM data port:");
+    $display("  [0x3de8] = 0x%02h%02h%02h%02h", imem_data_port.mem[32'h3deb], imem_data_port.mem[32'h3dea],
+             imem_data_port.mem[32'h3de9], imem_data_port.mem[32'h3de8]);
+    $display("  [0x42b8] = 0x%02h%02h%02h%02h", imem_data_port.mem[32'h42bb], imem_data_port.mem[32'h42ba],
+             imem_data_port.mem[32'h42b9], imem_data_port.mem[32'h42b8]);
+  end
+
+  // Simple adapter: always ready, passthrough data
+  assign imem_req_ready = imem_req_valid;
+  assign imem_req_rdata = imem_data_port_instruction;
 
   //==========================================================================
   // Data Memory (Bus Adapter)

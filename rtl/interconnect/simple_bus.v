@@ -4,11 +4,11 @@
 // Date: 2025-10-27
 //
 // Memory Map:
-//   0x0000_0000 - 0x0000_FFFF: IMEM (64KB) - handled by core directly
+//   0x0000_0000 - 0x0000_FFFF: IMEM (64KB) - read-only via bus for .rodata copy
 //   0x0200_0000 - 0x0200_FFFF: CLINT (64KB) - timer + software interrupts
+//   0x0C00_0000 - 0x0FFF_FFFF: PLIC (64MB) - platform-level interrupt controller
 //   0x1000_0000 - 0x1000_0FFF: UART (4KB) - serial console
-//   0x8000_0000 - 0x8000_FFFF: DMEM (64KB) - data RAM
-//   (Future: 0x0C00_0000+ PLIC, block device, etc.)
+//   0x8000_0000 - 0x800F_FFFF: DMEM (1MB) - data RAM
 //
 // Features:
 // - Single master (CPU core data port)
@@ -69,14 +69,22 @@ module simple_bus #(
   input  wire [63:0]      dmem_req_rdata,
 
   //===========================================================================
-  // Slave 3: PLIC (Platform-Level Interrupt Controller) - Future
+  // Slave 3: PLIC (Platform-Level Interrupt Controller)
   //===========================================================================
   output reg              plic_req_valid,
   output reg  [XLEN-1:0]  plic_req_addr,
   output reg  [31:0]      plic_req_wdata,
   output reg              plic_req_we,
   input  wire             plic_req_ready,
-  input  wire [31:0]      plic_req_rdata
+  input  wire [31:0]      plic_req_rdata,
+
+  //===========================================================================
+  // Slave 4: IMEM (Instruction Memory) - Read-only for data loads
+  //===========================================================================
+  output reg              imem_req_valid,
+  output reg  [XLEN-1:0]  imem_req_addr,
+  input  wire             imem_req_ready,
+  input  wire [31:0]      imem_req_rdata
 );
 
   //===========================================================================
@@ -84,6 +92,8 @@ module simple_bus #(
   //===========================================================================
 
   // Define address ranges (base addresses)
+  localparam IMEM_BASE  = 32'h0000_0000;
+  localparam IMEM_MASK  = 32'hFFFF_0000;   // 64KB range
   localparam CLINT_BASE = 32'h0200_0000;
   localparam CLINT_MASK = 32'hFFFF_0000;   // 64KB range
   localparam UART_BASE  = 32'h1000_0000;
@@ -94,6 +104,7 @@ module simple_bus #(
   localparam PLIC_MASK  = 32'hFC00_0000;   // 64MB range
 
   // Device selection signals
+  wire sel_imem;
   wire sel_clint;
   wire sel_uart;
   wire sel_dmem;
@@ -105,7 +116,8 @@ module simple_bus #(
   assign sel_uart  = ((master_req_addr & UART_MASK)  == UART_BASE);
   assign sel_plic  = ((master_req_addr & PLIC_MASK)  == PLIC_BASE);
   assign sel_dmem  = ((master_req_addr & DMEM_MASK)  == DMEM_BASE);
-  assign sel_none  = !(sel_clint || sel_uart || sel_plic || sel_dmem);
+  assign sel_imem  = ((master_req_addr & IMEM_MASK)  == IMEM_BASE);
+  assign sel_none  = !(sel_clint || sel_uart || sel_plic || sel_dmem || sel_imem);
 
   //===========================================================================
   // Request Routing to Slaves
@@ -113,11 +125,13 @@ module simple_bus #(
 
   always @(*) begin
     // Default: all slaves idle
+    imem_req_valid  = 1'b0;
     clint_req_valid = 1'b0;
     uart_req_valid  = 1'b0;
     dmem_req_valid  = 1'b0;
     plic_req_valid  = 1'b0;
 
+    imem_req_addr   = {XLEN{1'b0}};
     clint_req_addr  = 16'h0;
     uart_req_addr   = 3'h0;
     dmem_req_addr   = {XLEN{1'b0}};
@@ -138,7 +152,11 @@ module simple_bus #(
 
     // Route request to selected slave
     if (master_req_valid) begin
-      if (sel_clint) begin
+      if (sel_imem) begin
+        imem_req_valid = 1'b1;
+        imem_req_addr  = master_req_addr;
+        // IMEM is read-only, ignore writes
+      end else if (sel_clint) begin
         clint_req_valid = 1'b1;
         clint_req_addr  = master_req_addr[15:0];  // 16-bit offset within 64KB
         clint_req_wdata = master_req_wdata;
@@ -177,7 +195,10 @@ module simple_bus #(
     master_req_rdata = 64'h0;
 
     // Route response from selected slave
-    if (sel_clint) begin
+    if (sel_imem) begin
+      master_req_ready = imem_req_ready;
+      master_req_rdata = {32'h0, imem_req_rdata};  // Zero-extend 32-bit instruction to 64-bit
+    end else if (sel_clint) begin
       master_req_ready = clint_req_ready;
       master_req_rdata = clint_req_rdata;
     end else if (sel_uart) begin

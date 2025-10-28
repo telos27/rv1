@@ -332,6 +332,52 @@ module tb_freertos;
         end
       end
 
+      // Monitor .rodata copy loop (PC 0x56-0x68) - Session 33 debug
+      if (pc >= 32'h00000056 && pc <= 32'h00000068) begin
+        // Show register values during rodata copy - FIRST ITERATION ONLY
+        if (pc == 32'h00000056 && cycle_count == 41) begin
+          $display("[RODATA-COPY] Cycle %0d: rodata_copy_loop FIRST ITERATION - t0(src)=0x%08h, t1(dst)=0x%08h, t2(end)=0x%08h",
+                   cycle_count, DUT.core.regfile.registers[5], DUT.core.regfile.registers[6], DUT.core.regfile.registers[7]);
+          // Check what's in IMEM at .rodata addresses (including where strings are!)
+          $display("[RODATA-COPY]   CORE IMEM[0x3de8] = 0x%02h%02h%02h%02h (.rodata start - mostly zeros)",
+                   DUT.core.imem.mem[32'h3deb], DUT.core.imem.mem[32'h3dea], DUT.core.imem.mem[32'h3de9], DUT.core.imem.mem[32'h3de8]);
+          $display("[RODATA-COPY]   CORE IMEM[0x42b8] = 0x%02h%02h%02h%02h (should be '[Task' = 0x5B 54 61 73)",
+                   DUT.core.imem.mem[32'h42bb], DUT.core.imem.mem[32'h42ba], DUT.core.imem.mem[32'h42b9], DUT.core.imem.mem[32'h42b8]);
+          $display("[RODATA-COPY]   DATA PORT IMEM[0x42b8] = 0x%02h%02h%02h%02h",
+                   DUT.imem_data_port.mem[32'h42bb], DUT.imem_data_port.mem[32'h42ba], DUT.imem_data_port.mem[32'h42b9], DUT.imem_data_port.mem[32'h42b8]);
+        end
+        // Monitor loads from IMEM during rodata copy - FIRST FEW ITERATIONS
+        if (DUT.core.exmem_mem_read && DUT.core.exmem_valid && cycle_count <= 100) begin
+          $display("[RODATA-COPY] Cycle %0d: LW from addr=0x%08h, data=0x%08h",
+                   cycle_count, DUT.core.exmem_alu_result, DUT.core.mem_read_data);
+          $display("[RODATA-COPY]   IMEM_DATA_PORT: addr=0x%08h, instruction=0x%08h",
+                   DUT.imem_req_addr, DUT.imem_data_port_instruction);
+          $display("[RODATA-COPY]   Bus: imem_req_valid=%b, imem_req_ready=%b",
+                   DUT.imem_req_valid, DUT.imem_req_ready);
+        end
+        // Monitor stores to DMEM during rodata copy - FIRST FEW ITERATIONS
+        if (DUT.core.exmem_mem_write && DUT.core.exmem_valid && cycle_count <= 100) begin
+          $display("[RODATA-COPY] Cycle %0d: SW to addr=0x%08h, data=0x%08h",
+                   cycle_count, DUT.core.exmem_alu_result, DUT.core.exmem_mem_write_data);
+        end
+        if (pc == 32'h00000068 && cycle_count < 2000) begin
+          $display("[RODATA-COPY] Cycle %0d: rodata_copy_done - copied %0d bytes",
+                   cycle_count, (DUT.core.regfile.registers[6] - 32'h80000000));
+        end
+      end
+
+      // Monitor printf calls - Session 33 debug
+      if (pc == 32'h000026ea) begin  // printf entry point
+        $display("[PRINTF] Cycle %0d: printf() called with format string at a0=0x%08h",
+                 cycle_count, DUT.core.regfile.registers[10]);
+        // Read first 4 bytes of format string from DMEM
+        if (DUT.core.regfile.registers[10] >= 32'h80000000 && DUT.core.regfile.registers[10] < 32'h80100000) begin
+          $display("[PRINTF]   Format string in DMEM range (good!)");
+        end else begin
+          $display("[PRINTF]   WARNING: Format string NOT in DMEM range!");
+        end
+      end
+
       if ((cycle_count % 10000 == 0) && cycle_count > 0) begin
         $display("[INFO] Cycle %0d, PC: 0x%08h, Instr: 0x%08h, UART chars: %0d",
                  cycle_count, pc, instruction, uart_char_count);
