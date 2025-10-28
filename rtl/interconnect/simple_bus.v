@@ -200,7 +200,47 @@ module simple_bus #(
       master_req_rdata = {32'h0, imem_req_rdata};  // Zero-extend 32-bit instruction to 64-bit
     end else if (sel_clint) begin
       master_req_ready = clint_req_ready;
-      master_req_rdata = clint_req_rdata;
+      // CLINT returns full 64-bit values, but we need to extract the appropriate
+      // portion based on access size and address alignment (for 32-bit accesses at +4 offset)
+      case (master_req_size)
+        3'h3: master_req_rdata = clint_req_rdata;  // 64-bit: full value
+        3'h2: begin  // 32-bit: extract based on address[2]
+          if (master_req_addr[2]) begin
+            master_req_rdata = {32'h0, clint_req_rdata[63:32]};  // High word (+4 offset)
+            `ifdef DEBUG_BUS
+            $display("[BUS] CLINT read @ +4: addr=0x%08h addr[2]=%b clint_data=0x%016h -> master_rdata=0x%016h",
+                     master_req_addr, master_req_addr[2], clint_req_rdata, {32'h0, clint_req_rdata[63:32]});
+            `endif
+          end else begin
+            master_req_rdata = {32'h0, clint_req_rdata[31:0]};   // Low word (+0 offset)
+            `ifdef DEBUG_BUS
+            $display("[BUS] CLINT read @ +0: addr=0x%08h addr[2]=%b clint_data=0x%016h -> master_rdata=0x%016h",
+                     master_req_addr, master_req_addr[2], clint_req_rdata, {32'h0, clint_req_rdata[31:0]});
+            `endif
+          end
+        end
+        3'h1: begin  // 16-bit: extract based on address[2:1]
+          case (master_req_addr[2:1])
+            2'h0: master_req_rdata = {48'h0, clint_req_rdata[15:0]};
+            2'h1: master_req_rdata = {48'h0, clint_req_rdata[31:16]};
+            2'h2: master_req_rdata = {48'h0, clint_req_rdata[47:32]};
+            2'h3: master_req_rdata = {48'h0, clint_req_rdata[63:48]};
+          endcase
+        end
+        3'h0: begin  // 8-bit: extract based on address[2:0]
+          case (master_req_addr[2:0])
+            3'h0: master_req_rdata = {56'h0, clint_req_rdata[7:0]};
+            3'h1: master_req_rdata = {56'h0, clint_req_rdata[15:8]};
+            3'h2: master_req_rdata = {56'h0, clint_req_rdata[23:16]};
+            3'h3: master_req_rdata = {56'h0, clint_req_rdata[31:24]};
+            3'h4: master_req_rdata = {56'h0, clint_req_rdata[39:32]};
+            3'h5: master_req_rdata = {56'h0, clint_req_rdata[47:40]};
+            3'h6: master_req_rdata = {56'h0, clint_req_rdata[55:48]};
+            3'h7: master_req_rdata = {56'h0, clint_req_rdata[63:56]};
+          endcase
+        end
+        default: master_req_rdata = clint_req_rdata;
+      endcase
     end else if (sel_uart) begin
       master_req_ready = uart_req_ready;
       master_req_rdata = {56'h0, uart_req_rdata};  // Zero-extend byte to 64-bit

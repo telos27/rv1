@@ -48,6 +48,9 @@ fi
 if [ ! -z "$DEBUG_UART_CORE" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_UART_CORE"
 fi
+if [ ! -z "$DEBUG_BUS" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_BUS"
+fi
 
 # SoC test configuration
 # Enable all extensions to match test compilation (rv32imafc)

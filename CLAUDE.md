@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 49, 2025-10-28)
+## Current Status (Session 51, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: Blocked - Bus Interconnect Bug (Session 49 → 50)
+- **Status**: Blocked - FreeRTOS Store Issue (Session 51 → 52)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -14,20 +14,21 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   3. ✅ Queue and sync demos created (Session 47)
   4. ✅ **CLINT mtime prescaler bug FIXED** (Session 48)
   5. ✅ **Trap handler installation verified** (Session 49)
-  6. 🐛 **BLOCKER**: MTIMECMP writes don't reach CLINT (Session 50)
-  7. 📋 Debug/fix printf() duplication issue
-  8. 📋 Optional: UART interrupt-driven I/O
+  6. ✅ **Bus 64-bit read extraction FIXED** (Session 51)
+  7. 🐛 **BLOCKER**: FreeRTOS stores to MTIMECMP don't execute (Session 51)
+  8. 📋 Debug/fix printf() duplication issue
+  9. 📋 Optional: UART interrupt-driven I/O
 
-### 🎉 Recent Milestone (Session 49): FreeRTOS Boots and Scheduler Starts!
-- **FreeRTOS Boot Sequence**: WORKING ✅
-  - ✅ Tasks created successfully
-  - ✅ Scheduler starts (`vTaskStartScheduler()` called)
-  - ✅ `vPortSetupTimerInterrupt()` executes
-  - ✅ Trap handlers properly installed (not stubs!)
-- **New Blocker Found**: Bus interconnect issue
-  - MTIMECMP writes (address 0x02004000) don't reach CLINT module
-  - Store instructions execute but never trigger req_valid on CLINT
-  - See: `docs/SESSION_49_TRAP_HANDLER_INVESTIGATION.md`
+### 🎉 Recent Milestone (Session 51): Bus Extraction Bug Fixed!
+- **Bus Infrastructure Fixed**: ✅
+  - Fixed 64-bit register access on RV32
+  - CLINT reads now correctly extract 32-bit portions based on address offset
+  - All regression tests passing (14/14)
+- **FreeRTOS Still Blocked**:
+  - Store instructions to MTIMECMP (0x02004000) don't reach MEM stage
+  - No bus transactions generated during vPortSetupTimerInterrupt()
+  - Root cause: Stores aren't executing (not a bus routing issue)
+  - See: `docs/SESSION_51_BUS_FIX.md`
 
 ### Compliance & Testing
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
@@ -35,22 +36,24 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Quick Regression**: 14/14 tests, ~4s runtime
 - **FreeRTOS**: Boots successfully, timer init complete, reaches scheduler ✅
 
-### Recent Achievements (Session 46-49)
+### Recent Achievements (Session 46-51)
+- ✅ **Bus 64-bit read extraction FIXED** (Session 51)
+  - Fixed critical bug in simple_bus.v for CLINT register access
+  - 32-bit reads from 64-bit peripherals now extract correct portion
+  - Address-based extraction (offset +0 vs +4) working correctly
+- ✅ **Testbench infrastructure improved** (Session 50)
+  - Identified tb_core_pipelined vs tb_soc usage distinction
+  - Added comprehensive bus/CLINT debug tracing
 - ✅ **FreeRTOS scheduler starts successfully** (Session 49)
   - Verified trap handlers are properly installed
   - Tasks created and scheduler reaches first context switch
-  - Identified bus routing as final blocker
 - ✅ **CLINT mtime prescaler bug FIXED** (Session 48)
   - Atomic 64-bit reads now work on RV32
   - Timer initialization completes successfully
-  - Comprehensive debug infrastructure added
 - ✅ **MULHU forwarding bug FIXED** (Session 46)
 - ✅ Enhanced FreeRTOS testing suite created (Session 47)
   - Created 3 new comprehensive demos (enhanced, queue, sync)
-  - Updated Makefile for multi-demo support
-  - All demos build successfully
-- ✅ Comprehensive debug tracing for interrupt debugging
-- ✅ All regression tests still passing (14/14, 80/81 official)
+- ✅ All regression tests passing (14/14, 80/81 official)
 
 ### Previous Achievements
 - ✅ FreeRTOS boots successfully, UART output clean
@@ -60,12 +63,12 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - ✅ RVC FP decoder (C.FLDSP/C.FSDSP support)
 
 ### Active Issues
-- 🐛 **CRITICAL**: MTIMECMP writes don't reach CLINT module (Session 50)
-  - Symptom: Store instructions to 0x02004000 execute but never reach CLINT peripheral
-  - CLINT req_valid never asserts, mtimecmp stays at max value (0xFFFFFFFFFFFFFFFF)
-  - No timer interrupts → tasks never run (stuck waiting for first context switch)
-  - Root cause: Bus interconnect routing issue
-  - Next: Debug bus arbiter, verify CLINT connectivity, add bus transaction tracing
+- 🐛 **CRITICAL**: FreeRTOS stores to MTIMECMP don't execute (Session 51)
+  - Symptom: Store instructions at PC 0x1b10/0x1b1e in vPortSetupTimerInterrupt() don't generate bus transactions
+  - No bus_req_valid for CLINT address range during timer setup
+  - Stores exist in binary (verified by objdump), function is called, but stores never reach MEM stage
+  - Root cause: Unknown - stores being squashed/flushed, or pipeline hazard
+  - Next: Add PC-specific tracing, check for flushes/stalls, verify write pulse logic
 - ⚠️ FENCE.I test (low priority - self-modifying code)
 - ⚠️ picolibc printf() duplication (workaround: use puts())
 
@@ -163,6 +166,26 @@ rv1/
 | 7: Stress Tests | ✅ 2/2 | Mode switching, regression |
 
 ## Recent Session Summary
+
+**Session 51** (2025-10-28): Bus 64-bit Read Bug - FIXED! ✅
+- Fixed critical bug in simple_bus.v where 32-bit reads from 64-bit CLINT registers returned full value
+- Added address-based extraction logic (offset +0 vs +4) for correct 32-bit portion
+- All regression tests passing (14/14)
+- FreeRTOS still blocked: stores to MTIMECMP don't execute (separate issue)
+- Created minimal test programs (test_clint_mtimecmp_write, test_clint_read_simple)
+- See: `docs/SESSION_51_BUS_FIX.md`
+
+**Session 50** (2025-10-28): Bus Investigation - Testbench Issue Found
+- Found testbench mismatch: peripheral tests need tb_soc.sh, not run_test_by_name.sh
+- Added comprehensive bus/CLINT debug tracing
+- Discovered FreeRTOS MTIMECMP stores don't reach bus (still unsolved)
+- See: `docs/SESSION_50_BUS_INVESTIGATION.md`
+
+**Session 49** (2025-10-28): Trap Handler Investigation - Bus Issue Found
+- Verified FreeRTOS trap handlers are correctly installed (not stubs)
+- Scheduler starts successfully, vPortSetupTimerInterrupt() called
+- Found blocker: MTIMECMP writes never reach CLINT peripheral
+- See: `docs/SESSION_49_TRAP_HANDLER_INVESTIGATION.md`
 
 **Session 48** (2025-10-28): CLINT MTIME Prescaler Bug - FIXED! 🎉
 - Fixed fundamental CLINT design bug preventing atomic 64-bit reads on RV32
