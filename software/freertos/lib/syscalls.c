@@ -164,11 +164,16 @@ void *_sbrk(int incr)
 int _write(int file, char *ptr, int len)
 {
     int i;
+    static int call_count = 0;
 
     if (file != 1 && file != 2) {
         errno = EBADF;
         return -1;
     }
+
+    /* DEBUG: Print call number and first char (if len > 0) to help debug duplication */
+    /* This will create recursion if we use printf, so we'll use a simple marker */
+    call_count++;
 
     /* Write to UART */
     for (i = 0; i < len; i++) {

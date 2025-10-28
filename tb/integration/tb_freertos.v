@@ -153,14 +153,32 @@ module tb_freertos;
   // ========================================
   // Monitor UART writes, function calls, and exceptions
 
-  // UART bus monitor - DISABLED (use simple version)
-  //always @(posedge clk) begin
-  //  if (reset_n && DUT.uart_req_valid && DUT.uart_req_we) begin
-  //    $display("[UART-BUS-WRITE] Cycle %0d: MEM_PC=0x%08h addr=0x%01h data=0x%02h ('%c')",
-  //             cycle_count, DUT.core.exmem_pc,
-  //             DUT.uart_req_addr, DUT.uart_req_wdata, DUT.uart_req_wdata);
-  //  end
-  //end
+  // UART bus monitor - Track bus-level UART writes with PC
+  reg prev_uart_bus_write;
+  initial prev_uart_bus_write = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Detect UART write to THR (offset 0)
+      if (DUT.uart_req_valid && DUT.uart_req_we && DUT.uart_req_addr == 8'h00 && !prev_uart_bus_write) begin
+        // Display character and PC
+        if (DUT.uart_req_wdata >= 8'h20 && DUT.uart_req_wdata <= 8'h7E) begin
+          $display("[UART-BUS-WRITE] Cycle %0d: PC=0x%08h data=0x%02h '%c'",
+                   cycle_count, DUT.core.exmem_pc, DUT.uart_req_wdata, DUT.uart_req_wdata);
+        end else if (DUT.uart_req_wdata == 8'h0A) begin
+          $display("[UART-BUS-WRITE] Cycle %0d: PC=0x%08h data=0x%02h <LF>",
+                   cycle_count, DUT.core.exmem_pc, DUT.uart_req_wdata);
+        end else if (DUT.uart_req_wdata == 8'h0D) begin
+          $display("[UART-BUS-WRITE] Cycle %0d: PC=0x%08h data=0x%02h <CR>",
+                   cycle_count, DUT.core.exmem_pc, DUT.uart_req_wdata);
+        end else begin
+          $display("[UART-BUS-WRITE] Cycle %0d: PC=0x%08h data=0x%02h",
+                   cycle_count, DUT.core.exmem_pc, DUT.uart_req_wdata);
+        end
+      end
+      prev_uart_bus_write = DUT.uart_req_valid && DUT.uart_req_we && DUT.uart_req_addr == 8'h00;
+    end
+  end
 
   // Function entry tracking - DISABLED FOR SPEED
   //reg uart_init_entered;

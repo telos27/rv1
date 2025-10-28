@@ -47,15 +47,16 @@ int main(void)
     /* Initialize UART for console output */
     uart_init();
 
-    /* Print startup banner */
-    printf("\n\n");
-    printf("========================================\n");
-    printf("  FreeRTOS Blinky Demo\n");
-    printf("  Target: RV1 RV32IMAFDC Core\n");
-    printf("  FreeRTOS Version: %s\n", tskKERNEL_VERSION_NUMBER);
-    printf("  CPU Clock: %lu Hz\n", configCPU_CLOCK_HZ);
-    printf("  Tick Rate: %lu Hz\n", configTICK_RATE_HZ);
-    printf("========================================\n\n");
+    /* Print startup banner - using puts() to avoid printf() duplication bug */
+    puts("");
+    puts("========================================");
+    puts("  FreeRTOS Blinky Demo");
+    puts("  Target: RV1 RV32IMAFDC Core");
+    puts("  FreeRTOS Kernel: v11.1.0");
+    puts("  CPU Clock: 50000000 Hz");
+    puts("  Tick Rate: 1000 Hz");
+    puts("========================================");
+    puts("");
 
     /* Create Task 1 */
     if (xTaskCreate(vTask1,                  /* Task function */
@@ -65,7 +66,7 @@ int main(void)
                     TASK1_PRIORITY,          /* Priority */
                     NULL) != pdPASS)         /* Task handle */
     {
-        printf("ERROR: Failed to create Task1!\n");
+        puts("ERROR: Failed to create Task1!");
         while (1);
     }
 
@@ -77,18 +78,19 @@ int main(void)
                     TASK2_PRIORITY,
                     NULL) != pdPASS)
     {
-        printf("ERROR: Failed to create Task2!\n");
+        puts("ERROR: Failed to create Task2!");
         while (1);
     }
 
-    printf("Tasks created successfully!\n");
-    printf("Starting FreeRTOS scheduler...\n\n");
+    puts("Tasks created successfully!");
+    puts("Starting FreeRTOS scheduler...");
+    puts("");
 
     /* Start the scheduler - this should never return */
     vTaskStartScheduler();
 
     /* Should never reach here */
-    printf("ERROR: Scheduler returned!\n");
+    puts("ERROR: Scheduler returned!");
     while (1);
 
     return 0;
@@ -106,13 +108,12 @@ static void vTask1(void *pvParameters)
     /* Initialize wake time */
     xLastWakeTime = xTaskGetTickCount();
 
-    printf("[Task1] Started! Running at 2 Hz\n");
+    puts("[Task1] Started! Running at 2 Hz");
 
     while (1) {
         /* Print message */
-        printf("[Task1] Tick %lu (time: %lu ms)\n",
-               count++,
-               (unsigned long)xTaskGetTickCount());
+        puts("[Task1] Tick");
+        count++;
 
         /* Delay for 500ms (absolute delay, not relative) */
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
@@ -131,13 +132,12 @@ static void vTask2(void *pvParameters)
     /* Initialize wake time */
     xLastWakeTime = xTaskGetTickCount();
 
-    printf("[Task2] Started! Running at 1 Hz\n");
+    puts("[Task2] Started! Running at 1 Hz");
 
     while (1) {
         /* Print message */
-        printf("[Task2] Tick %lu (time: %lu ms)\n",
-               count++,
-               (unsigned long)xTaskGetTickCount());
+        puts("[Task2] Tick");
+        count++;
 
         /* Delay for 1000ms */
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
@@ -151,7 +151,8 @@ static void vTask2(void *pvParameters)
 /* Called when malloc() fails */
 void vApplicationMallocFailedHook(void)
 {
-    printf("\n*** FATAL: Malloc failed! ***\n");
+    puts("");
+    puts("*** FATAL: Malloc failed! ***");
     taskDISABLE_INTERRUPTS();
     while (1);
 }
@@ -160,7 +161,9 @@ void vApplicationMallocFailedHook(void)
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
     (void)xTask;
-    printf("\n*** FATAL: Stack overflow in task: %s ***\n", pcTaskName);
+    (void)pcTaskName;  /* Avoid unused warning - can't print name without printf */
+    puts("");
+    puts("*** FATAL: Stack overflow detected! ***");
     taskDISABLE_INTERRUPTS();
     while (1);
 }
