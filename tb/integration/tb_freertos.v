@@ -244,8 +244,11 @@ module tb_freertos;
                    DUT.core.csr_file_inst.mcause_r[63],
                    DUT.core.csr_file_inst.mcause_r[3:0]);
           $display("       mepc   = 0x%08h", DUT.core.csr_file_inst.mepc_r);
-          $display("       mtval  = 0x%08h", DUT.core.csr_file_inst.mtval_r);
-          $display("       PC     = 0x%08h", pc);
+          $display("       mtval  = 0x%08h (from ifid_instruction)", DUT.core.csr_file_inst.mtval_r);
+          $display("       PC     = 0x%08h (trap handler)", pc);
+          $display("       ifid_instruction = 0x%08h (ID stage)", DUT.core.ifid_instruction);
+          $display("       if_instruction_raw = 0x%08h (IF stage raw)", DUT.core.if_instruction_raw);
+          $display("       if_instruction = 0x%08h (IF stage final)", DUT.core.if_instruction);
         end
         prev_mcause = DUT.core.csr_file_inst.mcause_r;
         prev_mepc = DUT.core.csr_file_inst.mepc_r;
@@ -261,9 +264,34 @@ module tb_freertos;
 
   always @(posedge clk) begin
     if (reset_n) begin
+      // Print every 1000 cycles to track progress
+      if (cycle_count % 1000 == 0) begin
+        $display("[COUNTER] Cycle %0d, PC: 0x%08h", cycle_count, pc);
+      end
+
       if (cycle_count ==1 || cycle_count == 10 || cycle_count == 100) begin
         $display("[DEBUG] Cycle %0d, PC: 0x%08h, Instr: 0x%08h",
                  cycle_count, pc, instruction);
+      end
+
+      // Detailed trace around expected trap cycles (600-650 per Session 28)
+      if (cycle_count >= 600 && cycle_count <= 650) begin
+        $display("[PC-TRACE] Cycle %0d: PC=0x%08h, Instr=0x%08h",
+                 cycle_count, pc, instruction);
+      end
+
+      // Super detailed pipeline trace around cycle 605-610
+      if (cycle_count >= 603 && cycle_count <= 612) begin
+        $display("[PIPELINE] Cycle %0d:", cycle_count);
+        $display("  IF: PC=0x%08h, raw=0x%08h, final=0x%08h, compressed=%b",
+                 DUT.core.pc_current, DUT.core.if_instruction_raw,
+                 DUT.core.if_instruction, DUT.core.if_is_compressed);
+        $display("  ID: instruction=0x%08h, valid=%b",
+                 DUT.core.ifid_instruction, DUT.core.ifid_valid);
+        $display("  EX: instruction=0x%08h, valid=%b",
+                 DUT.core.idex_instruction, DUT.core.idex_valid);
+        $display("  Exception: code=%0d, gated=%b",
+                 DUT.core.exception_code, DUT.core.exception_gated);
       end
 
       // Detailed trace around puts() call (cycles 117-125) - COMMENTED OUT FOR SPEED

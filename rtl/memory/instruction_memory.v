@@ -53,6 +53,10 @@ module instruction_memory #(
       $display("  [0x04] = 0x%02h%02h%02h%02h", mem[7], mem[6], mem[5], mem[4]);
       $display("  [0x08] = 0x%02h%02h%02h%02h", mem[11], mem[10], mem[9], mem[8]);
       $display("  [0x0C] = 0x%02h%02h%02h%02h", mem[15], mem[14], mem[13], mem[12]);
+      $display("Instructions around 0x210c:");
+      $display("  [0x2108] = 0x%02h%02h%02h%02h", mem[32'h210b], mem[32'h210a], mem[32'h2109], mem[32'h2108]);
+      $display("  [0x210c] = 0x%02h%02h%02h%02h", mem[32'h210f], mem[32'h210e], mem[32'h210d], mem[32'h210c]);
+      $display("  [0x2110] = 0x%02h%02h%02h%02h", mem[32'h2113], mem[32'h2112], mem[32'h2111], mem[32'h2110]);
       $display("=================================");
     end
   end
@@ -69,6 +73,16 @@ module instruction_memory #(
   assign instruction = {mem[halfword_addr+3], mem[halfword_addr+2],
                         mem[halfword_addr+1], mem[halfword_addr]};
 
+  // Debug: Monitor fetches at problematic address (using posedge clk to avoid spam)
+  reg [XLEN-1:0] prev_addr;
+  always @(posedge clk) begin
+    if (addr >= 32'h2100 && addr <= 32'h2120 && addr != prev_addr) begin
+      $display("[IMEM-FETCH] addr=0x%08h, hw_addr=0x%08h, instr=0x%08h",
+               addr, halfword_addr, instruction);
+    end
+    prev_addr <= addr;
+  end
+
   // Write operation (for self-modifying code via FENCE.I)
   // This allows data stores to modify instruction memory
   wire [XLEN-1:0] write_masked_addr;
@@ -81,6 +95,12 @@ module instruction_memory #(
 
   always @(posedge clk) begin
     if (mem_write) begin
+      // Debug: Monitor writes to problematic address range
+      if (write_addr >= 32'h2100 && write_addr <= 32'h2120) begin
+        $display("[IMEM-WRITE] cycle=%0t, addr=0x%08h, data=0x%016h, funct3=%0d",
+                 $time/20, write_addr, write_data, funct3);
+      end
+
       case (funct3)
         3'b000: begin  // SB (store byte)
           mem[write_masked_addr] <= write_data[7:0];

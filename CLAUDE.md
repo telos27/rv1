@@ -11,12 +11,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎊 **FIRST UART OUTPUT - CONSOLE CHARACTERS WORKING!** 🎊
 - **Achievement**: ✅ **TWO CRITICAL BUGS FIXED - FORWARDING & ADDRESS DECODE** ✅
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
+- **CRITICAL BUG**: 🔥 **IMEM READ BUG IDENTIFIED - RETURNS ZEROS AT RUNTIME** 🔥
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS runs 500k cycles, debugging exceptions
-- **Recent Work**: RVC FP Decoder Enhancement (2025-10-27 Session 28) - See below
-- **Session 28 Summary**: Added C.FLDSP/C.FSDSP/C.FLWSP/C.FSWSP support, debugging mtval=NOP mystery
-- **Next Step**: Session 29 - Debug mtval=NOP mystery, verify RVC decoder runtime behavior
+- **OS Integration**: Phase 2 BLOCKED 🚧 - Critical IMEM bug blocks FreeRTOS execution
+- **Recent Work**: IMEM Bug Investigation (2025-10-27 Session 29) - See below
+- **Session 29 Summary**: Root cause identified - instruction memory returns zeros for addresses ≥0x210c despite correct initialization
+- **Next Step**: Session 30 - Fix IMEM read bug (array indexing or memory organization issue)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -112,6 +113,25 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
+**Session 29 (2025-10-27)**: IMEM Read Bug Investigation 🔍🔥
+- **Achievement**: Root cause of mtval=NOP mystery identified - critical IMEM read bug!
+- **Problem**: Instruction memory returns 0x00000000 instead of actual instruction data at runtime
+- **Discovery Chain**:
+  1. Exception at 0x210c with mtval=0x00000013 (NOP)
+  2. Actual instruction at 0x210c is 0x27068693 (ADDI a3,a3,624 - legal!)
+  3. Memory initialization shows correct data: mem[0x210c]=0x27068693 ✓
+  4. Runtime fetch from 0x210c returns 0x00000000 ✗
+- **Evidence**:
+  - Fetch from 0x2108: Works correctly, returns 0x27068713 ✓
+  - Fetch from 0x210c: Returns zeros 0x00000000 ✗
+  - Fetch from 0x210e: Returns zeros 0x00000000 ✗
+  - Fetch from 0x2110: Returns zeros 0x00000000 ✗
+  - No memory writes detected to these addresses
+- **Hypothesis**: Array indexing issue - 32-bit `halfword_addr` accessing 16-bit indexed array `mem[0:65535]`
+- **Impact**: CRITICAL - Blocks FreeRTOS execution at address ≥0x210c
+- **Status**: Root cause identified ✅, fix needed 🚧
+- **Reference**: `docs/SESSION_29_IMEM_BUG_INVESTIGATION.md`
+
 **Session 28 (2025-10-27)**: RVC FP Decoder Enhancement 🔍
 - **Achievement**: Root cause identified - RVC decoder missing compressed FP instructions!
 - **Problem**: FreeRTOS trap handler uses C.FSDSP/C.FLDSP to save/restore FPU context (32 FP registers)
@@ -123,8 +143,8 @@ rv1/
   - C.FSDSP (funct3=101, op=10) - FSD to SP
   - C.FSWSP (funct3=111, op=10, RV32) - FSW to SP
 - **Testing**: Quick regression 14/14 passing ✅, no regressions
-- **Mystery**: Illegal instruction exceptions persist with mtval=0x00000013 (NOP) - investigating
-- **Status**: RVC decoder enhanced ✅, mtval=NOP mystery ongoing 🔍
+- **Mystery**: Illegal instruction exceptions persist with mtval=0x00000013 (NOP) - investigated in Session 29
+- **Status**: RVC decoder enhanced ✅, mtval=NOP traced to IMEM bug (Session 29)
 - **Reference**: `docs/SESSION_28_RVC_FP_DECODER.md`
 
 **Session 27 (2025-10-27)**: Critical Bug Fixes - Forwarding & Address Decode ✅✅
