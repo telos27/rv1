@@ -57,12 +57,6 @@ SECTIONS
         *(.text)
         *(.text.*)
 
-        /* Read-only data in code section */
-        *(.rodata)
-        *(.rodata.*)
-        *(.srodata)
-        *(.srodata.*)
-
         /* C++ support (if needed) */
         *(.eh_frame)
         *(.gcc_except_table)
@@ -90,6 +84,29 @@ SECTIONS
         KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
         __fini_array_end = .;
     } > IMEM
+
+    /* ====================================================================
+     * Read-Only Data Section (in DMEM, loaded from IMEM)
+     * ==================================================================== */
+
+    /* String constants and read-only data need to be in DMEM so load
+     * instructions can access them (Harvard architecture) */
+    .rodata : ALIGN(8)
+    {
+        __rodata_start = .;
+
+        /* Read-only data */
+        *(.rodata)
+        *(.rodata.*)
+        *(.srodata)
+        *(.srodata.*)
+
+        . = ALIGN(8);
+        __rodata_end = .;
+    } > DMEM AT > IMEM
+
+    /* Store load address of .rodata in IMEM for startup code to copy */
+    __rodata_load_start = LOADADDR(.rodata);
 
     /* ====================================================================
      * Data Section (in DMEM, loaded from IMEM)
@@ -191,6 +208,9 @@ SECTIONS
 PROVIDE(__text_start = ORIGIN(IMEM));
 PROVIDE(__text_size = __text_end - __text_start);
 
+/* Read-only data region (constant strings) */
+PROVIDE(__rodata_size = __rodata_end - __rodata_start);
+
 /* Data region (initialized data) */
 PROVIDE(__data_size = __data_end - __data_start);
 
@@ -238,7 +258,9 @@ ASSERT(__global_pointer$ >= __dmem_start && __global_pointer$ < __dmem_end, "ERR
 /*
  * Expected Layout in DMEM (0x80000000 - 0x800FFFFF = 1MB):
  *
- * 0x80000000: .data start (initialized data copied from IMEM)
+ * 0x80000000: .rodata start (read-only data, strings copied from IMEM)
+ * 0x8000XXXX: .rodata end
+ * 0x8000XXXX: .data start (initialized data copied from IMEM)
  * 0x8000XXXX: .data end
  * 0x8000XXXX: .bss start (zero-initialized)
  * 0x800XXXXX: .bss end
@@ -249,7 +271,8 @@ ASSERT(__global_pointer$ >= __dmem_start && __global_pointer$ < __dmem_end, "ERR
  * 0x800FFFFF: End of DMEM
  *
  * Notes:
- * - .data and .bss are small (typically <64KB for FreeRTOS)
+ * - .rodata, .data and .bss are small (typically <64KB for FreeRTOS)
+ * - .rodata contains string constants, must be in DMEM for load instructions
  * - Heap is 512KB (half of DMEM) - used by FreeRTOS tasks
  * - Stack is 4KB - used before scheduler starts (main/idle task)
  * - After scheduler starts, each task has its own stack (allocated from heap)

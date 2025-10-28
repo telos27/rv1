@@ -12,12 +12,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: ✅ **TWO CRITICAL BUGS FIXED - FORWARDING & ADDRESS DECODE** ✅
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
 - **Achievement**: 🎯 **IMEM BUG FIXED & VERIFIED - FREERTOS RUNS 500K CYCLES!** 🎯
+- **Achievement**: 🏗️ **HARVARD ARCHITECTURE FIX - .RODATA TO DMEM** 🏗️
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚀 - FreeRTOS boots successfully, UART output debugging needed
-- **Recent Work**: IMEM Bug Verified (2025-10-27 Session 31) - See below
-- **Session 31 Summary**: IMEM corruption fix verified working - FreeRTOS executes 500k cycles without exceptions
-- **Next Step**: Debug UART string output issue (printf only outputs newlines, no text)
+- **OS Integration**: Phase 2 IN PROGRESS 🚀 - FreeRTOS boots, printf debugging needed
+- **Recent Work**: Harvard Architecture Fix (2025-10-27 Session 32) - See below
+- **Session 32 Summary**: Moved .rodata to DMEM to fix string access - implementation complete, printf still broken
+- **Next Step**: Debug why printf doesn't output text despite .rodata fix (needs runtime debugging)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -112,6 +113,24 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 32 (2025-10-27)**: Harvard Architecture Fix - .rodata to DMEM 🏗️⚠️
+- **Achievement**: Fixed fundamental Harvard architecture violation - .rodata now in DMEM!
+- **Problem**: String constants in IMEM, but load instructions only access DMEM → printf reads zeros
+- **Root Cause**: Linker placed `.rodata` in `.text` section (IMEM), Harvard architecture prevents loads from IMEM
+- **Solution**: Move `.rodata` to DMEM with runtime copy from IMEM (like `.data` section)
+- **Changes**:
+  - Linker script: Extracted `.rodata` → `> DMEM AT > IMEM` (VMA=0x80000000, LMA=0x3DE8)
+  - Startup code: Added `.rodata` copy loop (1,808 bytes) in start.S lines 80-100
+  - Boot sequence: Now copies .rodata before .data during initialization
+- **Verification**:
+  - Section layout correct: .rodata at DMEM 0x80000000, size 0x710 ✓
+  - Strings present: "[Task2] Tick %lu" at 0x80000490 ✓
+  - Copy code exists: rodata_copy_loop at address 0x56 ✓
+- **Status**: Implementation COMPLETE ✅, but printf still not working ⚠️
+- **Next**: Debug runtime - verify copy executes, check string addresses, test simple UART output
+- **Impact**: CRITICAL architectural fix - required for all const data access
+- **Reference**: `docs/SESSION_32_RODATA_FIX.md`
 
 **Session 31 (2025-10-27)**: FreeRTOS Boot Verification - SUCCESS! 🎯✅
 - **Achievement**: IMEM corruption bug fix (Session 30) verified working - FreeRTOS runs 500k cycles without exceptions!

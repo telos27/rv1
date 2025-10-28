@@ -78,6 +78,28 @@ bss_zero_loop:
 bss_zero_done:
 
     /* ====================================================================
+     * Copy Read-Only Data Section from ROM (IMEM) to RAM (DMEM)
+     * ==================================================================== */
+
+    /* String constants and read-only data are stored in IMEM */
+    /* They need to be copied to DMEM so load instructions can access them */
+    /* (Harvard architecture: loads only access DMEM, not IMEM) */
+
+    la t0, __rodata_load_start  /* Source: LMA (load address in IMEM) */
+    la t1, __rodata_start       /* Destination: VMA (virtual address in DMEM) */
+    la t2, __rodata_end         /* End address */
+
+rodata_copy_loop:
+    bge t1, t2, rodata_copy_done  /* Exit if t1 >= t2 */
+    lw t3, 0(t0)                  /* Load word from source */
+    sw t3, 0(t1)                  /* Store word to destination */
+    addi t0, t0, 4                /* Increment source */
+    addi t1, t1, 4                /* Increment destination */
+    j rodata_copy_loop
+
+rodata_copy_done:
+
+    /* ====================================================================
      * Copy Data Section from ROM (IMEM) to RAM (DMEM)
      * ==================================================================== */
 
@@ -207,14 +229,21 @@ assert_halt:
  * 2. _start executes (this file)
  * 3. Initialize SP, GP, FPU
  * 4. Zero BSS
- * 5. Copy .data from IMEM to DMEM
- * 6. Set trap vector to FreeRTOS handler
- * 7. Enable timer/software interrupts
- * 8. Call global constructors (C++)
- * 9. Call main()
- * 10. main() calls vTaskStartScheduler()
- * 11. FreeRTOS scheduler takes over
- * 12. Tasks run, timer interrupts for context switching
+ * 5. Copy .rodata from IMEM to DMEM (string constants)
+ * 6. Copy .data from IMEM to DMEM (initialized variables)
+ * 7. Set trap vector to FreeRTOS handler
+ * 8. Enable timer/software interrupts
+ * 9. Call global constructors (C++)
+ * 10. Call main()
+ * 11. main() calls vTaskStartScheduler()
+ * 12. FreeRTOS scheduler takes over
+ * 13. Tasks run, timer interrupts for context switching
+ *
+ * Memory Architecture (Harvard):
+ * - IMEM (0x0-0xFFFF): Code + ROM data (instruction fetch only)
+ * - DMEM (0x8000_0000+): Data, BSS, Heap, Stack (load/store only)
+ * - .rodata and .data copied from IMEM to DMEM at boot
+ * - Load instructions can only access DMEM, not IMEM
  *
  * Interrupt Handling:
  * - MTVEC points to freertos_risc_v_trap_handler (portASM.S)
