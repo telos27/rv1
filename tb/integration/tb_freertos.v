@@ -602,4 +602,162 @@ module tb_freertos;
     end
   end
 
+  // ========================================
+  // Register Trace at Store PCs - Session 45 Debug
+  // ========================================
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Track registers at PC 0x122c (sw a0,60(s0))
+      if (pc == 32'h0000122c && cycle_count >= 31700) begin
+        $display("========================================");
+        $display("[REG-TRACE] Cycle %0d: At PC 0x122c (sw a0,60(s0))", cycle_count);
+        $display("[REG-TRACE]   a0 (x10) = 0x%08h (will be stored as queueLength)", DUT.core.regfile.registers[10]);
+        $display("[REG-TRACE]   a1 (x11) = 0x%08h (will be stored as itemSize)", DUT.core.regfile.registers[11]);
+        $display("[REG-TRACE]   s0 (x8)  = 0x%08h (base pointer)", DUT.core.regfile.registers[8]);
+        $display("[REG-TRACE]   Target addr = 0x%08h", DUT.core.regfile.registers[8] + 60);
+      end
+    end
+  end
+
+  // ========================================
+  // Memory Write Trace - Session 45 Debug
+  // ========================================
+  // Track stores to the corrupted memory addresses
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Track stores to address 0x800004c8 (queueLength - corrupted to 10)
+      if (DUT.core.exmem_valid && DUT.core.exmem_mem_write) begin
+        if (DUT.core.exmem_alu_result == 32'h800004c8 ||
+            (DUT.core.exmem_alu_result >= 32'h800004c4 && DUT.core.exmem_alu_result <= 32'h800004cc)) begin
+          $display("========================================");
+          $display("[MEM-WRITE] Cycle %0d: Store to queue structure!", cycle_count);
+          $display("[MEM-WRITE]   PC = 0x%08h", DUT.core.exmem_pc);
+          $display("[MEM-WRITE]   Address = 0x%08h", DUT.core.exmem_alu_result);
+          $display("[MEM-WRITE]   Data = 0x%08h", DUT.core.exmem_mem_write_data);
+          $display("[MEM-WRITE]   funct3 = %b", DUT.core.exmem_funct3);
+          if (DUT.core.exmem_alu_result == 32'h800004c8) begin
+            $display("[MEM-WRITE]   *** This is address 0x800004c8 (queueLength field)! ***");
+          end
+        end
+      end
+    end
+  end
+
+  // ========================================
+  // Load Instruction Trace - Session 45 Debug
+  // ========================================
+  // Track the load at PC 0x1168 that should load itemSize (84)
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Track load in ID stage
+      if (DUT.core.ifid_valid && DUT.core.ifid_pc == 32'h00001168) begin
+        $display("========================================");
+        $display("[LOAD-ID] Cycle %0d: Load at PC 0x1168 in ID stage", cycle_count);
+        $display("[LOAD-ID]   Instruction = 0x%08h", DUT.core.ifid_instruction);
+        $display("[LOAD-ID]   rs1 = x%0d, rd = x%0d", DUT.core.id_rs1, DUT.core.id_rd);
+        $display("[LOAD-ID]   RegFile rs1 (base) = 0x%08h", DUT.core.regfile.registers[DUT.core.id_rs1]);
+        $display("[LOAD-ID]   Immediate offset = 0x%08h", DUT.core.id_immediate);
+        $display("[LOAD-ID]   Target address = 0x%08h",
+                 DUT.core.regfile.registers[DUT.core.id_rs1] + DUT.core.id_immediate);
+      end
+
+      // Track load in EX stage
+      if (DUT.core.idex_valid && DUT.core.idex_pc == 32'h00001168) begin
+        $display("========================================");
+        $display("[LOAD-EX] Cycle %0d: Load at PC 0x1168 in EX stage", cycle_count);
+        $display("[LOAD-EX]   ALU result (address) = 0x%08h", DUT.core.ex_alu_result);
+        $display("[LOAD-EX]   rs1_data = 0x%08h", DUT.core.idex_rs1_data);
+        $display("[LOAD-EX]   immediate = 0x%08h", DUT.core.idex_imm);
+        $display("[LOAD-EX]   rd = x%0d", DUT.core.idex_rd_addr);
+      end
+
+      // Track load in MEM stage
+      if (DUT.core.exmem_valid && DUT.core.exmem_pc == 32'h00001168) begin
+        $display("========================================");
+        $display("[LOAD-MEM] Cycle %0d: Load at PC 0x1168 in MEM stage", cycle_count);
+        $display("[LOAD-MEM]   Memory address = 0x%08h", DUT.core.exmem_alu_result);
+        $display("[LOAD-MEM]   mem_read = %b", DUT.core.exmem_mem_read);
+        $display("[LOAD-MEM]   mem_read_data = 0x%08h", DUT.core.mem_read_data);
+        $display("[LOAD-MEM]   rd = x%0d", DUT.core.exmem_rd_addr);
+        $display("[LOAD-MEM]   wb_sel = %b", DUT.core.exmem_wb_sel);
+      end
+
+      // Track ALL WB stage activity around the critical cycles (detect load by rd=x14)
+      if (cycle_count >= 31720 && cycle_count <= 31735 && DUT.core.memwb_valid && DUT.core.memwb_reg_write) begin
+        $display("[WB-TRACE] Cycle %0d: WB writing x%0d <= 0x%08h (wb_sel=%b, mem_data=0x%08h)",
+                 cycle_count, DUT.core.memwb_rd_addr, DUT.core.wb_data, DUT.core.memwb_wb_sel,
+                 DUT.core.memwb_mem_read_data);
+        if (DUT.core.memwb_rd_addr == 5'd14) begin  // x14 = a4 (itemSize)
+          $display("[WB-TRACE] *** This is the load of itemSize into a4! ***");
+        end
+      end
+    end
+  end
+
+  // ========================================
+  // MULHU Pipeline Trace - Session 45 Debug
+  // ========================================
+  // Detailed trace of MULHU instruction through all pipeline stages
+  // Tracks operand values, forwarding, and latching
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Track MULHU in ID stage
+      if (DUT.core.ifid_valid && DUT.core.id_is_mul_div_dec &&
+          DUT.core.id_mul_div_op_dec == 4'b0011) begin  // MULHU opcode
+        $display("========================================");
+        $display("[MULHU-ID] Cycle %0d: MULHU detected in ID stage", cycle_count);
+        $display("[MULHU-ID]   PC: 0x%08h", DUT.core.ifid_pc);
+        $display("[MULHU-ID]   rs1 = x%0d, rs2 = x%0d, rd = x%0d",
+                 DUT.core.id_rs1, DUT.core.id_rs2, DUT.core.id_rd);
+        $display("[MULHU-ID]   RegFile rs1 (x%0d) = 0x%08h",
+                 DUT.core.id_rs1, DUT.core.regfile.registers[DUT.core.id_rs1]);
+        $display("[MULHU-ID]   RegFile rs2 (x%0d) = 0x%08h",
+                 DUT.core.id_rs2, DUT.core.regfile.registers[DUT.core.id_rs2]);
+        $display("[MULHU-ID]   Load-use hazard = %b", DUT.core.hazard_unit.load_use_hazard);
+        $display("[MULHU-ID]   M extension stall = %b", DUT.core.hazard_unit.m_extension_stall);
+        $display("[MULHU-ID]   Stall PC = %b", DUT.core.stall_pc);
+      end
+
+      // Track MULHU in EX stage
+      if (DUT.core.idex_valid && DUT.core.idex_is_mul_div &&
+          DUT.core.idex_mul_div_op == 4'b0011) begin  // MULHU opcode
+        $display("========================================");
+        $display("[MULHU-EX] Cycle %0d: MULHU in EX stage", cycle_count);
+        $display("[MULHU-EX]   PC: 0x%08h", DUT.core.idex_pc);
+        $display("[MULHU-EX]   rs1 = x%0d, rs2 = x%0d, rd = x%0d",
+                 DUT.core.idex_rs1_addr, DUT.core.idex_rs2_addr, DUT.core.idex_rd_addr);
+        $display("[MULHU-EX]   IDEX rs1_data = 0x%08h", DUT.core.idex_rs1_data);
+        $display("[MULHU-EX]   IDEX rs2_data = 0x%08h", DUT.core.idex_rs2_data);
+        $display("[MULHU-EX]   Forward_a = %b, Forward_b = %b",
+                 DUT.core.forward_a, DUT.core.forward_b);
+        $display("[MULHU-EX]   EXMEM forward_data = 0x%08h", DUT.core.exmem_forward_data);
+        $display("[MULHU-EX]   EXMEM alu_result = 0x%08h", DUT.core.exmem_alu_result);
+        $display("[MULHU-EX]   MEM read_data = 0x%08h", DUT.core.mem_read_data);
+        $display("[MULHU-EX]   EXMEM wb_sel = %b", DUT.core.exmem_wb_sel);
+        $display("[MULHU-EX]   WB data = 0x%08h", DUT.core.wb_data);
+        $display("[MULHU-EX]   Forwarded operand_a = 0x%08h", DUT.core.ex_alu_operand_a_forwarded);
+        $display("[MULHU-EX]   Forwarded operand_b (rs2) = 0x%08h", DUT.core.ex_rs2_data_forwarded);
+        $display("[MULHU-EX]   M operands valid = %b", DUT.core.m_operands_valid);
+        $display("[MULHU-EX]   M operand_a_latched = 0x%08h", DUT.core.m_operand_a_latched);
+        $display("[MULHU-EX]   M operand_b_latched = 0x%08h", DUT.core.m_operand_b_latched);
+        $display("[MULHU-EX]   M final operand_a = 0x%08h", DUT.core.m_final_operand_a);
+        $display("[MULHU-EX]   M final operand_b = 0x%08h", DUT.core.m_final_operand_b);
+        $display("[MULHU-EX]   M unit busy = %b", DUT.core.ex_mul_div_busy);
+        $display("[MULHU-EX]   M unit start = %b", DUT.core.m_unit_start);
+      end
+
+      // Track MULHU result ready
+      if (DUT.core.idex_valid && DUT.core.idex_is_mul_div &&
+          DUT.core.idex_mul_div_op == 4'b0011 && DUT.core.ex_mul_div_ready) begin
+        $display("========================================");
+        $display("[MULHU-DONE] Cycle %0d: MULHU completed", cycle_count);
+        $display("[MULHU-DONE]   PC: 0x%08h", DUT.core.idex_pc);
+        $display("[MULHU-DONE]   Result = 0x%08h", DUT.core.ex_mul_div_result);
+        $display("[MULHU-DONE]   Expected high word of %0d * %0d",
+                 DUT.core.m_operand_a_latched, DUT.core.m_operand_b_latched);
+        $display("========================================");
+      end
+    end
+  end
+
 endmodule

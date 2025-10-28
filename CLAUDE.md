@@ -19,14 +19,14 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🔧 **BUS HANDSHAKING IMPLEMENTED** 🔧
 - **Achievement**: ✅ **PRINTF DUPLICATION BUG FIXED - UART OUTPUT CLEAN!** ✅
 - **OS Integration**: Phase 2 BLOCKED 🚧 - FreeRTOS boots, UART clean, but MULHU bug blocks scheduler
-- **Recent Work**: FreeRTOS Assertion Debug (2025-10-28 Session 44) - See below
-- **Session 44 Summary**: Root cause found - MULHU returns wrong value in FreeRTOS context (context-specific bug)
+- **Recent Work**: MULHU Bug Root Cause Analysis (2025-10-28 Session 45) - See below
+- **Session 45 Summary**: ROOT CAUSE ISOLATED - MULHU returns operand_a (10) instead of correct result (0)
 - **UART Status**: ✅ COMPLETELY CLEAN - No duplication, readable output, hardware working perfectly!
 - **Known Issues**:
-  - 🔥 **MULHU context-specific bug** (Session 44, CRITICAL - blocks FreeRTOS scheduler)
+  - 🔥 **MULHU arithmetic bug** (Session 45, CRITICAL - returns wrong value for MULHU(10,16))
   - ⚠️ FENCE.I test failing (pre-existing since Session 33, low priority)
   - ⚠️ picolibc printf() duplication (Session 43, workaround active with puts())
-- **Next Step**: FIX MULHU BUG - Debug multiplier/forwarding issue (Session 45)
+- **Next Step**: FIX MULHU BUG - Add multiplier internal tracing, implement fix (Session 46)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -123,6 +123,45 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 45 (2025-10-28)**: MULHU Bug Root Cause Analysis - ISOLATED! 🔍✅
+- **Achievement**: ROOT CAUSE ISOLATED - MULHU returns operand_a instead of correct result!
+- **Investigation Journey**: Comprehensive pipeline instrumentation revealed the truth
+  - Phase 1: Added MULHU pipeline tracing (ID/EX/DONE stages)
+  - Phase 2: Added load instruction and memory write tracing
+  - Phase 3: Discovered memory contains "wrong" values (10, 16 not 1, 84)
+  - Phase 4: Proved values are CORRECT for FreeRTOS timer queue!
+- **Key Discovery**: The bug is NOT forwarding or memory corruption
+  - FreeRTOS parameters are CORRECT: `configTIMER_QUEUE_LENGTH=10`, `sizeof(DaemonTaskMessage_t)=16`
+  - Memory stores work correctly, values intentionally written by software
+  - **MULHU arithmetic is WRONG**: MULHU(10, 16) returns 10 instead of 0!
+- **Root Cause**: MULHU returns operand_a instead of computed result
+  - Input A = 10 (0x0A), Input B = 16 (0x10)
+  - Expected = 0 (high word of 10×16=160)
+  - Actual = 10 (returns operand_a!) ❌
+- **Evidence from Pipeline Trace**:
+  ```
+  [MULHU-EX]   M operand_a_latched = 0x0000000a  (10)
+  [MULHU-EX]   M operand_b_latched = 0x00000010  (16)
+  [MULHU-DONE] Result = 0x0000000a               (10) ← WRONG!
+  ```
+- **Context-Specific Bug Confirmed**:
+  - ✅ Official `rv32um-p-mulhu`: PASSES
+  - ❌ MULHU in FreeRTOS context: FAILS
+  - Likely related to load-use hazard or specific pipeline state
+- **Instrumentation Added**: 100+ lines of debug tracing
+  - MULHU pipeline trace (operands, forwarding, latching)
+  - Load instruction monitoring
+  - Memory write tracking
+  - WB stage activity logging
+  - Register value tracing at critical PCs
+- **Status**: Root cause isolated ✅, multiplier internals need investigation 🚧
+- **Impact**: CRITICAL - Final blocker for Phase 2 (FreeRTOS Integration)
+- **Next Steps**:
+  - Add multiplier internal tracing (product register, state machine)
+  - Verify multiplication completes and result path is correct
+  - Implement targeted fix once exact bug identified
+- **Reference**: `docs/SESSION_45_SUMMARY.md`, `docs/SESSION_45_MULHU_BUG_ANALYSIS.md`, `docs/SESSION_45_MEMORY_CORRUPTION.md`
 
 **Session 44 (2025-10-28)**: FreeRTOS Assertion Debug - MULHU Bug Identified 🔍🔥
 - **Achievement**: Root cause of FreeRTOS assertion failure identified!
