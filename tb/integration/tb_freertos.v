@@ -83,6 +83,7 @@ module tb_freertos;
     $display("  Cycles: %0d", cycle_count);
     $display("  Time: %0d ms", (cycle_count * CLK_PERIOD) / 1000000);
     $display("  Last PC: 0x%08h", pc);
+    $display("  UART chars transmitted: %0d", uart_char_count);
     $display("========================================");
     $finish;
   end
@@ -127,21 +128,23 @@ module tb_freertos;
 
       if (uart_char_count == 1) begin
         $display("[UART] First character transmitted at cycle %0d", cycle_count);
+        $display("========================================");
+        $display("UART OUTPUT:");
+        $display("========================================");
       end
 
-      // Display characters directly (FreeRTOS uses printf)
+      // Log each character with details
       if (uart_tx_data >= 8'h20 && uart_tx_data <= 8'h7E) begin
-        $write("%c", uart_tx_data);  // Printable ASCII
+        $display("[UART-CHAR] Cycle %0d: 0x%02h '%c'", cycle_count, uart_tx_data, uart_tx_data);
       end else if (uart_tx_data == 8'h0A) begin
-        $write("\n");                // Newline
+        $display("[UART-CHAR] Cycle %0d: 0x%02h <LF>", cycle_count, uart_tx_data);
       end else if (uart_tx_data == 8'h0D) begin
-        // Carriage return - ignore
+        $display("[UART-CHAR] Cycle %0d: 0x%02h <CR>", cycle_count, uart_tx_data);
       end else if (uart_tx_data == 8'h09) begin
-        $write("    ");              // Tab -> 4 spaces
+        $display("[UART-CHAR] Cycle %0d: 0x%02h <TAB>", cycle_count, uart_tx_data);
       end else begin
-        $write("[0x%02h]", uart_tx_data);  // Non-printable
+        $display("[UART-CHAR] Cycle %0d: 0x%02h <non-printable>", cycle_count, uart_tx_data);
       end
-      $fflush();  // Flush output immediately
     end
   end
 
@@ -274,14 +277,14 @@ module tb_freertos;
                  cycle_count, pc, instruction);
       end
 
-      // Detailed trace around expected trap cycles (600-650 per Session 28)
-      if (cycle_count >= 600 && cycle_count <= 650) begin
-        $display("[PC-TRACE] Cycle %0d: PC=0x%08h, Instr=0x%08h",
-                 cycle_count, pc, instruction);
-      end
+      // Detailed trace around expected trap cycles (600-650 per Session 28) - DISABLED FOR SPEED
+      //if (cycle_count >= 600 && cycle_count <= 650) begin
+      //  $display("[PC-TRACE] Cycle %0d: PC=0x%08h, Instr=0x%08h",
+      //           cycle_count, pc, instruction);
+      //end
 
-      // Super detailed pipeline trace around cycle 605-610
-      if (cycle_count >= 603 && cycle_count <= 612) begin
+      // Super detailed pipeline trace around cycle 605-610 - DISABLED FOR SPEED
+      if (0 && cycle_count >= 603 && cycle_count <= 612) begin
         $display("[PIPELINE] Cycle %0d:", cycle_count);
         $display("  IF: PC=0x%08h, raw=0x%08h, final=0x%08h, compressed=%b",
                  DUT.core.pc_current, DUT.core.if_instruction_raw,

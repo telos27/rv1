@@ -11,13 +11,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎊 **FIRST UART OUTPUT - CONSOLE CHARACTERS WORKING!** 🎊
 - **Achievement**: ✅ **TWO CRITICAL BUGS FIXED - FORWARDING & ADDRESS DECODE** ✅
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
-- **Achievement**: 🎯 **IMEM CORRUPTION BUG FIXED - UNIFIED MEMORY ARCHITECTURE** 🎯
+- **Achievement**: 🎯 **IMEM BUG FIXED & VERIFIED - FREERTOS RUNS 500K CYCLES!** 🎯
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚀 - IMEM bug fixed, FreeRTOS can now execute!
-- **Recent Work**: IMEM Corruption Bug Fixed (2025-10-27 Session 30) - See below
-- **Session 30 Summary**: Fixed critical unified memory bug - DMEM stores were corrupting IMEM due to missing address filtering
-- **Next Step**: Continue FreeRTOS integration and debugging
+- **OS Integration**: Phase 2 IN PROGRESS 🚀 - FreeRTOS boots successfully, UART output debugging needed
+- **Recent Work**: IMEM Bug Verified (2025-10-27 Session 31) - See below
+- **Session 31 Summary**: IMEM corruption fix verified working - FreeRTOS executes 500k cycles without exceptions
+- **Next Step**: Debug UART string output issue (printf only outputs newlines, no text)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -112,6 +112,25 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 31 (2025-10-27)**: FreeRTOS Boot Verification - SUCCESS! 🎯✅
+- **Achievement**: IMEM corruption bug fix (Session 30) verified working - FreeRTOS runs 500k cycles without exceptions!
+- **Boot Verification**:
+  - BSS fast-clear: 260KB in 1 cycle ✓
+  - main() reached at cycle 95 ✓
+  - Scheduler starts at cycle 1001 ✓
+  - 500k cycles of clean execution, zero exceptions ✓
+- **IMEM Read Verification**:
+  - IMEM[0x210c] reads correctly throughout execution: 0x27068693 ✓
+  - All IMEM fetches return correct instruction data ✓
+  - No memory corruption detected ✓
+- **UART Hardware**: 16 characters transmitted (all newlines)
+  - Hardware path functional: Core → Bus → UART → TX ✓
+  - Issue identified: printf() only outputs newlines, no text content
+- **Problem**: String constants not being transmitted (likely .rodata section initialization issue)
+- **Impact**: FreeRTOS boots successfully! Hardware working, software printf issue remains
+- **Status**: Boot VERIFIED ✅, UART text output debugging needed 🚧
+- **Reference**: `docs/SESSION_31_FREERTOS_VERIFICATION.md`
 
 **Session 30 (2025-10-27)**: IMEM Corruption Bug - FIXED! 🎯✅
 - **Achievement**: Fixed critical unified memory bug blocking FreeRTOS execution!
