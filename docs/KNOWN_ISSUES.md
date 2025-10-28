@@ -111,12 +111,13 @@ printf("TEST"): "TTEESSTT" ❌ Every character duplicated
 
 **⚠️ DO NOT CONSIDER THIS ISSUE "RESOLVED" - IT'S ONLY WORKED AROUND!**
 
-**Current Status**:
+**Current Status** (Session 47, 2025-10-28):
 - Quick regression: 14/14 PASSED ✅
 - FreeRTOS boot: Clean UART output ✅
-- FreeRTOS execution: Assertion failure (separate issue, under investigation)
+- FreeRTOS execution: ✅ **WORKING** (MULHU bug fixed in Session 46)
+- Enhanced testing: 🔄 In Progress (Session 47)
 
-**Fix Priority**: Medium (workaround sufficient for Phase 2, but needs proper fix later)
+**Fix Priority**: Low-Medium (workaround sufficient for Phase 2 testing)
 - Workaround allows FreeRTOS debugging to proceed ✅
 - Will need proper printf() for production/demo applications
 - Not blocking current Phase 2 work

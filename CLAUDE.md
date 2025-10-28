@@ -3,9 +3,20 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 46, 2025-10-28)
+## Current Status (Session 47, 2025-10-28)
 
-### 🎉 MAJOR MILESTONE: MULHU Bug FIXED!
+### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
+- **Status**: Blocked - Scheduler Debug Needed (Session 47 → 48)
+- **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
+- **Tasks**:
+  1. ✅ Basic FreeRTOS boot validated (Session 46)
+  2. ✅ Enhanced multitasking demo created (Session 47)
+  3. ✅ Queue and sync demos created (Session 47)
+  4. 🐛 **BLOCKER**: Scheduler starts but tasks don't execute (Session 48)
+  5. 📋 Debug/fix printf() duplication issue
+  6. 📋 Optional: UART interrupt-driven I/O
+
+### 🎉 Recent Milestone (Session 46): MULHU Bug FIXED!
 - **M-Extension Forwarding Bug**: RESOLVED ✅
   - Root cause: Missing M-extension result in data forwarding path
   - Fix: Added `exmem_mul_div_result` to `exmem_forward_data` multiplexer
@@ -17,11 +28,16 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Quick Regression**: 14/14 tests, ~4s runtime
 - **FreeRTOS**: Boots successfully, scheduler starts, tasks created ✅
 
-### Recent Achievements (Session 46)
-- ✅ **MULHU forwarding bug FIXED** - FreeRTOS now fully functional!
+### Recent Achievements (Session 46-47)
+- ✅ **MULHU forwarding bug FIXED** (Session 46)
 - ✅ Comprehensive multiplier debug tracing added
 - ✅ Data forwarding path corrected for M-extension
-- ✅ All regression tests still passing
+- ✅ All regression tests still passing (14/14, 80/81 official)
+- ✅ Enhanced FreeRTOS testing suite created (Session 47)
+  - Created 3 new comprehensive demos (enhanced, queue, sync)
+  - Updated Makefile for multi-demo support
+  - All demos build successfully
+- 🐛 **Discovered scheduler issue** - tasks not executing (Session 47)
 
 ### Previous Achievements
 - ✅ FreeRTOS boots successfully, UART output clean
@@ -31,6 +47,10 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - ✅ RVC FP decoder (C.FLDSP/C.FSDSP support)
 
 ### Active Issues
+- 🐛 **CRITICAL**: FreeRTOS scheduler starts but tasks don't execute (Session 48 debug needed)
+  - Symptom: Scheduler starts, but no task output ever appears
+  - Hypothesis: Timer interrupts not firing or interrupts not enabled
+  - Next: Debug CLINT, interrupt enables, and trap handler
 - ⚠️ FENCE.I test (low priority - self-modifying code)
 - ⚠️ picolibc printf() duplication (workaround: use puts())
 

@@ -332,7 +332,9 @@ Complete the 6 skipped tests from Phase 3:
 ## Phase 2: FreeRTOS on RV32
 
 **Duration**: 1-2 weeks
-**Status**: ⏭️ Pending (blocked on Phase 1)
+**Status**: 🔄 **In Progress - Optimization Phase** (Session 47, 2025-10-28)
+**Basic Boot**: ✅ Complete (Session 46)
+**Enhanced Testing**: 🔄 In Progress (Session 47)
 
 ### 2.1: FreeRTOS Port
 
@@ -472,14 +474,63 @@ freertos.hex: freertos.elf
 	$(OBJCOPY) -O verilog $< $@
 ```
 
-### 2.4: Validation Criteria
+### 2.4: Enhanced Testing Suite (Session 47)
+
+**Status**: 🔄 In Progress
+**Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
+
+#### Current Status (Session 47, 2025-10-28)
+- ✅ **Basic Boot**: FreeRTOS boots, creates tasks, starts scheduler (Session 46)
+- ✅ **MULHU Bug Fixed**: Data forwarding bug resolved (Session 46)
+- 🔄 **Enhanced Demos**: Creating comprehensive test suite (Session 47)
+
+#### Test Suite Components
+
+**1. Enhanced Multitasking Demo** (`demos/enhanced/main_enhanced.c`)
+- Multiple tasks with different priorities
+- Immediate output (no long delays) for simulation visibility
+- Task preemption testing
+- Priority inheritance validation
+
+**2. Queue Communication Test** (`demos/queue/main_queue.c`)
+- Producer-consumer pattern
+- Multiple producers, single consumer
+- Queue full/empty handling
+- Verify FIFO ordering and data integrity
+
+**3. Synchronization Primitives** (`demos/sync/main_sync.c`)
+- Binary semaphores (signaling between tasks)
+- Counting semaphores (resource pools)
+- Mutexes (shared resource protection)
+- Priority inheritance for mutexes
+
+**4. Software Timers** (`demos/timers/main_timers.c`)
+- One-shot timers
+- Auto-reload timers
+- Timer callback execution
+
+**5. Stress Test** (`demos/stress/main_stress.c`)
+- Many tasks (8+) with rapid context switching
+- High-frequency queue operations
+- Memory allocation/deallocation patterns
+- Extended runtime (simulate minutes of operation)
+
+#### Known Issues Being Tracked
+- ⚠️ **printf() duplication**: picolibc printf() outputs duplicate characters
+  - **Workaround**: Use puts() for string output (works correctly)
+  - **Status**: To be debugged in Session 47
+  - **Root Cause**: Likely UART driver or picolibc syscalls issue
+
+#### Validation Criteria (Updated)
 - ✅ Boot message "FreeRTOS started" appears
-- ✅ Multiple tasks print messages in interleaved order
-- ✅ Task delays work correctly (timing verified)
-- ✅ Queue send/receive works without data corruption
-- ✅ Semaphores work (binary and counting)
-- ✅ No stack overflow or memory corruption
-- ✅ System runs for extended period (hours) without hang
+- 🔄 Multiple tasks print messages in interleaved order
+- 🔄 Task delays work correctly (timing verified)
+- 📋 Queue send/receive works without data corruption
+- 📋 Semaphores work (binary and counting)
+- 📋 Mutexes prevent race conditions
+- 📋 Priority-based preemption works correctly
+- 📋 No stack overflow or memory corruption
+- 📋 System runs for extended period without hang
 
 ---
 

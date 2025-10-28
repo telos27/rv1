@@ -2,7 +2,10 @@
 # Target: RV32IMAFDC
 # Created: 2025-10-27
 
-PROJECT = freertos-rv1
+# Demo selection - can be overridden: make DEMO=enhanced
+DEMO ?= blinky
+
+PROJECT = freertos-$(DEMO)
 PREFIX = riscv64-unknown-elf-
 CC = $(PREFIX)gcc
 OBJCOPY = $(PREFIX)objcopy
@@ -28,7 +31,8 @@ KERNEL_SRCS = $(KERNEL_DIR)/tasks.c $(KERNEL_DIR)/queue.c $(KERNEL_DIR)/list.c \
 PORT_SRCS = $(PORT_DIR)/port.c
 PORT_ASM_SRCS = $(PORT_DIR)/start.S $(PORT_DIR)/portASM.S
 
-DEMO_SRCS = $(DEMO_DIR)/blinky/main_blinky.c
+# Select demo source file based on DEMO variable
+DEMO_SRCS = $(DEMO_DIR)/$(DEMO)/main_$(DEMO).c
 LIB_SRCS = $(LIB_DIR)/uart.c $(LIB_DIR)/syscalls.c
 
 C_SRCS = $(KERNEL_SRCS) $(PORT_SRCS) $(DEMO_SRCS) $(LIB_SRCS)
@@ -54,17 +58,38 @@ C_OBJS = $(addprefix $(BUILD_DIR)/, $(notdir $(C_SRCS:.c=.o)))
 ASM_OBJS = $(addprefix $(BUILD_DIR)/, $(notdir $(ASM_SRCS:.S=.o)))
 ALL_OBJS = $(C_OBJS) $(ASM_OBJS)
 
-.PHONY: all clean blinky help
+.PHONY: all clean blinky enhanced queue sync help
 
-all: blinky
+all: $(BUILD_DIR)/$(PROJECT).elf $(BUILD_DIR)/$(PROJECT).hex
+	@echo "Built $(DEMO) demo successfully!"
 
 help:
 	@echo "FreeRTOS Build System for RV1"
-	@echo "  make blinky    - Build LED blinky demo"
-	@echo "  make clean     - Remove build artifacts"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make                - Build default demo (blinky)"
+	@echo "  make DEMO=blinky    - Build basic blinky demo"
+	@echo "  make DEMO=enhanced  - Build enhanced multitasking demo"
+	@echo "  make DEMO=queue     - Build queue communication demo"
+	@echo "  make DEMO=sync      - Build synchronization primitives demo"
+	@echo "  make clean          - Remove build artifacts"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make DEMO=enhanced"
+	@echo "  make DEMO=queue clean all"
 
-blinky: $(BUILD_DIR)/$(PROJECT).elf $(BUILD_DIR)/$(PROJECT).hex
-	@echo "Built blinky demo successfully!"
+# Convenience targets
+blinky:
+	$(MAKE) DEMO=blinky
+
+enhanced:
+	$(MAKE) DEMO=enhanced
+
+queue:
+	$(MAKE) DEMO=queue
+
+sync:
+	$(MAKE) DEMO=sync
 
 $(BUILD_DIR)/$(PROJECT).elf: $(ALL_OBJS) | $(BUILD_DIR)
 	@echo "Linking $@..."
