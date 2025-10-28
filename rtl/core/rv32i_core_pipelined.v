@@ -1235,6 +1235,7 @@ module rv_core_pipelined #(
     .memwb_rd(memwb_rd_addr),
     .memwb_reg_write(memwb_reg_write),
     .memwb_int_reg_write_fp(memwb_int_reg_write_fp),
+    .memwb_valid(memwb_valid),
 
     // ID stage FP forwarding
     .id_fp_rs1(id_rs1),

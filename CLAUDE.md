@@ -9,12 +9,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎉 **FREERTOS BOOTS - SCHEDULER RUNNING** 🎉
 - **Achievement**: ⚡ **BSS FAST-CLEAR - 2000x BOOT SPEEDUP** ⚡
 - **Achievement**: 🎊 **FIRST UART OUTPUT - CONSOLE CHARACTERS WORKING!** 🎊
+- **Achievement**: ✅ **TWO CRITICAL BUGS FIXED - FORWARDING & ADDRESS DECODE** ✅
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, first UART output achieved!
-- **Recent Work**: UART Debug & First Output (2025-10-27 Session 25) - See below
-- **Session 25 Summary**: Fixed picolibc puts() issue, achieved first UART characters at cycle 145!
-- **Next Step**: Session 26 - Debug remaining exceptions, get full banner output
+- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS runs 500k cycles, debugging exceptions
+- **Recent Work**: Critical Bug Fixes (2025-10-27 Session 27) - See below
+- **Session 27 Summary**: Fixed WB→ID forwarding bug and DMEM address decode bug (64KB→1MB)
+- **Next Step**: Session 28 - Debug illegal instruction exceptions, achieve full UART banner
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -109,6 +110,27 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 27 (2025-10-27)**: Critical Bug Fixes - Forwarding & Address Decode ✅✅
+- **Achievement**: TWO critical correctness bugs identified and fixed!
+- **Bug #1 - Forwarding**: WB→ID forwarding didn't check `memwb_valid`, causing stale data from flushed instructions to be forwarded
+- **Fix #1**: Added `memwb_valid` gating to all 10 WB forwarding paths in forwarding unit
+- **Bug #2 - Address Decode**: DMEM mask was 64KB (`0xFFFF_0000`) but FreeRTOS needs 1MB, causing stack/heap beyond 64KB to fail
+- **Fix #2**: Changed DMEM_MASK to `0xFFF0_0000` (1MB range) in bus interconnect
+- **Verification**: Memory operations now work correctly - write 0x22ac to 0x800c212c, read 0x22ac back (was 0x0!)
+- **Impact**: CRITICAL - affects all programs using >64KB memory or relying on proper forwarding
+- **Result**: FreeRTOS simulation runs full 500k cycles (was ~160), return addresses preserved correctly
+- **Status**: Both bugs fixed ✅, quick regression 14/14 passing, but illegal instruction exceptions persist
+- **Reference**: `docs/SESSION_27_CRITICAL_BUG_FIXES.md`
+
+**Session 26 (2025-10-27)**: Return Address Corruption Debug 🔍
+- **Achievement**: Root cause identified - ra register contains 0x0 instead of 0x22ac
+- **Problem Chain**: JAL writes ra → SW saves ra to stack → LW loads 0x0 from stack → ret jumps to 0x0 → illegal instruction
+- **Root Cause**: RAW hazard between JAL (writing x1 in WB) and SW (reading x1 in ID), forwarding path exists but may not be working
+- **Evidence**: Link register trace shows JAL writes 0x22ac at cycle 121, but load from stack gets 0x0 at cycle 149
+- **Instrumentation**: Added link register write monitoring, PC traces for cycles 117-155
+- **Status**: Root cause identified ✅, fix implementation needed 🚧 (requires pipeline signal access)
+- **Reference**: `docs/SESSION_26_RETURN_ADDRESS_DEBUG.md`
 
 **Session 25 (2025-10-27)**: UART Debug & First Output! 🎊
 - **Achievement**: First UART characters transmitted at cycle 145! (2 newlines successfully)

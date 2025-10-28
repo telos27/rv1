@@ -150,61 +150,82 @@ module tb_freertos;
   // ========================================
   // Monitor UART writes, function calls, and exceptions
 
-  // UART bus monitor - track all UART register accesses
-  always @(posedge clk) begin
-    if (reset_n && DUT.uart_req_valid) begin
-      if (DUT.uart_req_we) begin
-        // UART write detected
-        $display("[UART-BUS] Write to offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
-                 DUT.uart_req_addr, DUT.uart_req_wdata, cycle_count, pc);
-      end else begin
-        // UART read detected
-        $display("[UART-BUS] Read from offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
-                 DUT.uart_req_addr, DUT.uart_req_rdata, cycle_count, pc);
-      end
-    end
-  end
+  // UART bus monitor - COMMENTED OUT FOR SPEED
+  //always @(posedge clk) begin
+  //  if (reset_n && DUT.uart_req_valid) begin
+  //    if (DUT.uart_req_we) begin
+  //      // UART write detected
+  //      $display("[UART-BUS] Write to offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
+  //               DUT.uart_req_addr, DUT.uart_req_wdata, cycle_count, pc);
+  //    end else begin
+  //      // UART read detected
+  //      $display("[UART-BUS] Read from offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
+  //               DUT.uart_req_addr, DUT.uart_req_rdata, cycle_count, pc);
+  //    end
+  //  end
+  //end
 
-  // Function entry tracking
-  reg uart_init_entered;
-  reg printf_entered;
-  reg puts_entered;
-  initial uart_init_entered = 0;
-  initial printf_entered = 0;
-  initial puts_entered = 0;
+  // Function entry tracking - DISABLED FOR SPEED
+  //reg uart_init_entered;
+  //reg printf_entered;
+  //reg puts_entered;
+  //initial uart_init_entered = 0;
+  //initial printf_entered = 0;
+  //initial puts_entered = 0;
+  //
+  //always @(posedge clk) begin
+  //  if (reset_n) begin
+  //    // uart_init() entry: 0x23d6
+  //    if (!uart_init_entered && pc == 32'h000023d6) begin
+  //      uart_init_entered = 1;
+  //      $display("[FUNC-ENTRY] uart_init() entered at cycle %0d", cycle_count);
+  //    end
+  //
+  //    // puts() entry: 0x2610
+  //    if (pc == 32'h00002610) begin
+  //      if (!puts_entered) begin
+  //        puts_entered = 1;
+  //        $display("[FUNC-ENTRY] puts() FIRST CALL at cycle %0d", cycle_count);
+  //      end
+  //      $display("[FUNC-CALL] puts() called at cycle %0d", cycle_count);
+  //    end
+  //
+  //    // printf() entry: 0x25ea
+  //    if (pc == 32'h000025ea) begin
+  //      if (!printf_entered) begin
+  //        printf_entered = 1;
+  //        $display("[FUNC-ENTRY] printf() FIRST CALL at cycle %0d", cycle_count);
+  //      end
+  //      $display("[FUNC-CALL] printf() called at cycle %0d", cycle_count);
+  //    end
+  //
+  //    // Track key milestones in main()
+  //    if (pc == 32'h000022a4) begin
+  //      $display("[MAIN] Returned from uart_init() at cycle %0d", cycle_count);
+  //    end
+  //  end
+  //end
 
-  always @(posedge clk) begin
-    if (reset_n) begin
-      // uart_init() entry: 0x23d6
-      if (!uart_init_entered && pc == 32'h000023d6) begin
-        uart_init_entered = 1;
-        $display("[FUNC-ENTRY] uart_init() entered at cycle %0d", cycle_count);
-      end
-
-      // puts() entry: 0x2610
-      if (pc == 32'h00002610) begin
-        if (!puts_entered) begin
-          puts_entered = 1;
-          $display("[FUNC-ENTRY] puts() FIRST CALL at cycle %0d", cycle_count);
-        end
-        $display("[FUNC-CALL] puts() called at cycle %0d", cycle_count);
-      end
-
-      // printf() entry: 0x25ea
-      if (pc == 32'h000025ea) begin
-        if (!printf_entered) begin
-          printf_entered = 1;
-          $display("[FUNC-ENTRY] printf() FIRST CALL at cycle %0d", cycle_count);
-        end
-        $display("[FUNC-CALL] printf() called at cycle %0d", cycle_count);
-      end
-
-      // Track key milestones in main()
-      if (pc == 32'h000022a4) begin
-        $display("[MAIN] Returned from uart_init() at cycle %0d", cycle_count);
-      end
-    end
-  end
+  // Memory write monitoring (cycles 120-155) - Session 27 debug - DISABLED FOR SPEED
+  //always @(posedge clk) begin
+  //  if (reset_n && cycle_count >= 120 && cycle_count <= 155) begin
+  //    // Monitor DMEM writes (stack operations)
+  //    if (DUT.core.exmem_mem_write && DUT.core.exmem_valid) begin
+  //      $display("[MEM-WRITE] Cycle %0d: addr=0x%08h, data=0x%08h, PC=0x%08h",
+  //               cycle_count, DUT.core.exmem_alu_result, DUT.core.exmem_mem_write_data, DUT.core.exmem_pc);
+  //    end
+  //    // Monitor DMEM reads (stack loads)
+  //    if (DUT.core.exmem_mem_read && DUT.core.exmem_valid) begin
+  //      $display("[MEM-READ] Cycle %0d: addr=0x%08h, PC=0x%08h",
+  //               cycle_count, DUT.core.exmem_alu_result, DUT.core.exmem_pc);
+  //    end
+  //    // Monitor WB stage loads to x1 (ra)
+  //    if (DUT.core.memwb_reg_write && DUT.core.memwb_rd_addr == 5'd1 && DUT.core.memwb_wb_sel == 3'b001) begin
+  //      $display("[LOAD-RA] Cycle %0d: loaded ra=0x%08h from memory",
+  //               cycle_count, DUT.core.wb_data);
+  //    end
+  //  end
+  //end
 
   // Exception/trap monitoring
   reg [63:0] prev_mcause;
@@ -243,6 +264,27 @@ module tb_freertos;
         $display("[DEBUG] Cycle %0d, PC: 0x%08h, Instr: 0x%08h",
                  cycle_count, pc, instruction);
       end
+
+      // Detailed trace around puts() call (cycles 117-125) - COMMENTED OUT FOR SPEED
+      //if (cycle_count >= 117 && cycle_count <= 125) begin
+      //  $display("[PC-TRACE] Cycle %0d: PC=0x%08h, Instr=0x%08h",
+      //           cycle_count, pc, instruction);
+      //end
+
+      // Trace link register writes - COMMENTED OUT FOR SPEED
+      //if (cycle_count >= 117 && cycle_count <= 160) begin
+      //  if (DUT.core.int_reg_write_enable && DUT.core.memwb_rd_addr == 5'd1) begin
+      //    $display("[LINK-REG] Cycle %0d: Writing ra(x1) = 0x%08h (wb_sel=%b, wen=%b, valid=%b)",
+      //             cycle_count, DUT.core.wb_data, DUT.core.memwb_wb_sel,
+      //             DUT.core.int_reg_write_enable, DUT.core.memwb_valid);
+      //  end
+      //end
+
+      // Trace register x1 (ra) value changes - COMMENTED OUT FOR SPEED
+      //if (cycle_count >= 120 && cycle_count <= 130) begin
+      //  $display("[REG-ra] Cycle %0d: ra(x1) value = 0x%08h",
+      //           cycle_count, DUT.core.regfile.registers[1]);
+      //end
 
       // Detect main() reached (address 0x229C)
       if (!main_reached && pc == 32'h0000229c) begin

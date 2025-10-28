@@ -89,7 +89,7 @@ module simple_bus #(
   localparam UART_BASE  = 32'h1000_0000;
   localparam UART_MASK  = 32'hFFFF_F000;   // 4KB range
   localparam DMEM_BASE  = 32'h8000_0000;
-  localparam DMEM_MASK  = 32'hFFFF_0000;   // 64KB range
+  localparam DMEM_MASK  = 32'hFFF0_0000;   // 1MB range (was 64KB - BUG FIX Session 27)
   localparam PLIC_BASE  = 32'h0C00_0000;
   localparam PLIC_MASK  = 32'hFC00_0000;   // 64MB range
 

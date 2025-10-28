@@ -4,13 +4,113 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-None! All critical issues have been resolved as of 2025-10-26 Session 7. ✅
+### 1. FreeRTOS Illegal Instruction Exceptions (ACTIVE 2025-10-27)
+
+**Status**: IN PROGRESS 🚧
+**Priority**: MEDIUM - FreeRTOS runs but has exceptions
+**Affected**: FreeRTOS boot process, trap handler
+
+#### Description
+
+FreeRTOS boots successfully and runs for 500k cycles, but encounters illegal instruction exceptions (cause=2) at various PC values. Only 1 UART character is transmitted instead of the full banner string.
+
+**Symptoms**:
+- Simulation runs to completion (500k cycles)
+- Only 1 UART character transmitted (0x0a = newline)
+- Illegal instruction exceptions at mepc=0x210c, 0x2548, 0x2522, 0x2500
+- Trap handler appears to be looping
+
+**Evidence**:
+```
+[MILESTONE] main() reached at cycle 95
+[UART] First character transmitted at cycle 145
+[TRAP] Exception/Interrupt detected
+       mcause = 0x0000000000000002 (interrupt=0, code=2)
+       mepc   = 0x0000210c
+       PC     = 0x00002500
+```
+
+**Next Steps**:
+1. Disassemble addresses 0x210c, 0x2500 to identify problematic instructions
+2. Check if trap handler return address is correct
+3. Verify trap delegation settings
+4. Debug printf/puts path for remaining characters
+
+**Blocked By**: None (can debug with current tools)
+**Reference**: `docs/SESSION_27_CRITICAL_BUG_FIXES.md`
 
 ---
 
 ## Resolved Issues
 
-### 1. Synchronous Pipeline Trap Latency - test_delegation_disable (RESOLVED 2025-10-26)
+### 1. WB→ID Forwarding Not Gating on memwb_valid (RESOLVED 2025-10-27)
+
+**Status**: FIXED ✅ (Session 27)
+**Priority**: CRITICAL - Correctness bug affecting all programs
+**Affected**: Any instruction with RAW hazard to flushed instruction
+
+#### Description
+
+The forwarding unit forwarded data from WB stage without checking if the instruction was valid (not flushed), causing stale/invalid data from flushed instructions to be forwarded to ID stage.
+
+**Root Cause**:
+- Register file writes gated by `memwb_valid` (line 880 of `rv32i_core_pipelined.v`)
+- Forwarding unit only checked `memwb_reg_write`, NOT `memwb_valid`
+- Result: Could forward garbage data from flushed instructions
+
+**Symptoms**:
+- Return address (ra) corruption: JAL writes 0x22ac, but SW saves 0x0
+- Stack operations failed intermittently
+- Random register data corruption
+
+**Solution**:
+- Added `memwb_valid` input to forwarding unit
+- Gated all 10 WB forwarding paths with `&& memwb_valid`
+- Locations: ID/EX stage integer/FP forwarding (lines 106, 127, 156, 184, 217, 236, 255, 276, 291, 306)
+
+**Files Modified**:
+- `rtl/core/forwarding_unit.v` (10 changes)
+- `rtl/core/rv32i_core_pipelined.v` (1 change - wiring)
+
+**Impact**: Affects any program that has exceptions, interrupts, or branch mispredictions that flush pipeline stages.
+
+**Reference**: `docs/SESSION_27_CRITICAL_BUG_FIXES.md`
+
+### 2. DMEM Address Decode Limited to 64KB (RESOLVED 2025-10-27)
+
+**Status**: FIXED ✅ (Session 27)
+**Priority**: CRITICAL - Prevents use of >64KB memory
+**Affected**: Any program using >64KB of DMEM
+
+#### Description
+
+Bus interconnect DMEM address mask was configured for 64KB range (`0xFFFF_0000`), but FreeRTOS uses 1MB of DMEM. Any stack or heap access beyond 64KB would fail address decode, causing writes/reads to go nowhere.
+
+**Root Cause**:
+- `DMEM_MASK = 0xFFFF_0000` in `simple_bus.v` (line 92)
+- Address decode: `(addr & MASK) == BASE`
+- Example: `0x800c_212c & 0xFFFF_0000 = 0x800c_0000 != 0x8000_0000` → No match!
+
+**Symptoms**:
+- Memory writes appeared to execute but data was lost
+- Memory reads returned 0x0 instead of written values
+- Stack beyond 64KB failed (FreeRTOS stack at ~770KB)
+- Heap allocations beyond 64KB failed silently
+
+**Solution**:
+- Changed `DMEM_MASK` from `0xFFFF_0000` (64KB) to `0xFFF0_0000` (1MB)
+- Address decode now works: `0x800c_212c & 0xFFF0_0000 = 0x8000_0000` ✅
+
+**Files Modified**:
+- `rtl/interconnect/simple_bus.v` (1 change)
+
+**Impact**: Prevents any program from using more than 64KB of memory. FreeRTOS requires ~1MB for heap/stack/BSS.
+
+**Verification**: Memory operations now work correctly - write 0x22ac to 0x800c212c, read 0x22ac back (was 0x0 before fix).
+
+**Reference**: `docs/SESSION_27_CRITICAL_BUG_FIXES.md`
+
+### 3. Synchronous Pipeline Trap Latency - test_delegation_disable (RESOLVED 2025-10-26)
 
 **Status**: FIXED ✅ via Writeback Gating (Session 7)
 **Priority**: HIGH - Was blocking Phase 6 privilege mode tests

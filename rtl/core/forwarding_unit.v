@@ -48,6 +48,7 @@ module forwarding_unit (
   input  wire [4:0] memwb_rd,          // WB stage destination register
   input  wire       memwb_reg_write,   // WB stage will write to register
   input  wire       memwb_int_reg_write_fp, // WB stage FP-to-INT write
+  input  wire       memwb_valid,       // WB stage instruction is valid (not flushed)
 
   // ========================================
   // FP Register Forwarding
@@ -101,7 +102,8 @@ module forwarding_unit (
       id_forward_a = 3'b010;  // Forward from MEM stage
     end
     // Check WB stage (lowest priority - oldest instruction)
-    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == id_rs1)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == id_rs1) && memwb_valid) begin
       id_forward_a = 3'b001;  // Forward from WB stage
     end
   end
@@ -121,7 +123,8 @@ module forwarding_unit (
       id_forward_b = 3'b010;  // Forward from MEM stage
     end
     // Check WB stage (lowest priority)
-    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == id_rs2)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == id_rs2) && memwb_valid) begin
       id_forward_b = 3'b001;  // Forward from WB stage
     end
   end
@@ -149,7 +152,8 @@ module forwarding_unit (
     // WB hazard: Forward from MEM/WB (only if no MEM hazard)
     // Condition: MEM/WB.reg_write AND MEM/WB.rd != 0 AND MEM/WB.rd == ID/EX.rs1
     // Include FP-to-INT writes
-    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == idex_rs1)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == idex_rs1) && memwb_valid) begin
       forward_a = 2'b01;
       `ifdef DEBUG_FORWARD
       $display("[FORWARD_A] @%0t WB hazard: rs1=x%0d matches memwb_rd=x%0d (fwd=2'b01)", $time, idex_rs1, memwb_rd);
@@ -176,7 +180,8 @@ module forwarding_unit (
     end
     // WB hazard: Forward from MEM/WB
     // Include FP-to-INT writes
-    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == idex_rs2)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if ((memwb_reg_write | memwb_int_reg_write_fp) && (memwb_rd != 5'h0) && (memwb_rd == idex_rs2) && memwb_valid) begin
       forward_b = 2'b01;
       `ifdef DEBUG_FORWARD
       $display("[FORWARD_B] @%0t WB hazard: rs2=x%0d matches memwb_rd=x%0d (fwd=2'b01)", $time, idex_rs2, memwb_rd);
@@ -208,7 +213,8 @@ module forwarding_unit (
       id_fp_forward_a = 3'b010;  // Forward from MEM stage
     end
     // Check WB stage (lowest priority)
-    else if (memwb_fp_reg_write && (memwb_fp_rd == id_fp_rs1)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if (memwb_fp_reg_write && (memwb_fp_rd == id_fp_rs1) && memwb_valid) begin
       id_fp_forward_a = 3'b001;  // Forward from WB stage
     end
   end
@@ -226,7 +232,8 @@ module forwarding_unit (
       id_fp_forward_b = 3'b010;  // Forward from MEM stage
     end
     // Check WB stage (lowest priority)
-    else if (memwb_fp_reg_write && (memwb_fp_rd == id_fp_rs2)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if (memwb_fp_reg_write && (memwb_fp_rd == id_fp_rs2) && memwb_valid) begin
       id_fp_forward_b = 3'b001;  // Forward from WB stage
     end
   end
@@ -244,7 +251,8 @@ module forwarding_unit (
       id_fp_forward_c = 3'b010;  // Forward from MEM stage
     end
     // Check WB stage (lowest priority)
-    else if (memwb_fp_reg_write && (memwb_fp_rd == id_fp_rs3)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if (memwb_fp_reg_write && (memwb_fp_rd == id_fp_rs3) && memwb_valid) begin
       id_fp_forward_c = 3'b001;  // Forward from WB stage
     end
   end
@@ -264,7 +272,8 @@ module forwarding_unit (
       fp_forward_a = 2'b10;
     end
     // WB hazard: Forward from MEM/WB (only if no MEM hazard)
-    else if (memwb_fp_reg_write && (memwb_fp_rd == idex_fp_rs1)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if (memwb_fp_reg_write && (memwb_fp_rd == idex_fp_rs1) && memwb_valid) begin
       fp_forward_a = 2'b01;
     end
   end
@@ -278,7 +287,8 @@ module forwarding_unit (
       fp_forward_b = 2'b10;
     end
     // WB hazard: Forward from MEM/WB
-    else if (memwb_fp_reg_write && (memwb_fp_rd == idex_fp_rs2)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if (memwb_fp_reg_write && (memwb_fp_rd == idex_fp_rs2) && memwb_valid) begin
       fp_forward_b = 2'b01;
     end
   end
@@ -292,7 +302,8 @@ module forwarding_unit (
       fp_forward_c = 2'b10;
     end
     // WB hazard: Forward from MEM/WB
-    else if (memwb_fp_reg_write && (memwb_fp_rd == idex_fp_rs3)) begin
+    // CRITICAL: Only forward if memwb_valid=1 (prevents forwarding from flushed instructions)
+    else if (memwb_fp_reg_write && (memwb_fp_rd == idex_fp_rs3) && memwb_valid) begin
       fp_forward_c = 2'b01;
     end
   end
