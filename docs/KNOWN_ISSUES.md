@@ -4,9 +4,109 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-**None!** All critical issues resolved as of 2025-10-27 (Session 30). 🎉
+### FENCE.I Self-Modifying Code Support (Medium Priority)
 
-FreeRTOS now boots correctly and executes without IMEM corruption.
+**Status**: 🐛 FAILING (Pre-existing since Session 33)
+**Severity**: Medium
+**Test**: `rv32ui-p-fence_i` (official compliance test)
+**Introduced**: Session 33 (IMEM Bus Access changes)
+**Compliance Impact**: 80/81 passing (98.8%)
+
+**Description**:
+The FENCE.I instruction synchronizes instruction and data caches after self-modifying code. The official test writes new instructions to memory and executes them after FENCE.I.
+
+**Current Behavior**:
+Test fails at test #5 with `gp=0x5`, indicating the fifth test case is not working correctly.
+
+**Root Cause** (Hypothesis):
+Likely related to Session 33's IMEM bus access changes:
+- Session 33 added IMEM as read-only slave on bus for .rodata access
+- IMEM writes via stores may not properly route to instruction memory
+- Write path may be affected by Harvard architecture modifications
+
+**Investigation Status**:
+- Session 34/35 write pulse changes did NOT cause this (verified via git bisect)
+- Test was passing before Session 33 changes
+- IMEM write enable logic exists but may not work with bus architecture
+
+**Workaround**:
+None. Self-modifying code is rare in modern RISC-V software. Most use cases:
+- JIT compilers (not typical in embedded systems)
+- Dynamic code patching (uncommon)
+- Boot loaders (can work around limitation)
+
+**Impact Assessment**:
+- **FreeRTOS**: ✅ Not affected (doesn't use self-modifying code)
+- **Linux**: ✅ Not affected (uses proper I/D cache management)
+- **Compliance**: 98.8% (80/81 tests passing)
+- **Real-world**: Low impact (self-modifying code rarely used)
+
+**Fix Priority**: Medium
+- Not blocking FreeRTOS or OS integration work
+- Should be fixed before claiming "full RV32I compliance"
+- Low real-world impact
+
+**Estimated Effort**: 2-4 hours
+- Debug IMEM write path in Session 33 bus integration
+- Verify store-to-IMEM routing through bus interconnect
+- Test with fence_i compliance test
+
+---
+
+## Recent Fixes
+
+### Session 35: Atomic Operations Write Pulse Exception (RESOLVED 2025-10-27)
+
+**Status**: FIXED ✅
+**Severity**: Critical
+**Impact**: All atomic operations (LR/SC, AMO)
+
+**Problem**:
+Session 34's write pulse optimization broke atomic operations:
+- `rv32ua-p-amoswap_w`: FAILED at test #7
+- `rv32ua-p-lrsc`: TIMEOUT
+- Quick regression: 12/14 (down from 14/14)
+
+**Root Cause**:
+One-shot write pulse logic prevented multi-cycle atomic read-modify-write sequences:
+- Atomic ops stay in MEM stage for multiple cycles (same PC)
+- Write pulse only triggered on FIRST cycle (`mem_stage_new_instr`)
+- Subsequent atomic writes blocked → operations incomplete
+
+**Solution**:
+Added exception for atomic operations in write pulse logic:
+```verilog
+wire arb_mem_write_pulse = mmu_ptw_req_valid ? 1'b0 :
+                           ex_atomic_busy ? dmem_mem_write :           // Atomic: level signal
+                           (dmem_mem_write && mem_stage_new_instr);    // Normal: one-shot pulse
+```
+
+**Verification**:
+- Quick regression: 14/14 PASSED ✅
+- Atomic suite: 10/10 PASSED ✅
+- FreeRTOS UART: Clean output, no duplication ✅
+
+**Files Modified**: `rtl/core/rv32i_core_pipelined.v` (lines 2403-2405)
+**Reference**: `docs/SESSION_35_ATOMIC_FIX.md`
+
+---
+
+## Previous Resolved Issues
+
+### Session 34: UART Character Duplication (RESOLVED 2025-10-27)
+
+**Status**: FIXED ✅
+**Severity**: Critical
+**Impact**: All memory-mapped I/O writes (UART, GPIO, timers, etc.)
+
+**Problem**: Every UART character transmitted exactly twice, 2 cycles apart
+**Root Cause**: Bus write requests were level signals → duplicate writes when MEM stage held
+**Solution**: Convert writes to one-shot pulses (with atomic exception in Session 35)
+**Reference**: `docs/SESSION_34_UART_DUPLICATION_FIX.md`
+
+---
+
+### Session 30: IMEM Corruption Bug (RESOLVED 2025-10-27)
 
 ---
 

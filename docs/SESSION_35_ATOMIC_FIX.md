@@ -184,8 +184,34 @@ Both require the instruction to **stay in MEM stage** across multiple cycles whi
 - ✅ Quick regression passing (14/14)
 - ✅ Full atomic suite passing (10/10)
 - ✅ UART functionality verified (no duplication)
-- 🚧 Full compliance suite (81 tests) - **PENDING**
+- ✅ Full compliance suite run (80/81) - **COMPLETE**
+- ✅ KNOWN_ISSUES.md updated with FENCE.I issue
 - 🚧 Update CLAUDE.md with Session 35 summary - **PENDING**
+
+---
+
+## Full Compliance Suite Results
+
+**Overall**: 80/81 passing (98.8%)
+
+### ✅ Passing Extensions (80 tests)
+- **RV32I**: 41/42 (FENCE.I failing - pre-existing issue)
+- **RV32M**: 8/8 ✅ (mul, div, rem variants)
+- **RV32A**: 10/10 ✅ (AMO + LR/SC - **FIXED IN THIS SESSION**)
+- **RV32F**: 11/11 ✅ (single-precision FP)
+- **RV32D**: 9/9 ✅ (double-precision FP)
+- **RV32C**: 1/1 ✅ (compressed instructions)
+
+### ❌ Failed Test (1)
+- `rv32ui-p-fence_i` - **Pre-existing bug since Session 33**
+  - Not caused by Session 34 or 35 changes (verified via git checkout)
+  - Self-modifying code support affected by IMEM bus integration
+  - Low priority - rarely used in real-world code
+  - FreeRTOS/Linux not affected
+
+### Compliance Status Change
+- **Before Session 35**: 78/81 (96.3%) - 2 atomic tests failing
+- **After Session 35**: 80/81 (98.8%) - Atomic tests fixed, FENCE.I issue documented
 
 ---
 

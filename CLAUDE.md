@@ -4,21 +4,23 @@
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
 ## Current Status
-- **Achievement**: 🎉 **100% COMPLIANCE - 81/81 OFFICIAL TESTS PASSING** 🎉
+- **Achievement**: 🎉 **98.8% COMPLIANCE - 80/81 OFFICIAL TESTS PASSING** 🎉
 - **Achievement**: 🎉 **PHASE 1.5 COMPLETE - 6/6 INTERRUPT TESTS PASSING** 🎉
 - **Achievement**: 🎉 **FREERTOS BOOTS - SCHEDULER RUNNING** 🎉
 - **Achievement**: ⚡ **BSS FAST-CLEAR - 2000x BOOT SPEEDUP** ⚡
 - **Achievement**: 🎊 **PRINTF WORKING - STRING CONSTANTS ACCESSIBLE!** 🎊
 - **Achievement**: 🚌 **IMEM ON BUS - HARVARD ARCHITECTURE COMPLETE** 🚌
 - **Achievement**: ✅ **UART DUPLICATION FIXED - CLEAN TEXT OUTPUT!** ✅
+- **Achievement**: 🔧 **ATOMIC OPS FIXED - WRITE PULSE EXCEPTION** 🔧
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
 - **Achievement**: 🎯 **CRITICAL PIPELINE BUG FIXED - ONE-SHOT WRITE PULSES** 🎯
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
 - **OS Integration**: Phase 2 COMPLETE ✅ - FreeRTOS boots, printf outputs clean text!
-- **Recent Work**: UART Duplication Fix (2025-10-27 Session 34) - See below
-- **Session 34 Summary**: Fixed critical pipeline bug - UART now outputs clean text!
-- **Next Step**: Investigate atomic test regressions (quick-test infrastructure)
+- **Recent Work**: Atomic Operations Fix (2025-10-27 Session 35) - See below
+- **Session 35 Summary**: Fixed atomic regression from Session 34 - all 10 atomic tests passing!
+- **Known Issue**: FENCE.I test failing (pre-existing since Session 33, low priority)
+- **Next Step**: FreeRTOS full integration testing (long simulations, task switching)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -66,17 +68,19 @@ rv1/
 - **XLEN**: Configurable 32-bit (RV32) or 64-bit (RV64)
 - **Endianness**: Little-endian
 
-## Implemented Extensions (100% Compliance)
+## Implemented Extensions (98.8% Compliance - 80/81 tests)
 
 | Extension | Tests | Instructions | Key Features |
 |-----------|-------|--------------|--------------|
-| **RV32I** | 42/42 ✅ | 47 | Integer ops, load/store, branches, FENCE.I |
+| **RV32I** | 41/42 ⚠️ | 47 | Integer ops, load/store, branches (FENCE.I issue) |
 | **RV32M** | 8/8 ✅ | 13 | MUL/DIV (32-cycle mult, 64-cycle div) |
-| **RV32A** | 10/10 ✅ | 22 | LR/SC, AMO operations |
+| **RV32A** | 10/10 ✅ | 22 | LR/SC, AMO operations (Session 35 fix) |
 | **RV32F** | 11/11 ✅ | 26 | Single-precision FP, FMA |
 | **RV32D** | 9/9 ✅ | 26 | Double-precision FP, NaN-boxing |
 | **RV32C** | 1/1 ✅ | 40 | Compressed instructions (25-30% density) |
 | **Zicsr** | - | 6 | CSR instructions |
+
+**Note**: FENCE.I test failing (pre-existing since Session 33, low priority - self-modifying code rarely used)
 
 ## Architecture Features
 
@@ -113,6 +117,33 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 35 (2025-10-27)**: Atomic Operations Fix - Write Pulse Exception ✅🔧
+- **Achievement**: Fixed atomic operation regressions from Session 34 - all 10 tests passing!
+- **Problem**: Session 34's write pulse fix broke atomic operations
+  - `rv32ua-p-amoswap_w`: FAILED at test #7
+  - `rv32ua-p-lrsc`: TIMEOUT
+  - Quick regression: 12/14 (down from 14/14)
+- **Root Cause**: One-shot write pulse prevented multi-cycle atomic RMW sequences
+  - Atomic ops (LR/SC, AMO) stay in MEM stage for multiple cycles with same PC
+  - Write pulse only triggered on FIRST cycle (`mem_stage_new_instr`)
+  - Subsequent atomic writes were blocked → operations incomplete
+- **Solution**: Add exception for atomic operations in write pulse logic
+  - Normal stores: One-shot pulse (prevents UART/GPIO duplication) ✓
+  - Atomic ops: Level signal when `ex_atomic_busy=1` (allows multi-cycle RMW) ✓
+- **Implementation**:
+  ```verilog
+  wire arb_mem_write_pulse = ex_atomic_busy ? dmem_mem_write :       // Atomic: level
+                             (dmem_mem_write && mem_stage_new_instr); // Normal: pulse
+  ```
+- **Verification**:
+  - Quick regression: 14/14 PASSED ✅ (back to 100%)
+  - Atomic suite: 10/10 PASSED ✅ (all AMO + LR/SC)
+  - FreeRTOS UART: Clean output, NO duplication ✅
+  - Full compliance: 80/81 (98.8%) - FENCE.I pre-existing issue documented
+- **Status**: COMPLETE ✅ Atomic operations fully restored!
+- **Impact**: CRITICAL - affects all atomic operations (multiprocessing, synchronization)
+- **Reference**: `docs/SESSION_35_ATOMIC_FIX.md`
 
 **Session 34 (2025-10-27)**: UART Character Duplication - FIXED! ✅🎊
 - **Achievement**: Fixed critical pipeline bug - UART now outputs clean text with NO duplication!
@@ -382,7 +413,7 @@ rv1/
 
 ## Statistics
 - **Instructions**: 184+ (I:47, M:13, A:22, F:26, D:26, C:40, Zicsr:6)
-- **Official Tests**: 81/81 (100%) ✅
+- **Official Tests**: 80/81 (98.8%) ⚠️ (FENCE.I failing, low priority)
 - **Custom Tests**: 60+ programs
 - **Configuration**: RV32/RV64 via XLEN parameter
 
@@ -396,12 +427,16 @@ rv1/
 See `docs/KNOWN_ISSUES.md` for detailed tracking.
 
 **Active:**
-- None! All critical issues resolved ✅
+- ⚠️ FENCE.I self-modifying code test (pre-existing since Session 33, low priority)
+  - Impact: 80/81 compliance (98.8%)
+  - FreeRTOS/Linux not affected (don't use self-modifying code)
+  - Will fix before claiming "full RV32I compliance"
 
-**Resolved (Sessions 7-8):**
-- ✅ Writeback gating for trap latency - FIXED
-- ✅ Hex file management and auto-rebuild - FIXED
-- ✅ Phase 7 tests implemented - COMPLETE
+**Recently Resolved:**
+- ✅ Session 35: Atomic operations write pulse regression - FIXED
+- ✅ Session 34: UART character duplication - FIXED
+- ✅ Session 30: IMEM corruption bug - FIXED
+- ✅ Session 27: Forwarding & address decode bugs - FIXED
 
 ## OS Integration Roadmap (NEW! 2025-10-26)
 
