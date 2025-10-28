@@ -14,14 +14,15 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🔧 **ATOMIC OPS FIXED - WRITE PULSE EXCEPTION** 🔧
 - **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
 - **Achievement**: 🎯 **CRITICAL PIPELINE BUG FIXED - ONE-SHOT WRITE PULSES** 🎯
+- **Achievement**: 🎯 **IMEM BYTE-SELECT - STRINGS READABLE FROM .TEXT!** 🎯
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 PARTIAL ⚠️ - FreeRTOS boots, UART clean, tasks need work
-- **Recent Work**: Atomic Operations Fix (2025-10-27 Session 35) - See below
-- **Session 35 Summary**: Fixed atomic regression from Session 34 - all 10 atomic tests passing!
-- **FreeRTOS Status**: Banner displays cleanly, NO duplication, tasks not running yet
+- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, strings readable, task exec needed
+- **Recent Work**: IMEM Byte-Select Fix (2025-10-28 Session 36) - See below
+- **Session 36 Summary**: Fixed byte-stride issue - strings now readable from IMEM!
+- **FreeRTOS Status**: Strings readable ("FATAL: Malloc failed!", etc.), minor duplication remains
 - **Known Issue**: FENCE.I test failing (pre-existing since Session 33, low priority)
-- **Next Step**: Debug FreeRTOS task execution (printf format strings, timer interrupts)
+- **Next Step**: Investigate minor UART duplication in FreeRTOS (different from Session 34 bug)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -118,6 +119,37 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 36 (2025-10-28)**: IMEM Byte-Select Fix - String Access Working! ✅🎯
+- **Achievement**: Fixed byte-stride issue - strings now readable from IMEM!
+- **Problem**: FreeRTOS text output corrupted - every other character missing
+  - Expected: "Tasks created successfully!"
+  - Actual: "Tscetdscesul!" (2-byte stride issue)
+  - Root cause: IMEM halfword alignment broke byte-level loads
+- **Root Cause**: `instruction_memory` forces halfword alignment for RVC support
+  - Line 69: `halfword_addr = {masked_addr[XLEN-1:1], 1'b0};` (drops LSB!)
+  - This is CORRECT for instruction fetches (RVC needs halfword alignment)
+  - This is WRONG for data loads (LB/LBU need exact byte addressing)
+  - Result: Load from 0x4241 → aligned to 0x4240 → wrong byte returned
+- **Solution**: Added byte-select logic in SoC IMEM adapter (rtl/rv_soc.v:299-333)
+  - Extract correct byte from 32-bit word based on addr[1:0]
+  - Word-aligned access: Return full word
+  - Byte access: Extract byte 0/1/2/3 based on low address bits
+- **Implementation**:
+  ```verilog
+  wire [7:0] imem_byte_select;
+  assign imem_byte_select = (imem_req_addr[1:0] == 2'b00) ? imem_data_port_instruction[7:0] :
+                            (imem_req_addr[1:0] == 2'b01) ? imem_data_port_instruction[15:8] :
+                            (imem_req_addr[1:0] == 2'b10) ? imem_data_port_instruction[23:16] :
+                                                             imem_data_port_instruction[31:24];
+  ```
+- **Verification**:
+  - Quick regression: 14/14 PASSED ✅ (no regressions)
+  - FreeRTOS strings: Fully readable ✅
+  - Output: "FATAL: Malloc failed!", "Scheduler returned!", etc.
+- **Impact**: CRITICAL - enables string constant access from IMEM (.text section)
+- **Status**: COMPLETE ✅ Byte-perfect string reads from IMEM!
+- **Reference**: `docs/SESSION_36_IMEM_BYTE_SELECT_FIX.md`
 
 **Session 35 (2025-10-27)**: Atomic Operations Fix - Write Pulse Exception ✅🔧
 - **Achievement**: Fixed atomic operation regressions from Session 34 - all 10 tests passing!

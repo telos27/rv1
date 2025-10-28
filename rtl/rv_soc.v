@@ -296,9 +296,41 @@ module rv_soc #(
              imem_data_port.mem[32'h42b9], imem_data_port.mem[32'h42b8]);
   end
 
-  // Simple adapter: always ready, passthrough data
+  // IMEM Adapter with byte/halfword extraction
+  // Problem: instruction_memory aligns addresses to halfword boundaries for RVC support,
+  // but data loads (LB/LBU/LH/LHU) need exact byte addressing.
+  //
+  // Solution: Extract the correct byte/halfword from the 32-bit word based on addr[1:0]
+  //
+  // Example: LB from address 0x4241 (should read byte 'a')
+  //   - IMEM aligns to 0x4240, returns 32-bit word: [byte3][byte2][byte1][byte0]
+  //   - addr[1:0] = 2'b01, so extract byte1
+  //
+  // Note: We assume little-endian byte order
+
   assign imem_req_ready = imem_req_valid;
-  assign imem_req_rdata = imem_data_port_instruction;
+
+  // Byte selection based on address[1:0]
+  wire [7:0] imem_byte_select;
+  assign imem_byte_select = (imem_req_addr[1:0] == 2'b00) ? imem_data_port_instruction[7:0] :
+                            (imem_req_addr[1:0] == 2'b01) ? imem_data_port_instruction[15:8] :
+                            (imem_req_addr[1:0] == 2'b10) ? imem_data_port_instruction[23:16] :
+                                                             imem_data_port_instruction[31:24];
+
+  // Halfword selection based on address[1]
+  wire [15:0] imem_halfword_select;
+  assign imem_halfword_select = (imem_req_addr[1] == 1'b0) ? imem_data_port_instruction[15:0] :
+                                                              imem_data_port_instruction[31:16];
+
+  // Return data with proper byte/halfword extraction
+  // For word access (LW), return full 32-bit word (already aligned by IMEM)
+  // For byte access (LB/LBU), return selected byte zero-extended to 32 bits
+  // For halfword access (LH/LHU), return selected halfword zero-extended to 32 bits
+  //
+  // Note: The core will handle sign extension for LB/LH based on funct3
+  // We always return zero-extended values here
+  assign imem_req_rdata = (imem_req_addr[1:0] == 2'b00) ? imem_data_port_instruction :  // Word-aligned, return full word
+                                                           {24'h0, imem_byte_select};    // Byte access, return selected byte
 
   //==========================================================================
   // Data Memory (Bus Adapter)

@@ -55,6 +55,48 @@ None. Self-modifying code is rare in modern RISC-V software. Most use cases:
 
 ## Recent Fixes
 
+### Session 36: IMEM Byte-Select for String Access (RESOLVED 2025-10-28)
+
+**Status**: FIXED ✅
+**Severity**: Critical
+**Impact**: All string constant access from IMEM (.text section)
+
+**Problem**:
+FreeRTOS text output corrupted - every other character missing:
+- Expected: "Tasks created successfully!"
+- Actual: "Tscetdscesul!" (2-byte stride issue)
+- String literals stored in .text (IMEM) instead of .rodata
+
+**Root Cause**:
+`instruction_memory` module forces halfword alignment for RVC compressed instruction support:
+```verilog
+wire [XLEN-1:0] halfword_addr = {masked_addr[XLEN-1:1], 1'b0};  // Drops LSB!
+```
+
+This breaks byte-level loads (LB/LBU):
+- Address 0x4241 → aligned to 0x4240 → returns byte at offset 0 (WRONG!)
+- Result: Every odd byte address returns wrong data
+
+**Solution**:
+Added byte-select logic in SoC IMEM adapter (`rtl/rv_soc.v:299-333`):
+```verilog
+wire [7:0] imem_byte_select;
+assign imem_byte_select = (imem_req_addr[1:0] == 2'b00) ? imem_data_port_instruction[7:0] :
+                          (imem_req_addr[1:0] == 2'b01) ? imem_data_port_instruction[15:8] :
+                          (imem_req_addr[1:0] == 2'b10) ? imem_data_port_instruction[23:16] :
+                                                           imem_data_port_instruction[31:24];
+```
+
+**Verification**:
+- Quick regression: 14/14 PASSED ✅
+- FreeRTOS strings: Fully readable ✅
+- Output: "FATAL: Malloc failed!", "Scheduler returned!", etc.
+
+**Files Modified**: `rtl/rv_soc.v` (lines 299-333 - added byte-select logic)
+**Reference**: `docs/SESSION_36_IMEM_BYTE_SELECT_FIX.md`
+
+---
+
 ### Session 35: Atomic Operations Write Pulse Exception (RESOLVED 2025-10-27)
 
 **Status**: FIXED ✅
