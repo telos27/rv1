@@ -79,6 +79,7 @@ module uart_16550 #(
   reg [7:0] tx_fifo [0:FIFO_DEPTH-1];
   reg [4:0] tx_fifo_wptr;  // Write pointer (5 bits for 0-16 range)
   reg [4:0] tx_fifo_rptr;  // Read pointer
+  reg tx_fifo_write_last_cycle;  // Track writes to avoid read-during-write hazard
   wire [4:0] tx_fifo_count;
   wire tx_fifo_empty;
   wire tx_fifo_full;
@@ -154,7 +155,8 @@ module uart_16550 #(
       tx_fifo_rptr <= 5'd0;
     end else begin
       // If FIFO has data and TX interface is not busy, send next byte
-      if (!tx_fifo_empty && !tx_valid) begin
+      // IMPORTANT: Block reads for 1 cycle after writes to avoid read-during-write hazard
+      if (!tx_fifo_empty && !tx_valid && !tx_fifo_write_last_cycle) begin
         tx_valid <= 1'b1;
         tx_data <= tx_fifo[tx_fifo_rptr[3:0]];  // Use lower 4 bits for indexing
         tx_fifo_rptr <= tx_fifo_rptr + 5'd1;
@@ -203,7 +205,11 @@ module uart_16550 #(
       scr <= 8'h00;
       fcr_fifo_en <= 1'b1;  // FIFO enabled by default
       tx_fifo_wptr <= 5'd0;
+      tx_fifo_write_last_cycle <= 1'b0;
     end else begin
+      // Default: no write this cycle (will be set to 1 if THR write occurs)
+      tx_fifo_write_last_cycle <= 1'b0;
+
       if (req_valid && req_we) begin
         case (req_addr)
           REG_RBR_THR: begin
@@ -211,6 +217,7 @@ module uart_16550 #(
             if (!tx_fifo_full) begin
               tx_fifo[tx_fifo_wptr[3:0]] <= req_wdata;
               tx_fifo_wptr <= tx_fifo_wptr + 5'd1;
+              tx_fifo_write_last_cycle <= 1'b1;  // Flag write for TX read blocking
               `ifdef DEBUG_UART
               $display("UART THR write: 0x%02h ('%c') at time %t", req_wdata, req_wdata, $time);
               `endif
