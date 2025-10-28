@@ -1589,10 +1589,18 @@ module rv_core_pipelined #(
   `endif
 
   `ifdef DEBUG_CSR
+  reg [31:0] debug_cycle_csr;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      debug_cycle_csr <= 0;
+    else
+      debug_cycle_csr <= debug_cycle_csr + 1;
+  end
+
   always @(posedge clk) begin
     if (idex_is_csr) begin
-      $display("[CORE] Cycle %0d: CSR in EX: addr=0x%03x is_csr=%b valid=%b access=%b PC=0x%08x priv=%b",
-               debug_cycle, idex_csr_addr, idex_is_csr, idex_valid, idex_is_csr && idex_valid, idex_pc, current_priv);
+      $display("[CORE_CSR] Cycle %0d: CSR in EX: addr=0x%03x is_csr=%b valid=%b access=%b PC=0x%08x priv=%b",
+               debug_cycle_csr, idex_csr_addr, idex_is_csr, idex_valid, idex_is_csr && idex_valid, idex_pc, current_priv);
     end
   end
   `endif
@@ -1766,6 +1774,36 @@ module rv_core_pipelined #(
     if (debug_cycle_intr >= 515 && debug_cycle_intr <= 545) begin
       $display("[PC_TRACE] cycle=%0d IF_PC=%h pc_next=%h trap_flush=%b mret_flush=%b",
                debug_cycle_intr, pc_current, pc_next, trap_flush, mret_flush);
+    end
+    // Track PC when execution hangs (after "Tasks created..." message)
+    // Sample every 100 cycles to reduce output (extended range)
+    if (debug_cycle_intr >= 25000 && debug_cycle_intr <= 150000 && (debug_cycle_intr % 100 == 0)) begin
+      $display("[PC_SAMPLE] cycle=%0d PC=%h", debug_cycle_intr, pc_current);
+    end
+    // Debug memset function entry and loop
+    if (pc_current == 32'h00002000) begin
+      // Memset entry - trace arguments: a0=x10, a1=x11, a2=x12
+      $display("[MEMSET_ENTRY] cycle=%0d addr(a0/x10)=%h value(a1/x11)=%h size(a2/x12)=%h",
+               debug_cycle_intr, regfile.registers[10], regfile.registers[11], regfile.registers[12]);
+    end
+    // Sample memset loop every 1000 cycles to see progress
+    if (pc_current >= 32'h2004 && pc_current <= 32'h200c && (debug_cycle_intr % 1000 == 0)) begin
+      $display("[MEMSET_LOOP] cycle=%0d PC=%h counter(a2/x12)=%h",
+               debug_cycle_intr, pc_current, regfile.registers[12]);
+    end
+    // Debug vPortSetupTimerInterrupt mtime read loop
+    if (pc_current == 32'h1aec && (debug_cycle_intr % 100 == 0)) begin
+      $display("[MTIME_LOOP] cycle=%0d PC=%h a5(x15)=%h a3(x13)=%h a4(x14)=%h",
+               debug_cycle_intr, pc_current, regfile.registers[15], regfile.registers[13], regfile.registers[14]);
+    end
+    // Debug trap handler - check mcause when entering exception handler
+    if (pc_current == 32'h000001c2 || pc_current == 32'h000001d0) begin
+      $display("[TRAP_HANDLER] cycle=%0d PC=%h ENTERED - mcause will be in t0(x5) after csrr",
+               debug_cycle_intr, pc_current);
+    end
+    if (pc_current == 32'h000001ce || pc_current == 32'h000001dc) begin
+      $display("[TRAP_STUCK] cycle=%0d PC=%h INFINITE_LOOP - t0(mcause)=%h t1(mepc)=%h t2(mstatus)=%h",
+               debug_cycle_intr, pc_current, regfile.registers[5], regfile.registers[6], regfile.registers[7]);
     end
   end
   `endif

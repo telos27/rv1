@@ -3,41 +3,45 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 47, 2025-10-28)
+## Current Status (Session 48, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: Blocked - Scheduler Debug Needed (Session 47 → 48)
+- **Status**: Blocked - Trap Handler Debug Needed (Session 48 → 49)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
   2. ✅ Enhanced multitasking demo created (Session 47)
   3. ✅ Queue and sync demos created (Session 47)
-  4. 🐛 **BLOCKER**: Scheduler starts but tasks don't execute (Session 48)
-  5. 📋 Debug/fix printf() duplication issue
-  6. 📋 Optional: UART interrupt-driven I/O
+  4. ✅ **CLINT mtime prescaler bug FIXED** (Session 48)
+  5. 🐛 **BLOCKER**: FreeRTOS trap handlers are stubs (Session 49)
+  6. 📋 Debug/fix printf() duplication issue
+  7. 📋 Optional: UART interrupt-driven I/O
 
-### 🎉 Recent Milestone (Session 46): MULHU Bug FIXED!
-- **M-Extension Forwarding Bug**: RESOLVED ✅
-  - Root cause: Missing M-extension result in data forwarding path
-  - Fix: Added `exmem_mul_div_result` to `exmem_forward_data` multiplexer
-  - **FreeRTOS now boots and starts scheduler successfully!** 🚀
+### 🎉 Recent Milestone (Session 48): CLINT MTIME Bug FIXED!
+- **CLINT Prescaler Bug**: RESOLVED ✅
+  - Root cause: mtime incremented every CPU cycle, preventing atomic 64-bit reads on RV32
+  - Fix: Added `MTIME_PRESCALER=10` to increment mtime every 10 cycles
+  - **FreeRTOS now completes timer initialization successfully!** 🚀
+  - See: `docs/SESSION_48_CLINT_MTIME_FIX.md`
 
 ### Compliance & Testing
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
 - **Privilege Tests**: 33/34 passing (97%)
 - **Quick Regression**: 14/14 tests, ~4s runtime
-- **FreeRTOS**: Boots successfully, scheduler starts, tasks created ✅
+- **FreeRTOS**: Boots successfully, timer init complete, reaches scheduler ✅
 
-### Recent Achievements (Session 46-47)
+### Recent Achievements (Session 46-48)
+- ✅ **CLINT mtime prescaler bug FIXED** (Session 48)
+  - Atomic 64-bit reads now work on RV32
+  - Timer initialization completes successfully
+  - Comprehensive debug infrastructure added
 - ✅ **MULHU forwarding bug FIXED** (Session 46)
-- ✅ Comprehensive multiplier debug tracing added
-- ✅ Data forwarding path corrected for M-extension
-- ✅ All regression tests still passing (14/14, 80/81 official)
 - ✅ Enhanced FreeRTOS testing suite created (Session 47)
   - Created 3 new comprehensive demos (enhanced, queue, sync)
   - Updated Makefile for multi-demo support
   - All demos build successfully
-- 🐛 **Discovered scheduler issue** - tasks not executing (Session 47)
+- ✅ Comprehensive debug tracing for interrupt debugging
+- ✅ All regression tests still passing (14/14, 80/81 official)
 
 ### Previous Achievements
 - ✅ FreeRTOS boots successfully, UART output clean
@@ -47,10 +51,10 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - ✅ RVC FP decoder (C.FLDSP/C.FSDSP support)
 
 ### Active Issues
-- 🐛 **CRITICAL**: FreeRTOS scheduler starts but tasks don't execute (Session 48 debug needed)
-  - Symptom: Scheduler starts, but no task output ever appears
-  - Hypothesis: Timer interrupts not firing or interrupts not enabled
-  - Next: Debug CLINT, interrupt enables, and trap handler
+- 🐛 **CRITICAL**: FreeRTOS trap handlers are infinite loop stubs (Session 49)
+  - Symptom: System takes traps (mcause=11 ECALL, mcause=2 Illegal) but handlers loop forever
+  - Location: Trap handlers at PC 0x1c2/0x1d0 are stubs that just read CSRs and loop
+  - Next: Investigate why FreeRTOS trap handlers aren't implemented, install proper handlers
 - ⚠️ FENCE.I test (low priority - self-modifying code)
 - ⚠️ picolibc printf() duplication (workaround: use puts())
 
@@ -149,6 +153,21 @@ rv1/
 
 ## Recent Session Summary
 
+**Session 48** (2025-10-28): CLINT MTIME Prescaler Bug - FIXED! 🎉
+- Fixed fundamental CLINT design bug preventing atomic 64-bit reads on RV32
+- Added MTIME_PRESCALER=10 to increment mtime every 10 cycles (not every cycle)
+- FreeRTOS now completes timer initialization successfully
+- Discovered next blocker: FreeRTOS trap handlers are stubs (infinite loops)
+- Added comprehensive debug infrastructure (CSR, PC, memset, mtime, trap handler tracing)
+- See: `docs/SESSION_48_CLINT_MTIME_FIX.md`
+
+**Session 47** (2025-10-28): Enhanced FreeRTOS Testing Suite - CREATED
+- Created 3 comprehensive FreeRTOS demos (enhanced multitasking, queue, sync)
+- Updated Makefile for multi-demo support
+- All demos build successfully
+- Discovered scheduler starts but tasks don't execute
+- See: `docs/SESSION_47_PHASE_1_4_SUMMARY.md`
+
 **Session 46** (2025-10-28): M-Extension Forwarding Bug - FIXED! 🎉
 - Fixed data forwarding bug for M-extension results
 - FreeRTOS now boots successfully and starts scheduler
@@ -160,15 +179,7 @@ rv1/
 - Context-specific: Official tests pass, FreeRTOS context fails
 - See: `docs/SESSION_45_SUMMARY.md`
 
-**Session 44** (2025-10-28): FreeRTOS Assertion - MULHU Bug Identified
-- Assertion failure traced to MULHU returning wrong value (10 instead of 0)
-- See: `docs/SESSION_44_FREERTOS_ASSERTION_DEBUG.md`
-
-**Session 43** (2025-10-28): Printf Duplication - FIXED
-- UART output now clean (replaced printf with puts workaround)
-- See: `docs/SESSION_43_PRINTF_DUPLICATION_DEBUG.md`
-
-**Earlier Sessions**: See `docs/CHANGELOG.md` for complete history (Sessions 1-42)
+**Earlier Sessions**: See `docs/CHANGELOG.md` for complete history (Sessions 1-44)
 
 ## Naming Conventions
 

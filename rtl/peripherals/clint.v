@@ -90,11 +90,19 @@ module clint #(
   // MTIME Counter (Free-Running)
   //===========================================================================
 
+  // Prescaler for mtime - increment every N cycles
+  // Real systems: mtime runs at fixed freq (1-10 MHz), not CPU freq
+  // For 50 MHz CPU with 1 MHz mtime: prescaler = 50
+  // Using 10 for faster simulation while still allowing atomic reads
+  localparam MTIME_PRESCALER = 10;
+  reg [7:0] mtime_prescaler_count;
+
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       mtime <= 64'h0;
+      mtime_prescaler_count <= 8'h0;
     end else begin
-      // Increment MTIME every cycle
+      // Increment MTIME every MTIME_PRESCALER cycles
       // Software can also write to MTIME (typically only at boot)
       if (req_valid && req_we && is_mtime) begin
         // Allow writes to MTIME (for initialization)
@@ -118,9 +126,15 @@ module clint #(
             if (req_addr[2:0] == 3'h7) mtime[63:56] <= req_wdata[7:0];
           end
         endcase
+        mtime_prescaler_count <= 8'h0;  // Reset prescaler on write
       end else begin
-        // Normal operation: increment every cycle
-        mtime <= mtime + 64'h1;
+        // Normal operation: increment every MTIME_PRESCALER cycles
+        if (mtime_prescaler_count == MTIME_PRESCALER - 1) begin
+          mtime <= mtime + 64'h1;
+          mtime_prescaler_count <= 8'h0;
+        end else begin
+          mtime_prescaler_count <= mtime_prescaler_count + 8'h1;
+        end
       end
     end
   end
@@ -255,6 +269,10 @@ module clint #(
     end
     if (mti_o[0] && mtime < 1000) begin
       $display("[CLINT] TIMER INTERRUPT ASSERTED: mtime=%0d >= mtimecmp[0]=%0d", mtime, mtimecmp[0]);
+    end
+    // Debug mtime value periodically during FreeRTOS init
+    if (mtime % 10000 == 0 && mtime >= 50000 && mtime <= 150000) begin
+      $display("[CLINT_MTIME] cycle=%0d mtime=%0d (0x%h)", mtime, mtime, mtime);
     end
   end
   `endif

@@ -400,6 +400,10 @@ module csr_file #(
           `ifdef DEBUG_EXCEPTION
           $display("[CSR_TRAP] Writing mcause=%0d (interrupt=%b) mepc=%h", trap_cause, trap_is_interrupt, trap_pc);
           `endif
+          `ifdef DEBUG_CSR
+          $display("[CSR_TRAP_M] Disabling interrupts: MIE=%b -> MPIE, setting MIE=0, cause=%0d PC=%h",
+                   mstatus_mie_w, trap_cause, trap_pc);
+          `endif
           mstatus_r[MSTATUS_MPIE_BIT] <= mstatus_mie_w;         // Save current MIE
           mstatus_r[MSTATUS_MIE_BIT]  <= 1'b0;                  // Disable interrupts
           mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= current_priv; // Save current privilege
@@ -418,6 +422,10 @@ module csr_file #(
         `ifdef DEBUG_CSR_FORWARD
         $display("[CSR_MRET] Time=%0t Executing MRET: MPIE=%b -> MIE, mstatus_before=%h",
                  $time, mstatus_mpie_w, mstatus_r);
+        `endif
+        `ifdef DEBUG_CSR
+        $display("[CSR_MRET] Restoring MIE: MPIE=%b -> MIE, MPP=%b (was M-mode, now restoring)",
+                 mstatus_mpie_w, mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB]);
         `endif
         mstatus_r[MSTATUS_MIE_BIT]  <= mstatus_mpie_w;  // Restore interrupt enable
         mstatus_r[MSTATUS_MPIE_BIT] <= 1'b1;          // Set MPIE to 1
@@ -502,6 +510,27 @@ module csr_file #(
             // No write for unknown or read-only CSRs
           end
         endcase
+
+        // Debug CSR interrupt-related writes
+        `ifdef DEBUG_CSR
+        if (csr_addr == CSR_MSTATUS) begin
+          $display("[CSR_WRITE] MSTATUS: op=%h wdata=%h rdata=%h -> write_val=%h MIE=%b->%b",
+                   csr_op, csr_wdata, csr_rdata, csr_write_value,
+                   csr_rdata[MSTATUS_MIE_BIT], csr_write_value[MSTATUS_MIE_BIT]);
+        end
+        if (csr_addr == CSR_MIE) begin
+          $display("[CSR_WRITE] MIE: MEIE=%b MTIE=%b MSIE=%b SEIE=%b STIE=%b SSIE=%b (full=%h)",
+                   csr_write_value[11], csr_write_value[7], csr_write_value[3],
+                   csr_write_value[9], csr_write_value[5], csr_write_value[1],
+                   csr_write_value);
+        end
+        if (csr_addr == CSR_MIP) begin
+          $display("[CSR_WRITE] MIP: MEIP=%b MTIP=%b MSIP=%b SEIP=%b STIP=%b SSIP=%b (full=%h)",
+                   csr_write_value[11], csr_write_value[7], csr_write_value[3],
+                   csr_write_value[9], csr_write_value[5], csr_write_value[1],
+                   csr_write_value);
+        end
+        `endif
       end
 
       // Floating-point flag accumulation (OR operation)
