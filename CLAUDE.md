@@ -16,11 +16,12 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎯 **CRITICAL PIPELINE BUG FIXED - ONE-SHOT WRITE PULSES** 🎯
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 COMPLETE ✅ - FreeRTOS boots, printf outputs clean text!
+- **OS Integration**: Phase 2 PARTIAL ⚠️ - FreeRTOS boots, UART clean, tasks need work
 - **Recent Work**: Atomic Operations Fix (2025-10-27 Session 35) - See below
 - **Session 35 Summary**: Fixed atomic regression from Session 34 - all 10 atomic tests passing!
+- **FreeRTOS Status**: Banner displays cleanly, NO duplication, tasks not running yet
 - **Known Issue**: FENCE.I test failing (pre-existing since Session 33, low priority)
-- **Next Step**: FreeRTOS full integration testing (long simulations, task switching)
+- **Next Step**: Debug FreeRTOS task execution (printf format strings, timer interrupts)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -139,8 +140,9 @@ rv1/
 - **Verification**:
   - Quick regression: 14/14 PASSED ✅ (back to 100%)
   - Atomic suite: 10/10 PASSED ✅ (all AMO + LR/SC)
-  - FreeRTOS UART: Clean output, NO duplication ✅
+  - FreeRTOS boot: Banner displays cleanly, NO character duplication ✅
   - Full compliance: 80/81 (98.8%) - FENCE.I pre-existing issue documented
+- **FreeRTOS Integration**: Boot successful, UART clean, task execution needs investigation
 - **Status**: COMPLETE ✅ Atomic operations fully restored!
 - **Impact**: CRITICAL - affects all atomic operations (multiprocessing, synchronization)
 - **Reference**: `docs/SESSION_35_ATOMIC_FIX.md`
