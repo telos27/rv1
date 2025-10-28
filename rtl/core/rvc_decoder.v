@@ -64,6 +64,8 @@ module rvc_decoder #(
   localparam LOAD      = 7'b0000011;
   localparam STORE     = 7'b0100011;
   localparam SYSTEM    = 7'b1110011;
+  localparam LOAD_FP   = 7'b0000111;  // FLW, FLD
+  localparam STORE_FP  = 7'b0100111;  // FSW, FSD
 
   // funct3 codes
   localparam F3_ADD  = 3'b000;
@@ -82,6 +84,10 @@ module rvc_decoder #(
   localparam F3_LD   = 3'b011;
   localparam F3_SW   = 3'b010;
   localparam F3_SD   = 3'b011;
+  localparam F3_FLW  = 3'b010;  // Single-precision FP load
+  localparam F3_FLD  = 3'b011;  // Double-precision FP load
+  localparam F3_FSW  = 3'b010;  // Single-precision FP store
+  localparam F3_FSD  = 3'b011;  // Double-precision FP store
 
   // Immediate extraction functions
   // Note: Immediates are scrambled in compressed format for hardware efficiency
@@ -431,7 +437,17 @@ module rvc_decoder #(
             end
           end
 
-          3'b011: begin  // C.LDSP (RV64) / C.FLWSP (RV32+F)
+          3'b001: begin  // C.FLDSP (RV32DC/RV64DC)
+            // FLD rd, offset(x2)
+            // Load double-precision FP from stack
+            if (rd != x0) begin
+              decompressed_instr = {3'b0, imm_ldsp[8:0], x2, F3_FLD, rd, LOAD_FP};
+            end else begin
+              illegal_instr = 1'b1;  // rd must be non-zero
+            end
+          end
+
+          3'b011: begin  // C.LDSP (RV64) / C.FLWSP (RV32FC)
             if (is_rv64) begin
               if (rd != x0) begin
                 // LD rd, offset(x2)
@@ -440,8 +456,13 @@ module rvc_decoder #(
                 illegal_instr = 1'b1;  // rd must be non-zero
               end
             end else begin
-              // C.FLWSP not implemented (requires F extension)
-              illegal_instr = 1'b1;
+              // C.FLWSP - FLW rd, offset(x2)
+              // Load single-precision FP from stack
+              if (rd != x0) begin
+                decompressed_instr = {4'b0, imm_lwsp[7:0], x2, F3_FLW, rd, LOAD_FP};
+              end else begin
+                illegal_instr = 1'b1;  // rd must be non-zero
+              end
             end
           end
 
@@ -488,6 +509,14 @@ module rvc_decoder #(
             end
           end
 
+          3'b101: begin  // C.FSDSP (RV32DC/RV64DC)
+            // FSD rs2, offset(x2)
+            // Store double-precision FP to stack
+            // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
+            decompressed_instr = {3'b0, imm_sdsp[8:5], rs2, x2, F3_FSD,
+                                   imm_sdsp[4:0], STORE_FP};
+          end
+
           3'b110: begin  // C.SWSP
             // SW rs2, offset(x2)
             // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
@@ -495,15 +524,17 @@ module rvc_decoder #(
                                    imm_swsp[4:0], STORE};
           end
 
-          3'b111: begin  // C.SDSP (RV64) / C.FSWSP (RV32+F)
+          3'b111: begin  // C.SDSP (RV64) / C.FSWSP (RV32FC)
             if (is_rv64) begin
               // SD rs2, offset(x2)
               // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
               decompressed_instr = {3'b0, imm_sdsp[8:5], rs2, x2, F3_SD,
                                      imm_sdsp[4:0], STORE};
             end else begin
-              // C.FSWSP not implemented (requires F extension)
-              illegal_instr = 1'b1;
+              // C.FSWSP - FSW rs2, offset(x2)
+              // Store single-precision FP to stack
+              decompressed_instr = {4'b0, imm_swsp[7:5], rs2, x2, F3_FSW,
+                                     imm_swsp[4:0], STORE_FP};
             end
           end
 

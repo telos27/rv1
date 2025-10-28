@@ -244,6 +244,7 @@ module tb_freertos;
                    DUT.core.csr_file_inst.mcause_r[63],
                    DUT.core.csr_file_inst.mcause_r[3:0]);
           $display("       mepc   = 0x%08h", DUT.core.csr_file_inst.mepc_r);
+          $display("       mtval  = 0x%08h", DUT.core.csr_file_inst.mtval_r);
           $display("       PC     = 0x%08h", pc);
         end
         prev_mcause = DUT.core.csr_file_inst.mcause_r;

@@ -10,12 +10,13 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: ⚡ **BSS FAST-CLEAR - 2000x BOOT SPEEDUP** ⚡
 - **Achievement**: 🎊 **FIRST UART OUTPUT - CONSOLE CHARACTERS WORKING!** 🎊
 - **Achievement**: ✅ **TWO CRITICAL BUGS FIXED - FORWARDING & ADDRESS DECODE** ✅
+- **Achievement**: 🔍 **RVC FP DECODER ENHANCED - C.FLDSP/C.FSDSP SUPPORT** 🔍
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
 - **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS runs 500k cycles, debugging exceptions
-- **Recent Work**: Critical Bug Fixes (2025-10-27 Session 27) - See below
-- **Session 27 Summary**: Fixed WB→ID forwarding bug and DMEM address decode bug (64KB→1MB)
-- **Next Step**: Session 28 - Debug illegal instruction exceptions, achieve full UART banner
+- **Recent Work**: RVC FP Decoder Enhancement (2025-10-27 Session 28) - See below
+- **Session 28 Summary**: Added C.FLDSP/C.FSDSP/C.FLWSP/C.FSWSP support, debugging mtval=NOP mystery
+- **Next Step**: Session 29 - Debug mtval=NOP mystery, verify RVC decoder runtime behavior
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -110,6 +111,21 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 28 (2025-10-27)**: RVC FP Decoder Enhancement 🔍
+- **Achievement**: Root cause identified - RVC decoder missing compressed FP instructions!
+- **Problem**: FreeRTOS trap handler uses C.FSDSP/C.FLDSP to save/restore FPU context (32 FP registers)
+- **Discovery**: Illegal instruction at 0x2548 = 0xa002 = C.FSDSP ft0, 0(sp), not implemented in RVC decoder
+- **Root Cause**: RVC decoder marked funct3=101/op=10 as illegal (hit default case)
+- **Fix**: Added full FP compressed instruction support to `rtl/core/rvc_decoder.v`:
+  - C.FLDSP (funct3=001, op=10) - FLD from SP
+  - C.FLWSP (funct3=011, op=10, RV32) - FLW from SP
+  - C.FSDSP (funct3=101, op=10) - FSD to SP
+  - C.FSWSP (funct3=111, op=10, RV32) - FSW to SP
+- **Testing**: Quick regression 14/14 passing ✅, no regressions
+- **Mystery**: Illegal instruction exceptions persist with mtval=0x00000013 (NOP) - investigating
+- **Status**: RVC decoder enhanced ✅, mtval=NOP mystery ongoing 🔍
+- **Reference**: `docs/SESSION_28_RVC_FP_DECODER.md`
 
 **Session 27 (2025-10-27)**: Critical Bug Fixes - Forwarding & Address Decode ✅✅
 - **Achievement**: TWO critical correctness bugs identified and fixed!
