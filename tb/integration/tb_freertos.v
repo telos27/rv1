@@ -153,18 +153,12 @@ module tb_freertos;
   // ========================================
   // Monitor UART writes, function calls, and exceptions
 
-  // UART bus monitor - COMMENTED OUT FOR SPEED
+  // UART bus monitor - DISABLED (use simple version)
   //always @(posedge clk) begin
-  //  if (reset_n && DUT.uart_req_valid) begin
-  //    if (DUT.uart_req_we) begin
-  //      // UART write detected
-  //      $display("[UART-BUS] Write to offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
-  //               DUT.uart_req_addr, DUT.uart_req_wdata, cycle_count, pc);
-  //    end else begin
-  //      // UART read detected
-  //      $display("[UART-BUS] Read from offset 0x%01h = 0x%02h at cycle %0d (PC: 0x%08h)",
-  //               DUT.uart_req_addr, DUT.uart_req_rdata, cycle_count, pc);
-  //    end
+  //  if (reset_n && DUT.uart_req_valid && DUT.uart_req_we) begin
+  //    $display("[UART-BUS-WRITE] Cycle %0d: MEM_PC=0x%08h addr=0x%01h data=0x%02h ('%c')",
+  //             cycle_count, DUT.core.exmem_pc,
+  //             DUT.uart_req_addr, DUT.uart_req_wdata, DUT.uart_req_wdata);
   //  end
   //end
 

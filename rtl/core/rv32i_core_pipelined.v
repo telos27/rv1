@@ -2372,10 +2372,38 @@ module rv_core_pipelined #(
   // Connect arbiter signals to bus master port
   // The bus will route requests to DMEM or memory-mapped peripherals
   // Note: funct3 encodes access size: 0=byte, 1=half, 2=word, 3=double
-  assign bus_req_valid = arb_mem_read || arb_mem_write;
+  //
+  // CRITICAL FIX (Session 34): Generate bus requests as ONE-SHOT pulses
+  // Problem: If MEM stage is held for multiple cycles, the same store would
+  //          execute multiple times (e.g., UART character duplication bug)
+  // Solution: Track previous MEM stage PC and only assert req_valid when
+  //           a NEW instruction enters MEM (detect PC change)
+  reg [XLEN-1:0] exmem_pc_prev;
+  reg            exmem_valid_prev;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      exmem_pc_prev    <= {XLEN{1'b0}};
+      exmem_valid_prev <= 1'b0;
+    end else begin
+      exmem_pc_prev    <= exmem_pc;
+      exmem_valid_prev <= exmem_valid;
+    end
+  end
+
+  // Generate bus request only on FIRST cycle of an instruction in MEM stage
+  // This prevents duplicate requests if the same instruction stays in MEM for multiple cycles
+  // New instruction detected when: (PC changed) OR (valid transitions from 0→1)
+  wire mem_stage_new_instr = exmem_valid && ((exmem_pc != exmem_pc_prev) || !exmem_valid_prev);
+
+  // CRITICAL: Only WRITES need to be one-shot pulses to prevent duplicate side effects
+  // READS can be level signals (needed for multi-cycle operations, atomics, etc.)
+  wire arb_mem_write_pulse = mmu_ptw_req_valid ? 1'b0 : (dmem_mem_write && mem_stage_new_instr);
+
+  assign bus_req_valid = arb_mem_read || arb_mem_write_pulse;
   assign bus_req_addr  = arb_mem_addr;
   assign bus_req_wdata = arb_mem_write_data;
-  assign bus_req_we    = arb_mem_write;
+  assign bus_req_we    = arb_mem_write_pulse;
   assign bus_req_size  = arb_mem_funct3;
 
   // Bus read data feeds back to arbiter
