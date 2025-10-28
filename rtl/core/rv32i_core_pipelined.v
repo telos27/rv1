@@ -2398,7 +2398,11 @@ module rv_core_pipelined #(
 
   // CRITICAL: Only WRITES need to be one-shot pulses to prevent duplicate side effects
   // READS can be level signals (needed for multi-cycle operations, atomics, etc.)
-  wire arb_mem_write_pulse = mmu_ptw_req_valid ? 1'b0 : (dmem_mem_write && mem_stage_new_instr);
+  // EXCEPTION: Atomic operations (LR/SC, AMO) need LEVEL signals for multi-cycle read-modify-write
+  //            The atomic unit controls writes via ex_atomic_busy, so allow continuous writes
+  wire arb_mem_write_pulse = mmu_ptw_req_valid ? 1'b0 :
+                             ex_atomic_busy ? dmem_mem_write :                       // Atomic: level signal
+                             (dmem_mem_write && mem_stage_new_instr);                // Normal: one-shot pulse
 
   assign bus_req_valid = arb_mem_read || arb_mem_write_pulse;
   assign bus_req_addr  = arb_mem_addr;
