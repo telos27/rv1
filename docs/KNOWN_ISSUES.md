@@ -4,90 +4,86 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### UART Transmits Undefined Data (CRITICAL - BLOCKS PHASE 2) 🔥
+### FreeRTOS Character Duplication (CRITICAL - BLOCKS PHASE 2) 🔥
 
-**Status**: 🚨 ACTIVE - CRITICAL BUG (Sessions 37-41, 2025-10-28)
+**Status**: 🚨 ACTIVE - CRITICAL BUG (Sessions 37-42, 2025-10-28)
 **Severity**: CRITICAL - Blocks Phase 2 OS Integration
-**Tests Affected**: None (CPU tests pass, UART functional bug)
-**Impact**: FreeRTOS console output completely unusable
+**Tests Affected**: None (CPU tests pass, simple UART tests pass, FreeRTOS-specific)
+**Impact**: FreeRTOS console output garbled with character duplication
 
 **Description**:
-UART transmits undefined data (0xxx) instead of actual character bytes. Minimal test writing "ABC" produces 3 transmissions with undefined values instead of ASCII characters.
+FreeRTOS UART output shows character duplication/alternation, making console output unreadable. Simple UART tests (test_uart_abc) work correctly, but FreeRTOS duplicates every character.
 
 **Symptom**:
-- Minimal test `test_uart_abc.s`: Expected "ABC", Actual: `[0xxx][0xxx][0xxx]` (3 undefined bytes)
-- FreeRTOS: Expected `"FreeRTOS Blinky Demo"`, Actual: undefined/garbled characters
-- TX valid/ready handshake working (3 transmissions), but `uart_tx_data` is 'x' (undefined)
+- Minimal test `test_uart_abc.s`: Expected "ABC", Actual: "ABC" ✅ (WORKS!)
+- FreeRTOS: Expected "FATAL: Assertion failed!", Actual: "FALALAsAsrtrtn nil! !" (alternating/duplicating characters)
+- Each character appears twice with ~20 cycle spacing
+- TX valid/ready handshake working correctly
 
-**Root Cause** (Under Investigation - Session 41):
-Data not reaching UART FIFO OR FIFO read path broken:
+**Root Cause** (Under Investigation - Session 42):
+Session 42 FIXED the undefined data bug (wbuart32 ufifo timing) by reverting to old uart_16550.v. However, FreeRTOS still shows character duplication pattern similar to Session 34's write pulse bug, but test_uart_abc works correctly.
 
-1. When FIFO empty (wptr==rptr), bus write increments wptr
-2. TX state machine sees non-empty FIFO combinatorially in SAME cycle
-3. TX reads from FIFO[rptr] in SAME cycle as write to FIFO[wptr]
-4. Since wptr==rptr before increment, both access same array index!
-5. Icarus Verilog memory arrays have undefined read-during-write behavior
+**Hypothesis**:
+- Session 34 write pulse fix works for simple tests
+- FreeRTOS rapid successive writes may trigger edge case
+- Possible timing issue with burst writes
+- Different code path in FreeRTOS printf vs simple SB instructions
 
-**Evidence** (Session 41):
-- Created minimal test `test_uart_abc.s` - writes "ABC" to UART address 0x10000000
-- Testbench shows 3 TX transmissions (correct count) ✅
-- But `uart_tx_data = 0xxx` (undefined) for all 3 characters ❌
-- Core generates stores to UART address (assembly verified) ✅
-- Bus routing to UART address 0x10000000 (needs verification) ⚠️
-- FIFO write edge detection present (req_valid_rising) ✅
-- wbuart32 ufifo integration (formally verified FIFO used) ✅
-
-**Investigation History** (Sessions 37-41):
-- **Session 37**: Initially thought to be FIFO read-during-write hazard
+**Investigation History** (Sessions 37-42):
+- **Session 37**: Identified FIFO read-during-write hazard
 - **Session 38**: Multiple FIFO timing fixes attempted, all unsuccessful
-- **Session 39**: Integrated wbuart32 formally-verified FIFO - bug persists!
+- **Session 39**: Integrated wbuart32 formally-verified FIFO - bug persists
 - **Session 40**: Hypothesized core ignores `bus_req_ready` - partially incorrect
 - **Session 41**: Implemented bus handshaking, discovered UART transmits undefined data
+- **Session 42**: ROOT CAUSE FOUND - wbuart32 ufifo timing incompatibility!
+  - Fixed by reverting to old uart_16550.v
+  - Simple tests now work (test_uart_abc outputs "ABC" correctly)
+  - FreeRTOS duplication remains (different bug)
 
-**Key Finding** (Session 41):
-- UART is **always ready** (`req_ready <= req_valid`) - never asserts flow control
-- Bus handshaking fix won't trigger for current UART implementation
-- Problem is NOT duplication - it's that NO VALID DATA reaches UART
-- Either bus routing broken OR FIFO write detection not working OR integration issue
+**Key Finding** (Session 42):
+- wbuart32 ufifo's `o_data` doesn't remain stable across multiple cycles
+- UART TX state machine uses multi-cycle reads (incompatible with ufifo)
+- Old uart_16550.v simple FIFO works for simple tests
+- FreeRTOS duplication is a DIFFERENT bug from undefined data
 
-**Next Debug Steps** (Session 42):
-1. Add $display to `simple_bus.v` to verify bus routing to UART
-2. Add $display to `uart_16550_ufifo.v` to verify FIFO write detection
-3. Check `req_valid_rising` edge detection with waveforms
-4. Verify wbuart32 ufifo write/read paths
-5. Try old `uart_16550.v` from backup to isolate wbuart32 integration
-6. Generate VCD waveform for cycle-by-cycle analysis
+**Next Debug Steps** (Session 43):
+1. Compare test_uart_abc (works) vs FreeRTOS printf (duplicates)
+2. Check timing of rapid successive writes
+3. Verify Session 34's write pulse fix for burst writes
+4. Investigate FreeRTOS picolibc printf implementation
+5. Check if printf buffers multiple characters before writing
 
-**Current Workaround**: None. UART output is unusable.
+**Current Workaround**: None. FreeRTOS console output is unreadable.
 
 **Verification**:
 - Quick regression: 14/14 PASSED ✅ (no CPU regressions)
-- UART hardware path: Core → Bus → UART ✅ (functional)
-- UART FIFO: ❌ BROKEN (character duplication)
+- test_uart_abc: "ABC" output ✅ (WORKS!)
+- FreeRTOS: Character duplication ❌ (still broken)
 
 **Fix Priority**: 🔥 **HIGHEST** - **BLOCKS ALL PHASE 2 WORK**
 - Cannot debug FreeRTOS without working console
 - Cannot verify task execution or system behavior
 - Must fix before continuing OS integration
 
-**Estimated Effort**: 4-8 hours
-- Implement dual-port RAM FIFO module (2 hours)
-- Integrate into uart_16550.v (2 hours)
-- Test and verify character-by-character output (2-4 hours)
+**Estimated Effort**: 2-4 hours
+- Compare working vs broken test cases (1 hour)
+- Identify timing/burst write issue (1-2 hours)
+- Implement and verify fix (1 hour)
 
 **Files Affected**:
-- `rtl/peripherals/uart_16550_ufifo.v` (UART with wbuart32 FIFO)
-- `rtl/core/rv32i_core_pipelined.v` (bus handshaking added Session 41)
-- `rtl/interconnect/simple_bus.v` (bus routing - needs verification)
-- `external/wbuart32/rtl/ufifo.v` (formally verified FIFO)
-- `tests/asm/test_uart_abc.s` (minimal test case - NEW)
+- `rtl/peripherals/uart_16550.v` (old UART, currently in use)
+- `rtl/core/rv32i_core_pipelined.v` (write pulse logic from Session 34/35)
+- `software/freertos/port/syscalls.c` (picolibc printf implementation)
+- `tests/asm/test_uart_abc.s` (minimal test case - WORKS)
 
 **References**:
-- `docs/SESSION_37_UART_FIFO_DEBUG.md` - Initial FIFO hazard analysis
-- `docs/SESSION_38_UART_FIFO_FIX_ATTEMPTS.md` - FIFO timing fix attempts
-- `docs/SESSION_39_WBUART32_INTEGRATION.md` - Formally verified FIFO integration
+- `docs/SESSION_34_UART_DUPLICATION_FIX.md` - Original write pulse fix
+- `docs/SESSION_37_UART_FIFO_DEBUG.md` - FIFO hazard analysis
+- `docs/SESSION_38_UART_FIFO_FIX_ATTEMPTS.md` - FIFO timing fixes
+- `docs/SESSION_39_WBUART32_INTEGRATION.md` - wbuart32 FIFO integration
 - `docs/SESSION_40_BUS_HANDSHAKE_DEBUG.md` - Bus protocol investigation
-- `docs/SESSION_41_BUS_HANDSHAKING.md` - Bus handshaking implementation, undefined data discovery
+- `docs/SESSION_41_BUS_HANDSHAKING.md` - Bus handshaking implementation
+- `docs/SESSION_42_UART_UFIFO_BUG.md` - ufifo timing bug FIX ✅
 
 ---
 
@@ -141,6 +137,50 @@ None. Self-modifying code is rare in modern RISC-V software. Most use cases:
 ---
 
 ## Recent Fixes
+
+### Session 42: UART Undefined Data - wbuart32 ufifo Timing Bug (RESOLVED 2025-10-28)
+
+**Status**: FIXED ✅
+**Severity**: Critical
+**Impact**: All UART output (simple tests now work, FreeRTOS duplication is separate issue)
+
+**Problem**:
+UART transmitted undefined data (0xxx) instead of actual characters. Minimal test writing "ABC" produced 3 transmissions with undefined values.
+
+**Root Cause**:
+wbuart32 ufifo timing incompatibility:
+- ufifo designed for single-cycle Wishbone bus reads
+- UART TX state machine uses multi-cycle reads (issue read cycle 1, use data cycle 3)
+- ufifo's `o_data` signal doesn't remain stable across multiple cycles
+- Data becomes undefined between read request and data use
+
+**Evidence** (Session 42 debug trace):
+```
+Cycle 7 (IDLE→READ): rdata=0x41 ✓ (read issued, data valid)
+Cycle 7 (READ→WAIT): rdata=0xxx ✗ (data disappeared!)
+Cycle 9 (WAIT→IDLE): tx_data=0xxx ✗ (undefined assigned to tx_data)
+```
+
+**Solution**:
+Reverted to old uart_16550.v with simple internal FIFO:
+- Direct array access: `wire [7:0] fifo_data = tx_fifo[tx_fifo_rptr];`
+- Data remains stable until pointer changes
+- No complex bypass logic, no timing issues
+
+**Files Modified**:
+- `rtl/rv_soc.v`: Changed instantiation uart_16550_ufifo → uart_16550
+- `rtl/peripherals/uart_16550.v`: Restored from backup
+- `tools/test_soc.sh`, `tools/test_freertos.sh`: Removed ufifo compilation
+- `rtl/peripherals/uart_16550_ufifo.v`: Moved to .broken_backup
+
+**Verification**:
+- test_uart_abc: Outputs "ABC" correctly ✅ (was "0xxx0xxx0xxx")
+- Quick regression: 14/14 PASSED ✅
+- FreeRTOS: Character duplication remains (different bug)
+
+**Reference**: `docs/SESSION_42_UART_UFIFO_BUG.md`
+
+---
 
 ### Session 36: IMEM Byte-Select for String Access (RESOLVED 2025-10-28)
 

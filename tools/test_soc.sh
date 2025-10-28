@@ -42,6 +42,12 @@ fi
 if [ ! -z "$DEBUG_INTERRUPT" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_INTERRUPT"
 fi
+if [ ! -z "$DEBUG_UART_BUS" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_UART_BUS"
+fi
+if [ ! -z "$DEBUG_UART_CORE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_UART_CORE"
+fi
 
 # SoC test configuration
 # Enable all extensions to match test compilation (rv32imafc)
@@ -120,7 +126,6 @@ iverilog -g2012 \
     rtl/memory/*.v \
     rtl/peripherals/*.v \
     rtl/interconnect/*.v \
-    external/wbuart32/rtl/ufifo.v \
     "$TESTBENCH"
 
 if [ $? -ne 0 ]; then

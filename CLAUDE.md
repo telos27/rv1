@@ -17,14 +17,15 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
 - **Achievement**: 🔧 **BUS HANDSHAKING IMPLEMENTED** 🔧
-- **OS Integration**: Phase 2 BLOCKED 🚧 - FreeRTOS boots, scheduler running, **CRITICAL UART BUG**
-- **Recent Work**: Bus Handshaking & UART Debug (2025-10-28 Session 41) - See below
-- **Session 41 Summary**: Bus handshaking implemented (no regressions), UART undefined data bug discovered
-- **FreeRTOS Status**: Boots successfully, scheduler running, **UART transmits undefined data (0xxx)**
+- **Achievement**: ✅ **UART UFIFO BUG FIXED - REVERTED TO OLD UART** ✅
+- **OS Integration**: Phase 2 PARTIAL 🚧 - FreeRTOS boots, simple UART works, **character duplication remains**
+- **Recent Work**: UART ufifo Bug Fix (2025-10-28 Session 42) - See below
+- **Session 42 Summary**: Root cause found (wbuart32 ufifo timing), reverted to old uart_16550.v
+- **UART Status**: Simple tests work (test_uart_abc outputs "ABC" correctly), FreeRTOS still duplicates chars
 - **Known Issues**:
-  - 🔥 **UART transmits undefined data - CRITICAL BUG BLOCKING PHASE 2** (Session 41)
+  - 🔥 **FreeRTOS character duplication - BLOCKS PHASE 2** (Sessions 37-42, different from undefined data bug)
   - ⚠️ FENCE.I test failing (pre-existing since Session 33, low priority)
-- **Next Step**: DEBUG UART UNDEFINED DATA - Verify bus routing, FIFO write path, wbuart32 integration
+- **Next Step**: DEBUG FREERTOS CHARACTER DUPLICATION - Investigate why FreeRTOS duplicates but test_uart_abc works
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -121,6 +122,31 @@ rv1/
 **Progress**: 27/34 tests passing (79%), 7 skipped/documented
 
 ### Key Fixes (Recent Sessions)
+
+**Session 42 (2025-10-28)**: UART ufifo Bug - FIXED! ✅
+- **Achievement**: Root cause identified and fixed - reverted to old UART implementation!
+- **Problem**: UART transmitted **undefined data (0xxx)** instead of actual characters
+- **Investigation**: Added comprehensive debug instrumentation to trace data path
+  - Bus routing: Data flows correctly `0x41 → uart_wdata=0x41` ✅
+  - UART reception: `req_wdata=0x41` received correctly ✅
+  - FIFO write: `data=0x41` written successfully ✅
+  - FIFO read: `rdata=0x41` initially correct ✅
+  - **BUG FOUND**: `tx_fifo_rdata` becomes **undefined (0xxx)** one cycle later! ❌
+- **Root Cause**: wbuart32 ufifo timing incompatibility
+  - ufifo designed for single-cycle Wishbone bus reads
+  - UART TX state machine uses multi-cycle reads (issue read, wait, use data)
+  - ufifo's `o_data` doesn't remain stable across multiple cycles
+- **Solution**: Reverted to old `uart_16550.v` with simple internal FIFO
+  - Removed `uart_16550_ufifo.v` from compilation
+  - Updated `rtl/rv_soc.v`, `tools/test_soc.sh`, `tools/test_freertos.sh`
+  - Old FIFO uses direct array access - data stable until pointer changes
+- **Verification**:
+  - test_uart_abc: Outputs "ABC" correctly ✅ (was "0xxx0xxx0xxx")
+  - Quick regression: 14/14 PASSED ✅ (no regressions)
+  - FreeRTOS: Character duplication remains ⚠️ (different bug, needs investigation)
+- **Status**: UART undefined data bug FIXED ✅, simple tests working!
+- **Impact**: Test infrastructure now functional, FreeRTOS duplication is separate issue
+- **Reference**: `docs/SESSION_42_UART_UFIFO_BUG.md`
 
 **Session 41 (2025-10-28)**: Bus Handshaking Implementation - Partial Success 🔧
 - **Achievement**: Implemented proper bus handshaking in core - prevents duplicate requests when peripherals not ready

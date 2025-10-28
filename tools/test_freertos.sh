@@ -67,7 +67,6 @@ iverilog -g2012 \
     $RTL_MEMORY \
     $RTL_PERIPHERALS \
     $RTL_INTERCONNECT \
-    external/wbuart32/rtl/ufifo.v \
     $RTL_TOP \
     $TB
 

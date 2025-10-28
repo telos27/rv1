@@ -209,9 +209,8 @@ module rv_soc #(
   // UART (16550-Compatible Serial Console)
   //==========================================================================
 
-  uart_16550_ufifo #(
-    .BASE_ADDR(32'h1000_0000),
-    .LGFLEN(4)  // Log2(16) = 4, giving 16-byte FIFO
+  uart_16550 #(
+    .BASE_ADDR(32'h1000_0000)
   ) uart_inst (
     .clk(clk),
     .reset_n(reset_n),

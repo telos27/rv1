@@ -144,6 +144,35 @@ module tb_soc;
     end
   end
 
+  // DEBUG: Monitor bus writes to UART - trace data path
+  `ifdef DEBUG_UART_BUS
+  always @(posedge clk) begin
+    if (reset_n && DUT.bus.master_req_valid && DUT.bus.sel_uart && DUT.bus.master_req_we) begin
+      $display("[DEBUG-BUS] Cycle %0d: UART write addr=0x%08h master_wdata[7:0]=0x%02h uart_wdata=0x%02h",
+               cycle_count, DUT.bus.master_req_addr,
+               DUT.bus.master_req_wdata[7:0], DUT.bus.uart_req_wdata);
+    end
+  end
+  `endif
+
+  // DEBUG: Monitor UART internal state
+  `ifdef DEBUG_UART_CORE
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Show when UART receives write request
+      if (DUT.uart_inst.req_valid && DUT.uart_inst.req_we) begin
+        $display("[DEBUG-UART] Cycle %0d: UART RX req_addr=%0d req_wdata=0x%02h",
+                 cycle_count, DUT.uart_inst.req_addr, DUT.uart_inst.req_wdata);
+      end
+      // Show FIFO state
+      if (DUT.uart_inst.req_valid && DUT.uart_inst.req_we && DUT.uart_inst.req_addr == 3'h0) begin
+        $display("[DEBUG-UART] Cycle %0d: TX FIFO wptr=%0d rptr=%0d count=%0d",
+                 cycle_count, DUT.uart_inst.tx_fifo_wptr, DUT.uart_inst.tx_fifo_rptr, DUT.uart_inst.tx_fifo_count);
+      end
+    end
+  end
+  `endif
+
   // UART TX monitor - display transmitted characters
   always @(posedge clk) begin
     if (reset_n && uart_tx_valid && uart_tx_ready) begin
