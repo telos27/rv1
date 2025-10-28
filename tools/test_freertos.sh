@@ -59,6 +59,7 @@ iverilog -g2012 \
     -o "$SIM_OUT" \
     -I rtl \
     -I rtl/config \
+    -I external/wbuart32/rtl \
     -D XLEN=32 \
     -D ENABLE_C_EXT=1 \
     -D ENABLE_BSS_FAST_CLEAR=1 \
@@ -66,6 +67,7 @@ iverilog -g2012 \
     $RTL_MEMORY \
     $RTL_PERIPHERALS \
     $RTL_INTERCONNECT \
+    external/wbuart32/rtl/ufifo.v \
     $RTL_TOP \
     $TB
 

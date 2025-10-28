@@ -2396,13 +2396,34 @@ module rv_core_pipelined #(
   // New instruction detected when: (PC changed) OR (valid transitions from 0→1)
   wire mem_stage_new_instr = exmem_valid && ((exmem_pc != exmem_pc_prev) || !exmem_valid_prev);
 
+  // Session 40: Track whether we've already issued a bus request for the current instruction
+  // This prevents duplicate requests when bus isn't ready (peripherals with FIFOs, busy states)
+  // Strategy: Set flag when request issued AND not ready, clear when ready OR new instruction
+  reg bus_req_issued;
+
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      bus_req_issued <= 1'b0;
+    end else begin
+      // Set: When we issue a write pulse (first time)
+      if (arb_mem_write_pulse && !bus_req_ready) begin
+        bus_req_issued <= 1'b1;
+      end
+      // Clear: When bus becomes ready OR instruction leaves MEM stage
+      else if (bus_req_ready || !exmem_valid) begin
+        bus_req_issued <= 1'b0;
+      end
+    end
+  end
+
   // CRITICAL: Only WRITES need to be one-shot pulses to prevent duplicate side effects
   // READS can be level signals (needed for multi-cycle operations, atomics, etc.)
   // EXCEPTION: Atomic operations (LR/SC, AMO) need LEVEL signals for multi-cycle read-modify-write
   //            The atomic unit controls writes via ex_atomic_busy, so allow continuous writes
+  // Session 40: Also check !bus_req_issued to prevent duplicate requests when bus not ready
   wire arb_mem_write_pulse = mmu_ptw_req_valid ? 1'b0 :
                              ex_atomic_busy ? dmem_mem_write :                       // Atomic: level signal
-                             (dmem_mem_write && mem_stage_new_instr);                // Normal: one-shot pulse
+                             (dmem_mem_write && mem_stage_new_instr && !bus_req_issued);  // Normal: one-shot pulse, not already issued
 
   assign bus_req_valid = arb_mem_read || arb_mem_write_pulse;
   assign bus_req_addr  = arb_mem_addr;

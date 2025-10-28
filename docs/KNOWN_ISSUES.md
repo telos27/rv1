@@ -4,6 +4,93 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
+### UART Transmits Undefined Data (CRITICAL - BLOCKS PHASE 2) 🔥
+
+**Status**: 🚨 ACTIVE - CRITICAL BUG (Sessions 37-41, 2025-10-28)
+**Severity**: CRITICAL - Blocks Phase 2 OS Integration
+**Tests Affected**: None (CPU tests pass, UART functional bug)
+**Impact**: FreeRTOS console output completely unusable
+
+**Description**:
+UART transmits undefined data (0xxx) instead of actual character bytes. Minimal test writing "ABC" produces 3 transmissions with undefined values instead of ASCII characters.
+
+**Symptom**:
+- Minimal test `test_uart_abc.s`: Expected "ABC", Actual: `[0xxx][0xxx][0xxx]` (3 undefined bytes)
+- FreeRTOS: Expected `"FreeRTOS Blinky Demo"`, Actual: undefined/garbled characters
+- TX valid/ready handshake working (3 transmissions), but `uart_tx_data` is 'x' (undefined)
+
+**Root Cause** (Under Investigation - Session 41):
+Data not reaching UART FIFO OR FIFO read path broken:
+
+1. When FIFO empty (wptr==rptr), bus write increments wptr
+2. TX state machine sees non-empty FIFO combinatorially in SAME cycle
+3. TX reads from FIFO[rptr] in SAME cycle as write to FIFO[wptr]
+4. Since wptr==rptr before increment, both access same array index!
+5. Icarus Verilog memory arrays have undefined read-during-write behavior
+
+**Evidence** (Session 41):
+- Created minimal test `test_uart_abc.s` - writes "ABC" to UART address 0x10000000
+- Testbench shows 3 TX transmissions (correct count) ✅
+- But `uart_tx_data = 0xxx` (undefined) for all 3 characters ❌
+- Core generates stores to UART address (assembly verified) ✅
+- Bus routing to UART address 0x10000000 (needs verification) ⚠️
+- FIFO write edge detection present (req_valid_rising) ✅
+- wbuart32 ufifo integration (formally verified FIFO used) ✅
+
+**Investigation History** (Sessions 37-41):
+- **Session 37**: Initially thought to be FIFO read-during-write hazard
+- **Session 38**: Multiple FIFO timing fixes attempted, all unsuccessful
+- **Session 39**: Integrated wbuart32 formally-verified FIFO - bug persists!
+- **Session 40**: Hypothesized core ignores `bus_req_ready` - partially incorrect
+- **Session 41**: Implemented bus handshaking, discovered UART transmits undefined data
+
+**Key Finding** (Session 41):
+- UART is **always ready** (`req_ready <= req_valid`) - never asserts flow control
+- Bus handshaking fix won't trigger for current UART implementation
+- Problem is NOT duplication - it's that NO VALID DATA reaches UART
+- Either bus routing broken OR FIFO write detection not working OR integration issue
+
+**Next Debug Steps** (Session 42):
+1. Add $display to `simple_bus.v` to verify bus routing to UART
+2. Add $display to `uart_16550_ufifo.v` to verify FIFO write detection
+3. Check `req_valid_rising` edge detection with waveforms
+4. Verify wbuart32 ufifo write/read paths
+5. Try old `uart_16550.v` from backup to isolate wbuart32 integration
+6. Generate VCD waveform for cycle-by-cycle analysis
+
+**Current Workaround**: None. UART output is unusable.
+
+**Verification**:
+- Quick regression: 14/14 PASSED ✅ (no CPU regressions)
+- UART hardware path: Core → Bus → UART ✅ (functional)
+- UART FIFO: ❌ BROKEN (character duplication)
+
+**Fix Priority**: 🔥 **HIGHEST** - **BLOCKS ALL PHASE 2 WORK**
+- Cannot debug FreeRTOS without working console
+- Cannot verify task execution or system behavior
+- Must fix before continuing OS integration
+
+**Estimated Effort**: 4-8 hours
+- Implement dual-port RAM FIFO module (2 hours)
+- Integrate into uart_16550.v (2 hours)
+- Test and verify character-by-character output (2-4 hours)
+
+**Files Affected**:
+- `rtl/peripherals/uart_16550_ufifo.v` (UART with wbuart32 FIFO)
+- `rtl/core/rv32i_core_pipelined.v` (bus handshaking added Session 41)
+- `rtl/interconnect/simple_bus.v` (bus routing - needs verification)
+- `external/wbuart32/rtl/ufifo.v` (formally verified FIFO)
+- `tests/asm/test_uart_abc.s` (minimal test case - NEW)
+
+**References**:
+- `docs/SESSION_37_UART_FIFO_DEBUG.md` - Initial FIFO hazard analysis
+- `docs/SESSION_38_UART_FIFO_FIX_ATTEMPTS.md` - FIFO timing fix attempts
+- `docs/SESSION_39_WBUART32_INTEGRATION.md` - Formally verified FIFO integration
+- `docs/SESSION_40_BUS_HANDSHAKE_DEBUG.md` - Bus protocol investigation
+- `docs/SESSION_41_BUS_HANDSHAKING.md` - Bus handshaking implementation, undefined data discovery
+
+---
+
 ### FENCE.I Self-Modifying Code Support (Medium Priority)
 
 **Status**: 🐛 FAILING (Pre-existing since Session 33)

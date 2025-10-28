@@ -16,14 +16,15 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Achievement**: 🎯 **IMEM BYTE-SELECT - STRINGS READABLE FROM .TEXT!** 🎯
 - **Target**: RV32IMAFDC / RV64IMAFDC with full privilege architecture
 - **Privilege Tests**: 33/34 passing (97%) - Phases 1-2-3-5-6-7 complete, Phase 4: 5/8 ✅
-- **OS Integration**: Phase 2 IN PROGRESS 🚧 - FreeRTOS boots, scheduler running, UART cosmetic issue
-- **Recent Work**: UART FIFO Fix Attempts (2025-10-28 Session 38) - See below
-- **Session 38 Summary**: Multiple fix attempts, comprehensive ASIC analysis, issue likely simulator artifact
-- **FreeRTOS Status**: Boots successfully, scheduler running, UART character duplication (cosmetic only)
+- **Achievement**: 🔧 **BUS HANDSHAKING IMPLEMENTED** 🔧
+- **OS Integration**: Phase 2 BLOCKED 🚧 - FreeRTOS boots, scheduler running, **CRITICAL UART BUG**
+- **Recent Work**: Bus Handshaking & UART Debug (2025-10-28 Session 41) - See below
+- **Session 41 Summary**: Bus handshaking implemented (no regressions), UART undefined data bug discovered
+- **FreeRTOS Status**: Boots successfully, scheduler running, **UART transmits undefined data (0xxx)**
 - **Known Issues**:
+  - 🔥 **UART transmits undefined data - CRITICAL BUG BLOCKING PHASE 2** (Session 41)
   - ⚠️ FENCE.I test failing (pre-existing since Session 33, low priority)
-  - 🔍 UART TX FIFO character duplication (Session 38, likely Icarus Verilog artifact, low priority)
-- **Next Step**: Continue FreeRTOS OS integration (higher priority than cosmetic UART issue)
+- **Next Step**: DEBUG UART UNDEFINED DATA - Verify bus routing, FIFO write path, wbuart32 integration
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -121,14 +122,36 @@ rv1/
 
 ### Key Fixes (Recent Sessions)
 
-**Session 38 (2025-10-28)**: UART FIFO Fix Attempts - Comprehensive Analysis 📊
-- **Achievement**: Comprehensive ASIC synthesis analysis, multiple solution approaches documented!
+**Session 41 (2025-10-28)**: Bus Handshaking Implementation - Partial Success 🔧
+- **Achievement**: Implemented proper bus handshaking in core - prevents duplicate requests when peripherals not ready
+- **Implementation**: Added `bus_req_issued` tracking flag in `rv32i_core_pipelined.v`
+  - Sets when write pulse issued AND `bus_req_ready=0`
+  - Clears when `bus_req_ready=1` OR instruction leaves MEM stage
+  - Gates write pulse on `!bus_req_issued` to prevent duplicates
+- **Discovery #1**: UART is **always ready** (`req_ready <= req_valid`)
+  - Bus handshaking fix won't trigger for current UART
+  - Session 40's hypothesis was incorrect for this peripheral
+- **Discovery #2**: Created minimal test `test_uart_abc.s` (write "ABC")
+  - **UART transmits UNDEFINED DATA (0xxx)** instead of 'A', 'B', 'C'!
+  - This is NOT duplication - data never reaches UART or FIFO read broken
+  - 3 transmissions occur (correct count) but all with undefined values
+- **Verification**: Quick regression 14/14 PASSED ✅ (no regressions from core changes)
+- **Status**: 🚨 CRITICAL BUG - Different root cause than Sessions 37-40
+- **Impact**: FreeRTOS console output shows undefined characters
+- **Next Steps**: Debug bus routing, verify FIFO write path, check wbuart32 integration
+- **Reference**: `docs/SESSION_41_BUS_HANDSHAKING.md`
+
+**Session 38 (2025-10-28)**: UART FIFO Fix Attempts - CRITICAL BUG REMAINS 🔥
+- **Problem**: UART output severely garbled - alternating/duplicate characters making text unreadable
+  - Expected: "FreeRTOS Blinky Demo"
+  - Actual: "  eeeeOSOSliliy ymomorgrg..." (alternating/duplicate characters)
 - **Attempts**: Register file forwarding, combinatorial detection, write-block handshake
-- **Finding**: Issue likely Icarus Verilog simulator artifact, won't appear in hardware
+- **Analysis**: Comprehensive ASIC synthesis analysis, multiple solution approaches documented
 - **ASIC Insight**: Dual-port RAM ≠ magic bullet! Small FIFOs use distributed RAM (industry standard)
-- **Solution**: Applied write-block handshake (+3 lines), issue persists but cosmetic only
-- **Verification**: Quick regression 14/14 PASSED ✅ (no regressions)
-- **Status**: Documented as low-priority cosmetic issue, proceed with OS integration
+- **Root Cause**: Read-during-write hazard in UART TX FIFO (Session 37 root cause analysis)
+- **Verification**: Quick regression 14/14 PASSED ✅ (no regressions in CPU core)
+- **Status**: 🚨 CRITICAL BUG - BLOCKS PHASE 2 - Architectural fix needed for UART FIFO
+- **Impact**: FreeRTOS console output completely unusable, debugging impossible
 - **Reference**: `docs/SESSION_38_UART_FIFO_FIX_ATTEMPTS.md`, `docs/SESSION_38_SUMMARY.md`
 
 **Session 37 (2025-10-28)**: UART FIFO Debug - Root Cause Identified 🔍
@@ -498,7 +521,15 @@ rv1/
 
 See `docs/KNOWN_ISSUES.md` for detailed tracking.
 
-**Active:**
+**Active (CRITICAL):**
+- 🔥 **UART TX FIFO character duplication - BLOCKS PHASE 2** (Sessions 37-38)
+  - **Symptom**: Console output garbled: "  eeeeOSOSliliy ymomorgrg..."
+  - **Root Cause**: Read-during-write hazard in FIFO (wptr==rptr, same-cycle access)
+  - **Impact**: FreeRTOS console unusable, debugging impossible
+  - **Priority**: HIGHEST - must fix before continuing Phase 2
+  - **Solution**: Architectural fix needed (dual-port RAM or timing redesign)
+
+**Active (Low Priority):**
 - ⚠️ FENCE.I self-modifying code test (pre-existing since Session 33, low priority)
   - Impact: 80/81 compliance (98.8%)
   - FreeRTOS/Linux not affected (don't use self-modifying code)

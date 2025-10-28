@@ -209,9 +209,9 @@ module rv_soc #(
   // UART (16550-Compatible Serial Console)
   //==========================================================================
 
-  uart_16550 #(
+  uart_16550_ufifo #(
     .BASE_ADDR(32'h1000_0000),
-    .FIFO_DEPTH(16)
+    .LGFLEN(4)  // Log2(16) = 4, giving 16-byte FIFO
   ) uart_inst (
     .clk(clk),
     .reset_n(reset_n),
@@ -361,6 +361,15 @@ module rv_soc #(
   always @(posedge clk) begin
     if (mtip_vec[0] || mtip) begin
       $display("[SOC] mtip_vec=%b mtip=%b msip_vec=%b msip=%b", mtip_vec, mtip, msip_vec, msip);
+    end
+  end
+  `endif
+
+  `ifdef DEBUG_UART_BUS
+  always @(posedge clk) begin
+    if (uart_req_valid && uart_req_we) begin
+      $display("[BUS-UART-WR] Cycle %0d: bus_req_valid=%b bus_req_we=%b addr=0x%08h data=0x%02h '%c' uart_req_ready=%b",
+               $time/10, uart_req_valid, uart_req_we, {uart_req_addr, 3'b000}, uart_req_wdata, uart_req_wdata, uart_req_ready);
     end
   end
   `endif

@@ -113,12 +113,14 @@ iverilog -g2012 \
     -I rtl/peripherals/ \
     -I rtl/interconnect/ \
     -I rtl/config/ \
+    -I external/wbuart32/rtl/ \
     -o "$OUTPUT_VVP" \
     rtl/rv_soc.v \
     rtl/core/*.v \
     rtl/memory/*.v \
     rtl/peripherals/*.v \
     rtl/interconnect/*.v \
+    external/wbuart32/rtl/ufifo.v \
     "$TESTBENCH"
 
 if [ $? -ne 0 ]; then
