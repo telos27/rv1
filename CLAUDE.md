@@ -3,26 +3,31 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 48, 2025-10-28)
+## Current Status (Session 49, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: Blocked - Trap Handler Debug Needed (Session 48 → 49)
+- **Status**: Blocked - Bus Interconnect Bug (Session 49 → 50)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
   2. ✅ Enhanced multitasking demo created (Session 47)
   3. ✅ Queue and sync demos created (Session 47)
   4. ✅ **CLINT mtime prescaler bug FIXED** (Session 48)
-  5. 🐛 **BLOCKER**: FreeRTOS trap handlers are stubs (Session 49)
-  6. 📋 Debug/fix printf() duplication issue
-  7. 📋 Optional: UART interrupt-driven I/O
+  5. ✅ **Trap handler installation verified** (Session 49)
+  6. 🐛 **BLOCKER**: MTIMECMP writes don't reach CLINT (Session 50)
+  7. 📋 Debug/fix printf() duplication issue
+  8. 📋 Optional: UART interrupt-driven I/O
 
-### 🎉 Recent Milestone (Session 48): CLINT MTIME Bug FIXED!
-- **CLINT Prescaler Bug**: RESOLVED ✅
-  - Root cause: mtime incremented every CPU cycle, preventing atomic 64-bit reads on RV32
-  - Fix: Added `MTIME_PRESCALER=10` to increment mtime every 10 cycles
-  - **FreeRTOS now completes timer initialization successfully!** 🚀
-  - See: `docs/SESSION_48_CLINT_MTIME_FIX.md`
+### 🎉 Recent Milestone (Session 49): FreeRTOS Boots and Scheduler Starts!
+- **FreeRTOS Boot Sequence**: WORKING ✅
+  - ✅ Tasks created successfully
+  - ✅ Scheduler starts (`vTaskStartScheduler()` called)
+  - ✅ `vPortSetupTimerInterrupt()` executes
+  - ✅ Trap handlers properly installed (not stubs!)
+- **New Blocker Found**: Bus interconnect issue
+  - MTIMECMP writes (address 0x02004000) don't reach CLINT module
+  - Store instructions execute but never trigger req_valid on CLINT
+  - See: `docs/SESSION_49_TRAP_HANDLER_INVESTIGATION.md`
 
 ### Compliance & Testing
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
@@ -30,7 +35,11 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Quick Regression**: 14/14 tests, ~4s runtime
 - **FreeRTOS**: Boots successfully, timer init complete, reaches scheduler ✅
 
-### Recent Achievements (Session 46-48)
+### Recent Achievements (Session 46-49)
+- ✅ **FreeRTOS scheduler starts successfully** (Session 49)
+  - Verified trap handlers are properly installed
+  - Tasks created and scheduler reaches first context switch
+  - Identified bus routing as final blocker
 - ✅ **CLINT mtime prescaler bug FIXED** (Session 48)
   - Atomic 64-bit reads now work on RV32
   - Timer initialization completes successfully
@@ -51,10 +60,12 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - ✅ RVC FP decoder (C.FLDSP/C.FSDSP support)
 
 ### Active Issues
-- 🐛 **CRITICAL**: FreeRTOS trap handlers are infinite loop stubs (Session 49)
-  - Symptom: System takes traps (mcause=11 ECALL, mcause=2 Illegal) but handlers loop forever
-  - Location: Trap handlers at PC 0x1c2/0x1d0 are stubs that just read CSRs and loop
-  - Next: Investigate why FreeRTOS trap handlers aren't implemented, install proper handlers
+- 🐛 **CRITICAL**: MTIMECMP writes don't reach CLINT module (Session 50)
+  - Symptom: Store instructions to 0x02004000 execute but never reach CLINT peripheral
+  - CLINT req_valid never asserts, mtimecmp stays at max value (0xFFFFFFFFFFFFFFFF)
+  - No timer interrupts → tasks never run (stuck waiting for first context switch)
+  - Root cause: Bus interconnect routing issue
+  - Next: Debug bus arbiter, verify CLINT connectivity, add bus transaction tracing
 - ⚠️ FENCE.I test (low priority - self-modifying code)
 - ⚠️ picolibc printf() duplication (workaround: use puts())
 
