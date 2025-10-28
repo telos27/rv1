@@ -2473,6 +2473,44 @@ module rv_core_pipelined #(
   // Bus read data feeds back to arbiter
   assign arb_mem_read_data = bus_req_rdata;
 
+  //===========================================================================
+  // Debug: Bus Transaction Tracing (Session 50 - MTIMECMP write bug)
+  //===========================================================================
+  `ifdef DEBUG_BUS
+  always @(posedge clk) begin
+    // Trace ALL bus transactions
+    if (bus_req_valid) begin
+      if (bus_req_we) begin
+        $display("[CORE-BUS-WR] Cycle %0d: addr=0x%08h wdata=0x%016h size=%0d valid=%b ready=%b | PC=%h",
+                 $time/10, bus_req_addr, bus_req_wdata, bus_req_size,
+                 bus_req_valid, bus_req_ready, exmem_pc);
+      end else begin
+        $display("[CORE-BUS-RD] Cycle %0d: addr=0x%08h size=%0d valid=%b ready=%b rdata=0x%016h | PC=%h",
+                 $time/10, bus_req_addr, bus_req_size,
+                 bus_req_valid, bus_req_ready, bus_req_rdata, exmem_pc);
+      end
+
+      // Specifically highlight CLINT range accesses (0x0200_0000 - 0x0200_FFFF)
+      if (bus_req_addr >= 32'h0200_0000 && bus_req_addr <= 32'h0200_FFFF) begin
+        $display("       *** CLINT ACCESS DETECTED *** offset=0x%04h", bus_req_addr[15:0]);
+        if (bus_req_addr >= 32'h0200_4000 && bus_req_addr <= 32'h0200_BFF7) begin
+          $display("       *** MTIMECMP RANGE *** (should be 0x4000-0xBFF7)");
+        end
+        if (bus_req_addr == 32'h0200_4000) begin
+          $display("       *** MTIMECMP[0] LOWER 32-bit WRITE ***");
+        end
+        if (bus_req_addr == 32'h0200_4004) begin
+          $display("       *** MTIMECMP[0] UPPER 32-bit WRITE ***");
+        end
+      end
+
+      // Show MEM stage state for debugging
+      $display("       MEM: exmem_valid=%b mem_write=%b mem_read=%b new_instr=%b issued=%b",
+               exmem_valid, dmem_mem_write, dmem_mem_read, mem_stage_new_instr, bus_req_issued);
+    end
+  end
+  `endif
+
   // Connect arbiter read data to both integer and FP paths
   // For integer loads, use lower XLEN bits (with sign/zero extension handled by bus slaves)
   // For FP loads, use full FLEN bits

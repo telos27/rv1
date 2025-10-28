@@ -67,6 +67,9 @@ fi
 if [ -n "$DEBUG_CSR" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_CSR=1"
 fi
+if [ -n "$DEBUG_BUS" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_BUS=1"
+fi
 
 iverilog -g2012 \
     -o "$SIM_OUT" \

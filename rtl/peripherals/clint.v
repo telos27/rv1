@@ -285,17 +285,17 @@ module clint #(
   // Monitor for debugging (Icarus Verilog compatible)
   always @(posedge clk) begin
     if (req_valid) begin
-      $display("DEBUG[@%t]: addr=0x%04h (top13=0x%03h) we=%b is_mtime=%b is_mtimecmp=%b is_msip=%b hart_id=%0d",
-               $time, req_addr, req_addr[15:3], req_we, is_mtime, is_mtimecmp, is_msip, hart_id);
+      $display("[CLINT-REQ] Cycle %0d: req_valid=%b addr=0x%04h we=%b wdata=0x%016h ready=%b | is_mtime=%b is_mtimecmp=%b is_msip=%b hart_id=%0d",
+               $time/10, req_valid, req_addr, req_we, req_wdata, req_ready, is_mtime, is_mtimecmp, is_msip, hart_id);
     end
     if (req_valid && req_we && is_mtime) begin
-      $display("  -> MTIME write at time %t: 0x%016h", $time, req_wdata);
+      $display("  -> MTIME WRITE: 0x%016h (cycle %0d)", req_wdata, $time/10);
     end
     if (req_valid && req_we && is_mtimecmp) begin
-      $display("  -> MTIMECMP[%0d] write at time %t: 0x%016h", hart_id, $time, req_wdata);
+      $display("  -> MTIMECMP[%0d] WRITE: 0x%016h (cycle %0d) | mtime=%0d", hart_id, req_wdata, $time/10, mtime);
     end
     if (req_valid && req_we && is_msip) begin
-      $display("  -> MSIP[%0d] write at time %t: %b", hart_id, $time, req_wdata[0]);
+      $display("  -> MSIP[%0d] WRITE: %b (cycle %0d)", hart_id, req_wdata[0], $time/10);
     end
   end
   `endif

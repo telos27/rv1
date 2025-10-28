@@ -225,19 +225,38 @@ module simple_bus #(
   `ifdef DEBUG_BUS
   always @(posedge clk) begin
     if (master_req_valid) begin
-      $display("BUS[@%t]: addr=0x%08h we=%b size=%0d | clint=%b uart=%b plic=%b dmem=%b none=%b",
-               $time, master_req_addr, master_req_we, master_req_size,
-               sel_clint, sel_uart, sel_plic, sel_dmem, sel_none);
-      if (sel_clint)
-        $display("  -> CLINT offset=0x%04h", clint_req_addr);
-      if (sel_uart)
-        $display("  -> UART reg=0x%01h data=0x%02h", uart_req_addr, uart_req_wdata);
-      if (sel_plic)
-        $display("  -> PLIC addr=0x%08h", plic_req_addr);
-      if (sel_dmem)
-        $display("  -> DMEM addr=0x%08h", dmem_req_addr);
-      if (sel_none)
-        $display("  -> UNMAPPED ADDRESS!");
+      $display("[BUS] Cycle %0d: addr=0x%08h we=%b size=%0d | sel: clint=%b uart=%b plic=%b dmem=%b imem=%b none=%b",
+               $time/10, master_req_addr, master_req_we, master_req_size,
+               sel_clint, sel_uart, sel_plic, sel_dmem, sel_imem, sel_none);
+
+      // Show address decode calculations for CLINT
+      if (master_req_addr >= 32'h0200_0000 && master_req_addr <= 32'h0200_FFFF) begin
+        $display("       CLINT range detected: addr & mask = 0x%08h == base 0x%08h ? %b",
+                 master_req_addr & CLINT_MASK, CLINT_BASE, sel_clint);
+      end
+
+      if (sel_clint) begin
+        $display("  -> CLINT: offset=0x%04h we=%b wdata=0x%016h valid=%b ready=%b",
+                 clint_req_addr, clint_req_we, clint_req_wdata, clint_req_valid, clint_req_ready);
+      end
+      if (sel_uart) begin
+        $display("  -> UART: reg=0x%01h data=0x%02h '%c' we=%b valid=%b ready=%b",
+                 uart_req_addr, uart_req_wdata,
+                 (uart_req_wdata >= 32 && uart_req_wdata < 127) ? uart_req_wdata : 8'h2E,
+                 uart_req_we, uart_req_valid, uart_req_ready);
+      end
+      if (sel_plic) begin
+        $display("  -> PLIC: addr=0x%08h valid=%b ready=%b", plic_req_addr, plic_req_valid, plic_req_ready);
+      end
+      if (sel_dmem) begin
+        $display("  -> DMEM: addr=0x%08h valid=%b ready=%b", dmem_req_addr, dmem_req_valid, dmem_req_ready);
+      end
+      if (sel_imem) begin
+        $display("  -> IMEM: addr=0x%08h valid=%b ready=%b", imem_req_addr, imem_req_valid, imem_req_ready);
+      end
+      if (sel_none) begin
+        $display("  -> UNMAPPED ADDRESS! (returning dummy response)");
+      end
     end
   end
   `endif
