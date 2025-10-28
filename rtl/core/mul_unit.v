@@ -198,4 +198,44 @@ module mul_unit #(
   // This is one cycle faster than using a registered busy signal.
   assign busy = (state != IDLE);
 
+  // Debug tracing
+  `ifdef DEBUG_MULTIPLIER
+  always @(posedge clk) begin
+    if (start && state == IDLE) begin
+      $display("[MUL_UNIT] START: op=%b (MUL=00,MULH=01,MULHSU=10,MULHU=11), a=0x%h, b=0x%h",
+               mul_op, operand_a, operand_b);
+      $display("[MUL_UNIT]   abs_a=0x%h, abs_b=0x%h, negate_a=%b, negate_b=%b",
+               abs_a, abs_b, negate_a, negate_b);
+    end
+
+    if (state == COMPUTE) begin
+      if (cycle_count == 0 || cycle_count == 1 || cycle_count >= op_width - 2) begin
+        $display("[MUL_UNIT] COMPUTE[%2d]: product=0x%h, multiplicand=0x%h, multiplier=0x%h, mult[0]=%b",
+                 cycle_count, product, multiplicand, multiplier, multiplier[0]);
+      end
+    end
+
+    if (state == DONE) begin
+      $display("[MUL_UNIT] DONE: op=%b, result_negative=%b, product=0x%h",
+               op_reg, result_negative, product);
+      $display("[MUL_UNIT]   product[%d:%d]=0x%h, product[%d:0]=0x%h",
+               2*XLEN-1, XLEN, product[2*XLEN-1:XLEN],
+               XLEN-1, product[XLEN-1:0]);
+      $display("[MUL_UNIT]   result=0x%h, ready=%b", result, ready);
+
+      // Special trace for MULHU
+      if (op_reg == MULHU) begin
+        $display("[MUL_UNIT] *** MULHU SPECIFIC: expected upper bits, got result=0x%h ***", result);
+        $display("[MUL_UNIT]     If result equals operand_a (0x%h), THIS IS THE BUG!", operand_a);
+      end
+    end
+
+    if (state != state_next) begin
+      $display("[MUL_UNIT] STATE: %s -> %s",
+               state == IDLE ? "IDLE" : state == COMPUTE ? "COMPUTE" : "DONE",
+               state_next == IDLE ? "IDLE" : state_next == COMPUTE ? "COMPUTE" : "DONE");
+    end
+  end
+  `endif
+
 endmodule

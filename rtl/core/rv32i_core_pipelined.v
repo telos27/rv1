@@ -1290,11 +1290,12 @@ module rv_core_pipelined #(
   end
   `endif
 
-  // Forward data selection: use atomic_result for atomic instructions, int_result_fp for FP-to-INT, alu_result otherwise
+  // Forward data selection: use atomic_result for atomic instructions, int_result_fp for FP-to-INT, mul_div_result for M-extension, alu_result otherwise
   wire [XLEN-1:0] exmem_forward_data;
   assign exmem_forward_data = exmem_is_atomic ? exmem_atomic_result :
                               exmem_int_reg_write_fp ? exmem_int_result_fp :
                               (exmem_wb_sel == 3'b011) ? exmem_csr_rdata :  // CSR read result
+                              (exmem_wb_sel == 3'b100) ? exmem_mul_div_result :  // M extension result
                               exmem_alu_result;
 
   // rs1 data forwarding (for SFENCE.VMA and other instructions that use rs1 data directly)

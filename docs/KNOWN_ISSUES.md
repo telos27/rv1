@@ -4,99 +4,70 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### MULHU Context-Specific Bug (CRITICAL - BLOCKS PHASE 2) 🔥
+### None - All Critical Issues Resolved! ✅
 
-**Status**: 🚨 ACTIVE - CRITICAL BUG (Session 44, 2025-10-28)
-**Severity**: CRITICAL - Blocks Phase 2 OS Integration (FreeRTOS)
+## Resolved Issues
+
+### M-Extension Data Forwarding Bug (RESOLVED - Session 46) ✅
+
+**Status**: ✅ RESOLVED (Session 46, 2025-10-28)
+**Original Severity**: CRITICAL - Blocked Phase 2 OS Integration (FreeRTOS)
 **Tests Affected**: FreeRTOS queue creation, scheduler startup
-**Impact**: FreeRTOS fails assertion, cannot start scheduler
+**Impact**: FreeRTOS failed assertion, could not start scheduler
 
 **Description**:
-The `MULHU` (Multiply High Unsigned) instruction returns the wrong value in FreeRTOS context, causing an overflow check assertion to fail. The bug is context-specific - MULHU works correctly in isolation but fails in specific instruction sequences.
+M-extension instructions (MUL/MULH/MULHSU/MULHU/DIV/etc.) returned incorrect values when their results were used by subsequent instructions via data forwarding. The bug manifested as MULHU returning operand_a instead of the computed result in specific sequences.
 
-**Root Cause** (Session 44):
-- **Instruction**: `MULHU 1, 84` (get upper 32 bits of 1 × 84)
-- **Expected result**: 0 (since 1×84=84 fits in 32 bits, upper word is 0)
-- **Actual result**: 10 (0x0A) ❌ **WRONG!**
+**Root Cause** (Session 46):
+The bug was **NOT in the multiplier arithmetic** - the multiplier unit correctly computed results. The issue was in the **data forwarding path** at `rtl/core/rv32i_core_pipelined.v:1295-1299`.
 
-**Critical Discovery**:
-- ✅ Official `rv32um-p-mulhu` compliance test: **PASSES**
-- ✅ Isolated test `test_mulhu_1_84` (same values): **PASSES** (returns 0)
-- ❌ Same operation in FreeRTOS `xQueueGenericReset()`: **FAILS** (returns 10)
+The `exmem_forward_data` multiplexer was missing M-extension results:
+```verilog
+// BEFORE (BUGGY):
+assign exmem_forward_data = exmem_is_atomic ? exmem_atomic_result :
+                            exmem_int_reg_write_fp ? exmem_int_result_fp :
+                            (exmem_wb_sel == 3'b011) ? exmem_csr_rdata :
+                            exmem_alu_result;  // ← Falls through to ALU result!
+```
 
-**Instruction Sequence** (FreeRTOS):
+When `wb_sel == 3'b100` (M-extension), it would forward `exmem_alu_result` instead of `exmem_mul_div_result`, causing wrong values to propagate through the pipeline.
+
+**Example Failure**:
 ```asm
-1168:  lw    a5, 60(a0)     # Load queueLength = 1
-116a:  mv    s0, a0
-116c:  beqz  a5, fail       # Check if queueLength == 0
-116e:  lw    a4, 64(s0)     # Load itemSize = 84  ← LOAD right before MULHU!
-1170:  mulhu a5, a5, a4     # Multiply high (returns 10 instead of 0!) ❌
-1174:  bnez  a5, fail       # Check overflow → ASSERTION FAILS
+1170:  mulhu a5, a5, a4     # MULHU(10, 16) → should return 0
+1174:  ... use a5 ...       # But a5 contained 10 (operand_a from ALU)
 ```
 
-**Hypothesis**:
-1. **Load-use hazard**: `LW a4, 64(s0)` at 0x116e feeds directly into `MULHU` at 0x1170
-2. **Forwarding bug**: Register forwarding may corrupt MULHU result
-3. **Multiplier state**: Previous operations leave multiplier in bad state
-4. **Result selection**: Multiplier may be returning wrong word of 64-bit product
-
-**Evidence**:
-```
-[QUEUE-CHECK] PC=0x1170: About to execute MULHU:
-[QUEUE-CHECK]   a5 (queueLength) = 1 (0x00000001)  ✅
-[QUEUE-CHECK]   a4 (itemSize) = 84 (0x00000054)    ✅
-[QUEUE-CHECK]   Expected product (a5*a4) = 84
-
-[QUEUE-CHECK] PC=0x1174: mulhu result (a5) = 0x0000000a  ❌
-[QUEUE-CHECK] *** ASSERTION WILL FAIL: queueLength * itemSize OVERFLOWS! ***
+**The Fix**:
+```verilog
+// AFTER (FIXED):
+assign exmem_forward_data = exmem_is_atomic ? exmem_atomic_result :
+                            exmem_int_reg_write_fp ? exmem_int_result_fp :
+                            (exmem_wb_sel == 3'b011) ? exmem_csr_rdata :
+                            (exmem_wb_sel == 3'b100) ? exmem_mul_div_result :  // ← ADDED
+                            exmem_alu_result;
 ```
 
-**Next Debug Steps** (Session 45):
-1. Capture VCD waveforms around cycle 31770 (MULHU execution)
-2. Analyze `rtl/core/mul_div_unit.v` for MULHU implementation bugs
-3. Check forwarding paths for load-to-multiply hazards
-4. Compare waveforms: FreeRTOS (failing) vs test_mulhu_1_84 (passing)
-5. Look for:
-   - Off-by-one in result word selection
-   - Incorrect sign extension
-   - State machine issues
-   - Forwarding path bugs
+**Verification After Fix**:
+- ✅ Quick regression: 14/14 tests PASSED
+- ✅ Official tests: 80/81 tests PASSED (98.8%)
+- ✅ **FreeRTOS boots successfully and starts scheduler!** 🎉
 
-**Current Workaround**: None. FreeRTOS cannot start scheduler.
+**Resolution**: One-line fix in forwarding multiplexer (Session 46, 2025-10-28)
+**Actual Effort**: 2 hours (debug + fix + verification)
 
-**Verification**:
-- Quick regression: 14/14 PASSED ✅ (including official MULHU test!)
-- FreeRTOS: Assertion failure at scheduler startup ❌
-
-**Fix Priority**: 🔥 **HIGHEST** - **FINAL BLOCKER FOR PHASE 2**
-- Prevents FreeRTOS scheduler from starting
-- Blocks all OS integration work
-- Must fix before any RTOS functionality available
-
-**Estimated Effort**: 2-4 hours (Session 45)
-- Waveform capture and analysis (1 hour)
-- Root cause identification in multiplier unit (1-2 hours)
-- Fix implementation and verification (1 hour)
-
-**Files Affected**:
-- `rtl/core/mul_div_unit.v` (multiplier implementation)
-- `rtl/core/forwarding_unit.v` (potential forwarding bug)
-- `rtl/core/rv32i_core_pipelined.v` (pipeline integration)
-- `tb/integration/tb_freertos.v` (debug instrumentation added)
-
-**Test Cases**:
-- `tests/asm/test_mulhu_1_84.s` - Isolated test (PASSES)
-- `tests/official-compliance/rv32um-p-mulhu.hex` - Official test (PASSES)
-- FreeRTOS scheduler startup - Real-world case (FAILS)
+**Files Modified**:
+- `rtl/core/rv32i_core_pipelined.v` - Fixed `exmem_forward_data` multiplexer
+- `rtl/core/mul_unit.v` - Added DEBUG_MULTIPLIER tracing (diagnostic only)
 
 **References**:
-- `docs/SESSION_44_FREERTOS_ASSERTION_DEBUG.md` - Comprehensive debug analysis
-- FreeRTOS function: `xQueueGenericReset()` in `queue.c`
-- Assertion location: PC 0x1174 in `xQueueGenericReset()`
+- `docs/SESSION_46_MULHU_BUG_FIXED.md` - Complete fix documentation
+- `docs/SESSION_45_SUMMARY.md` - Root cause isolation
+- `docs/SESSION_44_FREERTOS_ASSERTION_DEBUG.md` - Initial bug discovery
 
 ---
 
-## Active Issues
+## Low Priority Issues
 
 ### picolibc printf() Character Duplication (WORKAROUND ACTIVE) ⚠️
 
