@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 55, 2025-10-28)
+## Current Status (Session 56, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: 🚨 **BLOCKED - FPU Context Restore Exception** (Session 55)
+- **Status**: 🔧 **MSTATUS.FS Implemented - Instruction Decode Issue Found** (Session 56)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -20,34 +20,45 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   9. ✅ **xISRStackTop calculation workaround** (Session 53)
   10. ✅ **EX/MEM hold during bus wait FIXED** (Session 54) 🎉
   11. ✅ **FreeRTOS boots and scheduler starts** (Session 55)
-  12. 🚨 **BLOCKED**: Task switching fails - FPU exception at xPortStartFirstTask
-  13. 📋 **NEXT**: Fix FPU context restore exception (3 options: fix FPU, disable FP context, lazy FPU)
-  14. 📋 Test FreeRTOS task switching and timer interrupts
-  15. 📋 Debug/fix printf() duplication issue
-  16. 📋 Optional: UART interrupt-driven I/O
+  12. ✅ **MSTATUS.FS field fully implemented** (Session 56) 🎉
+  13. 🚨 **BLOCKED**: Instruction decode issue - FLD not reaching control unit
+  14. 📋 **NEXT**: Debug instruction decode/pipeline (C.FLDSP expansion or corruption)
+  15. 📋 Test FreeRTOS task switching and timer interrupts
+  16. 📋 Debug/fix printf() duplication issue
+  17. 📋 Optional: UART interrupt-driven I/O
 
-### 🚨 Current Issue (Session 55): FPU Context Restore Exception
-- **FreeRTOS Boots Successfully**: ✅
-  - Scheduler starts, tasks created
-  - UART output: "Tasks created successfully! Starting FreeRTOS scheduler..."
-  - 198 characters transmitted successfully
-- **Task Switching Blocked**: ❌
-  - Exception at cycle 57099 when `xPortStartFirstTask` tries to restore FP context
-  - PC = 0x130: `fld ft0, 0(sp)` (first FP register restore)
-  - mcause = 0x02 (illegal instruction exception)
-  - System stuck in exception handler infinite loop (PC cycling 0x1ce-0x1d0)
-- **Root Cause**: FPU context restore fails
-  - **Hypothesis 1**: MSTATUS.FS = 0 (FPU disabled at trap time)
-  - **Hypothesis 2**: Invalid SP (stack pointer to bad memory)
-  - **Hypothesis 3**: FPU hardware bug (FP load/store issue)
-- **Investigation Complete**:
-  - ✅ Memory layout verified (778 KB / 1024 KB, no overflow)
-  - ✅ Stack bounds checked (main: 0x800C1850-0x800C2850, task stacks in heap)
-  - ✅ F/D/M/A/C extensions enabled in test script
-  - ✅ Enhanced crash tracing tools created
-  - See: `docs/SESSION_55_FINAL_ANALYSIS.md`
+### 🎉 Session 56 Achievement: MSTATUS.FS Implementation Complete!
+- **Hardware Changes** (7 modifications across 4 files):
+  1. Added MSTATUS_FS_LSB/MSB constants to `rv_csr_defines.vh`
+  2. Initialize FS=11 (Dirty) on reset
+  3. Extract FS field and add output port in `csr_file.v`
+  4. **Critical**: Preserve FS field in MSTATUS write handler
+  5. Wire `mstatus_fs` signal through core pipeline
+  6. Add FS validation in control unit for all FP opcodes
+  7. Enhanced CSR debug output
+- **Testing**: ✅ All regression tests pass (14/14), FPU tests still work
+- **Discovery**: FreeRTOS DOES set MSTATUS.FS (contrary to documentation!)
+  - Uses `CSRRS mstatus, 0x2000` to enable FPU (same as SiFive fork)
+  - MSTATUS.FS remains at 11 (Dirty) throughout execution
+  - FS field is NOT the root cause!
+
+### 🚨 Current Issue (Session 56): Instruction Decode Mystery
+- **Exception Still Occurs**: ❌ at cycle 57099, PC=0x130
+  - Should be executing `fld ft0, 0(sp)` (compressed C.FLDSP = 0x2002)
+  - But mtval=0x00000013 (NOP instruction!)
+  - Control unit never sees OP_LOAD_FP opcode
+- **MSTATUS.FS Status**: ✅ Working correctly
+  - Initialized to FS=11 (Dirty)
+  - FreeRTOS attempts CSRRS but value stays at 11 (still valid!)
+  - All CSR traces show FS=11 throughout execution
+- **Real Issue**: Instruction not reaching control unit properly
+  - RVC decoder expansion problem?
+  - Pipeline instruction corruption?
+  - Fetch/decode mismatch?
 - **Next Actions**:
-  - Check MSTATUS.FS value at exception time
+  - Debug C.FLDSP (0x2002) expansion in RVC decoder
+  - Check why mtval shows 0x13 instead of 0x2002
+  - Trace instruction flow from IF→ID→EX stages
   - Verify SP points to valid task stack
   - Test FPU instructions in isolation
   - **Quick workaround**: Disable FP context save (`portasmADDITIONAL_CONTEXT_SIZE = 0`)
@@ -195,6 +206,30 @@ rv1/
 | 7: Stress Tests | ✅ 2/2 | Mode switching, regression |
 
 ## Recent Session Summary
+
+**Session 56** (2025-10-28): MSTATUS.FS Implementation - Hardware Complete, New Mystery Found! 🎉
+- **Goal**: Investigate FPU exception root cause (suspected missing MSTATUS.FS field)
+- **Achievement**: Full MSTATUS.FS field implementation (7 changes across 4 files)
+  1. Added FS field constants to `rv_csr_defines.vh` (bits [14:13])
+  2. Initialize FS=11 (Dirty) on reset in `csr_file.v`
+  3. Extract FS field and add output wire
+  4. **Critical**: Preserve FS in MSTATUS write handler (was being lost!)
+  5. Wire `mstatus_fs` signal from CSR→Core→Control Unit
+  6. Add FS validation in control unit (4 FP opcode types)
+  7. Enhanced CSR debug output with operation tracking
+- **Testing**: ✅ All regression tests pass (14/14), including FPU tests
+- **Surprise Discovery**: FreeRTOS DOES initialize MSTATUS.FS!
+  - Uses `CSRRS mstatus, 0x2000` to enable FPU (same approach as SiFive fork)
+  - Official docs claim no FPU support, but code includes it
+  - MSTATUS.FS stays at 11 (Dirty) throughout execution
+- **New Mystery**: Exception still occurs despite FS=11!
+  - FLD instruction at PC=0x130 should work with FS=11
+  - But mtval=0x13 (NOP), not 0x2002 (FLD) - instruction corruption?
+  - Control unit never sees OP_LOAD_FP - decode issue?
+  - **Hypothesis**: RVC decoder expansion or pipeline corruption, NOT MSTATUS.FS
+- **Status**: Hardware implementation complete, but real issue is elsewhere
+- **Next**: Debug instruction decode/pipeline (C.FLDSP expansion)
+- See: `docs/SESSION_56_FPU_EXCEPTION_ROOT_CAUSE.md`
 
 **Session 55** (2025-10-28): FreeRTOS Crash Investigation - REGRESSION FOUND
 - **Goal**: Investigate timer interrupt delivery after Session 54 fix

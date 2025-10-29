@@ -101,6 +101,11 @@ localparam MSTATUS_SPP_BIT  = 8;   // Supervisor Previous Privilege (1 bit: 0=U,
 localparam MSTATUS_MPP_LSB  = 11;  // Machine Previous Privilege [11:12] (2 bits)
 localparam MSTATUS_MPP_MSB  = 12;
 
+// Floating-Point Unit Status bits
+localparam MSTATUS_FS_LSB   = 13;  // FPU status [13:14] (2 bits)
+localparam MSTATUS_FS_MSB   = 14;
+// FS encoding: 00=Off, 01=Initial, 10=Clean, 11=Dirty
+
 // Memory Access Control bits
 localparam MSTATUS_SUM_BIT  = 18;  // Supervisor User Memory access
 localparam MSTATUS_MXR_BIT  = 19;  // Make eXecutable Readable

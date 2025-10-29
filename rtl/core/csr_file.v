@@ -57,6 +57,9 @@ module csr_file #(
   output wire             mstatus_sum,    // SUM bit (for MMU)
   output wire             mstatus_mxr,    // MXR bit (for MMU)
 
+  // Floating-Point Unit status
+  output wire [1:0]       mstatus_fs,     // FPU status (00=Off, 01=Initial, 10=Clean, 11=Dirty)
+
   // Floating-Point CSR outputs
   output wire [2:0]       frm_out,        // FP rounding mode (for FPU)
   output wire [4:0]       fflags_out,     // FP exception flags (for reading)
@@ -175,6 +178,7 @@ module csr_file #(
   wire mstatus_mpie_w = mstatus_r[MSTATUS_MPIE_BIT];
   wire mstatus_spp_w  = mstatus_r[MSTATUS_SPP_BIT];
   wire [1:0] mstatus_mpp_w = mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB];
+  wire [1:0] mstatus_fs_w  = mstatus_r[MSTATUS_FS_MSB:MSTATUS_FS_LSB];
   wire mstatus_sum_w  = mstatus_r[MSTATUS_SUM_BIT];
   wire mstatus_mxr_w  = mstatus_r[MSTATUS_MXR_BIT];
 
@@ -331,11 +335,18 @@ module csr_file #(
   `ifdef DEBUG_CSR
   always @(posedge clk) begin
     if (csr_access) begin
-      $display("[CSR] Time=%0t addr=0x%03x access=%b we=%b priv=%b priv_lvl=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x",
-               $time, csr_addr, csr_access, csr_we, current_priv, csr_priv_level, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata);
+      $display("[CSR] Time=%0t addr=0x%03x op=%0d access=%b we=%b priv=%b priv_lvl=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x mstatus_fs=%b",
+               $time, csr_addr, csr_op, csr_access, csr_we, current_priv, csr_priv_level, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata, mstatus_fs_w);
+      if (csr_addr == CSR_MSTATUS && csr_we) begin
+        $display("[CSR-MSTATUS-WRITE] op=%0d wdata=0x%08x rdata=0x%08x write_value=0x%08x", csr_op, csr_wdata, csr_rdata, csr_write_value);
+      end
       if (illegal_csr) begin
         $display("[CSR] *** ILLEGAL CSR ACCESS DETECTED ***");
       end
+    end
+    // Debug MSTATUS.FS on reset
+    if ($time < 100) begin
+      $display("[CSR-INIT] Time=%0t mstatus_r=0x%08x mstatus_fs=%b", $time, mstatus_r, mstatus_fs_w);
     end
     if (sret) begin
       $display("[CSR] Time=%0t SRET: SIE=%b->%b SPIE=%b->1 SPP=%b->0 mstatus_r=0x%08x",
@@ -360,8 +371,8 @@ module csr_file #(
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       // Reset all CSRs
-      // Initialize mstatus with MPP=11 (M-mode), all other fields = 0
-      mstatus_r      <= {{(XLEN-13){1'b0}}, 2'b11, {11{1'b0}}}; // MPP[12:11]=11, rest=0
+      // Initialize mstatus with MPP=11 (M-mode), FS=11 (FPU enabled/dirty), all other fields = 0
+      mstatus_r      <= {{(XLEN-15){1'b0}}, 2'b11, 2'b11, {11{1'b0}}}; // FS[14:13]=11, MPP[12:11]=11, rest=0
       mie_r          <= {XLEN{1'b0}};
       mtvec_r        <= {XLEN{1'b0}};   // Trap vector at address 0
       mscratch_r     <= {XLEN{1'b0}};
@@ -448,6 +459,7 @@ module csr_file #(
             mstatus_r[MSTATUS_MPIE_BIT] <= csr_write_value[MSTATUS_MPIE_BIT];
             mstatus_r[MSTATUS_SPP_BIT]  <= csr_write_value[MSTATUS_SPP_BIT];
             mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= csr_write_value[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB];
+            mstatus_r[MSTATUS_FS_MSB:MSTATUS_FS_LSB]   <= csr_write_value[MSTATUS_FS_MSB:MSTATUS_FS_LSB];
             mstatus_r[MSTATUS_SUM_BIT]  <= csr_write_value[MSTATUS_SUM_BIT];
             mstatus_r[MSTATUS_MXR_BIT]  <= csr_write_value[MSTATUS_MXR_BIT];
           end
@@ -631,6 +643,9 @@ module csr_file #(
   assign satp_out    = satp_r;
   assign mstatus_sum = mstatus_sum_w;
   assign mstatus_mxr = mstatus_mxr_w;
+
+  // FPU status output
+  assign mstatus_fs  = mstatus_fs_w;
 
   // Floating-point CSR outputs
   assign frm_out     = frm_r;

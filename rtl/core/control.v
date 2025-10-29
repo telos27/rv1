@@ -32,6 +32,9 @@ module control #(
   input  wire       is_fp_op,    // FP computational operation
   input  wire       is_fp_fma,   // FP fused multiply-add
 
+  // FPU status input (from MSTATUS.FS)
+  input  wire [1:0] mstatus_fs,  // FPU status: 00=Off, 01=Initial, 10=Clean, 11=Dirty
+
   // Standard control outputs
   output reg        reg_write,   // Register file write enable
   output reg        mem_read,    // Memory read enable
@@ -334,7 +337,16 @@ module control #(
 
       OP_LOAD_FP: begin
         // FLW/FLD: Load floating-point value from memory
-        if (is_fp_load) begin
+        // Check MSTATUS.FS - if Off (00), FP instructions are illegal
+        `ifdef DEBUG_FPU
+        $display("[CONTROL-FP] Time=%0t OP_LOAD_FP: mstatus_fs=%b is_fp_load=%b", $time, mstatus_fs, is_fp_load);
+        `endif
+        if (mstatus_fs == 2'b00) begin
+          illegal_inst = 1'b1;
+          `ifdef DEBUG_FPU
+          $display("[CONTROL-FP] *** FP LOAD ILLEGAL - FS=00 ***");
+          `endif
+        end else if (is_fp_load) begin
           fp_reg_write = 1'b1;        // Write to FP register file
           mem_read = 1'b1;            // Read from memory
           fp_mem_op = 1'b1;           // FP memory operation
@@ -349,7 +361,10 @@ module control #(
 
       OP_STORE_FP: begin
         // FSW/FSD: Store floating-point value to memory
-        if (is_fp_store) begin
+        // Check MSTATUS.FS - if Off (00), FP instructions are illegal
+        if (mstatus_fs == 2'b00) begin
+          illegal_inst = 1'b1;
+        end else if (is_fp_store) begin
           mem_write = 1'b1;           // Write to memory
           fp_mem_op = 1'b1;           // FP memory operation
           alu_src = 1'b1;             // Use immediate
@@ -362,7 +377,10 @@ module control #(
 
       OP_MADD, OP_MSUB, OP_NMSUB, OP_NMADD: begin
         // FMA instructions: FMADD, FMSUB, FNMSUB, FNMADD
-        if (is_fp_fma) begin
+        // Check MSTATUS.FS - if Off (00), FP instructions are illegal
+        if (mstatus_fs == 2'b00) begin
+          illegal_inst = 1'b1;
+        end else if (is_fp_fma) begin
           fp_reg_write = 1'b1;        // Write to FP register file
           fp_alu_en = 1'b1;           // Enable FP ALU
           fp_use_dynamic_rm = (funct3 == 3'b111);  // Use dynamic RM if rm=111
@@ -382,7 +400,10 @@ module control #(
 
       OP_OP_FP: begin
         // Floating-point computational operations
-        if (is_fp_op) begin
+        // Check MSTATUS.FS - if Off (00), FP instructions are illegal
+        if (mstatus_fs == 2'b00) begin
+          illegal_inst = 1'b1;
+        end else if (is_fp_op) begin
           // Decode based on funct7 (which includes format bits)
           case (funct7[6:2])
             5'b00000: begin  // FADD.S/D

@@ -549,6 +549,7 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] sepc;
   wire            mstatus_sum;  // MSTATUS.SUM bit (for MMU)
   wire            mstatus_mxr;  // MSTATUS.MXR bit (for MMU)
+  wire [1:0]      mstatus_fs;   // MSTATUS.FS field (FPU status)
   wire [XLEN-1:0] satp;         // SATP register (for MMU)
   wire [XLEN-1:0] csr_satp;     // Alias for MMU
   wire            mstatus_mie;
@@ -828,6 +829,8 @@ module rv_core_pipelined #(
     .is_fp_store(id_is_fp_store),
     .is_fp_op(id_is_fp_op),
     .is_fp_fma(id_is_fp_fma),
+    // FPU status input (from MSTATUS.FS)
+    .mstatus_fs(mstatus_fs),
     // Note: fp_rm comes from decoder, not control
     // Standard outputs
     .reg_write(id_reg_write),
@@ -1654,6 +1657,8 @@ module rv_core_pipelined #(
     .satp_out(satp),
     .mstatus_sum(mstatus_sum),
     .mstatus_mxr(mstatus_mxr),
+    // FPU status output
+    .mstatus_fs(mstatus_fs),
     // Floating-point CSR connections
     .frm_out(csr_frm),
     .fflags_out(csr_fflags),
