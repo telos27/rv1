@@ -37,8 +37,12 @@
  * - Total = 264 bytes = 66 words
  *
  * IMPORTANT: Must be even number on 32-bit cores for stack alignment
+ *
+ * WORKAROUND (2025-10-29): FP context save disabled due to instruction decode issue.
+ * See: docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md
+ * This prevents FreeRTOS from using FPU in interrupt context.
  */
-#define portasmADDITIONAL_CONTEXT_SIZE 66  /* 66 words = 264 bytes for FPU state */
+#define portasmADDITIONAL_CONTEXT_SIZE 0  /* DISABLED: Was 66 words = 264 bytes for FPU state */
 
 /* ========================================================================
  * FPU Context Save/Restore Macros
@@ -58,44 +62,8 @@
  *   sp+256: fcsr (32-bit, padded to 64-bit)
  */
 .macro portasmSAVE_ADDITIONAL_REGISTERS
-	/* Save all 32 floating-point registers (f0-f31) */
-	/* Each FP register is 64 bits (FLEN=64 for RV32D) */
-	fsd     f0,  0*8(sp)
-	fsd     f1,  1*8(sp)
-	fsd     f2,  2*8(sp)
-	fsd     f3,  3*8(sp)
-	fsd     f4,  4*8(sp)
-	fsd     f5,  5*8(sp)
-	fsd     f6,  6*8(sp)
-	fsd     f7,  7*8(sp)
-	fsd     f8,  8*8(sp)
-	fsd     f9,  9*8(sp)
-	fsd     f10, 10*8(sp)
-	fsd     f11, 11*8(sp)
-	fsd     f12, 12*8(sp)
-	fsd     f13, 13*8(sp)
-	fsd     f14, 14*8(sp)
-	fsd     f15, 15*8(sp)
-	fsd     f16, 16*8(sp)
-	fsd     f17, 17*8(sp)
-	fsd     f18, 18*8(sp)
-	fsd     f19, 19*8(sp)
-	fsd     f20, 20*8(sp)
-	fsd     f21, 21*8(sp)
-	fsd     f22, 22*8(sp)
-	fsd     f23, 23*8(sp)
-	fsd     f24, 24*8(sp)
-	fsd     f25, 25*8(sp)
-	fsd     f26, 26*8(sp)
-	fsd     f27, 27*8(sp)
-	fsd     f28, 28*8(sp)
-	fsd     f29, 29*8(sp)
-	fsd     f30, 30*8(sp)
-	fsd     f31, 31*8(sp)
-
-	/* Save FCSR (FP Control/Status Register) at offset 256 */
-	csrr    t0, fcsr
-	sw      t0, 256(sp)
+	/* FPU context save DISABLED - workaround for instruction decode issue */
+	/* See: docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md */
 	.endm
 
 /*
@@ -106,43 +74,8 @@
  * Restores all FP registers and FCSR from stack
  */
 .macro portasmRESTORE_ADDITIONAL_REGISTERS
-	/* Restore FCSR first (at offset 256) */
-	lw      t0, 256(sp)
-	csrw    fcsr, t0
-
-	/* Restore all 32 floating-point registers (f0-f31) */
-	fld     f0,  0*8(sp)
-	fld     f1,  1*8(sp)
-	fld     f2,  2*8(sp)
-	fld     f3,  3*8(sp)
-	fld     f4,  4*8(sp)
-	fld     f5,  5*8(sp)
-	fld     f6,  6*8(sp)
-	fld     f7,  7*8(sp)
-	fld     f8,  8*8(sp)
-	fld     f9,  9*8(sp)
-	fld     f10, 10*8(sp)
-	fld     f11, 11*8(sp)
-	fld     f12, 12*8(sp)
-	fld     f13, 13*8(sp)
-	fld     f14, 14*8(sp)
-	fld     f15, 15*8(sp)
-	fld     f16, 16*8(sp)
-	fld     f17, 17*8(sp)
-	fld     f18, 18*8(sp)
-	fld     f19, 19*8(sp)
-	fld     f20, 20*8(sp)
-	fld     f21, 21*8(sp)
-	fld     f22, 22*8(sp)
-	fld     f23, 23*8(sp)
-	fld     f24, 24*8(sp)
-	fld     f25, 25*8(sp)
-	fld     f26, 26*8(sp)
-	fld     f27, 27*8(sp)
-	fld     f28, 28*8(sp)
-	fld     f29, 29*8(sp)
-	fld     f30, 30*8(sp)
-	fld     f31, 31*8(sp)
+	/* FPU context restore DISABLED - workaround for instruction decode issue */
+	/* See: docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md */
 	.endm
 
 /* ========================================================================
