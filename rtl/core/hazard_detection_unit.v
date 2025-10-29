@@ -56,6 +56,10 @@ module hazard_detection_unit (
   // MMU signals
   input  wire        mmu_busy,         // MMU is busy (page table walk in progress)
 
+  // Bus signals (Session 52 - fix CLINT/peripheral store hang)
+  input  wire        bus_req_valid,    // Bus request is active
+  input  wire        bus_req_ready,    // Bus is ready to accept/complete request
+
   // Hazard control outputs
   output wire        stall_pc,         // Stall program counter
   output wire        stall_ifid,       // Stall IF/ID register
@@ -187,6 +191,13 @@ module hazard_detection_unit (
   wire mmu_stall;
   assign mmu_stall = mmu_busy;
 
+  // Bus wait stall (Session 52): stall when bus request is active but not ready
+  // This handles peripherals with registered req_ready signals (CLINT, UART, PLIC).
+  // Without this stall, the pipeline advances while the bus transaction is pending,
+  // causing PC corruption and infinite loops when stores target slow peripherals.
+  wire bus_wait_stall;
+  assign bus_wait_stall = bus_req_valid && !bus_req_ready;
+
   // CSR-FPU dependency hazard: stall when CSR instruction accesses FFLAGS/FCSR while FPU is busy
   // Bug Fix #6: FSFLAGS/FCSR instructions must wait for all pending FP operations to complete.
   // Problem: If fsflags executes while FP operation is in pipeline, it reads stale flags,
@@ -290,11 +301,11 @@ module hazard_detection_unit (
 
   // Generate control signals
   // Stall if load-use hazard (integer or FP), M extension dependency, A extension dependency,
-  // A extension forwarding hazard, FP extension dependency, CSR-FPU dependency, CSR RAW hazard, or MMU dependency
-  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || csr_raw_hazard || mmu_stall;
-  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || csr_raw_hazard || mmu_stall;
+  // A extension forwarding hazard, FP extension dependency, CSR-FPU dependency, CSR RAW hazard, MMU dependency, or bus wait
+  assign stall_pc    = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || csr_raw_hazard || mmu_stall || bus_wait_stall;
+  assign stall_ifid  = load_use_hazard || fp_load_use_hazard || m_extension_stall || a_extension_stall || atomic_forward_hazard || fp_extension_stall || csr_fpu_dependency_stall || csr_raw_hazard || mmu_stall || bus_wait_stall;
   // Note: Bubble for load-use hazards, atomic forwarding hazards, CSR-FPU dependency stalls, AND CSR RAW hazards
-  // (M/A/FP/MMU stalls use hold signals on IDEX and EXMEM to keep instruction in place)
+  // (M/A/FP/MMU/bus_wait stalls use hold signals on IDEX and EXMEM to keep instruction in place)
   // CSR-FPU and CSR RAW stalls need bubbles because they're RAW hazards between operations in EX and instructions in ID
   assign bubble_idex = load_use_hazard || fp_load_use_hazard || atomic_forward_hazard || csr_fpu_dependency_stall || csr_raw_hazard;
 

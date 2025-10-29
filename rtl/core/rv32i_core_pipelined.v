@@ -1067,6 +1067,9 @@ module rv_core_pipelined #(
     .exmem_is_sret(exmem_is_sret),
     // MMU
     .mmu_busy(mmu_busy),
+    // Bus signals (Session 52 - fix CLINT/peripheral store hang)
+    .bus_req_valid(bus_req_valid),
+    .bus_req_ready(bus_req_ready),
     // Outputs
     .stall_pc(stall_pc),
     .stall_ifid(stall_ifid),
@@ -2464,7 +2467,10 @@ module rv_core_pipelined #(
                              ex_atomic_busy ? dmem_mem_write :                       // Atomic: level signal
                              (dmem_mem_write && mem_stage_new_instr && !bus_req_issued);  // Normal: one-shot pulse, not already issued
 
-  assign bus_req_valid = arb_mem_read || arb_mem_write_pulse;
+  // Session 52: bus_req_valid must stay high until bus_req_ready to handle slow peripherals
+  // When peripheral has registered req_ready (CLINT, UART), the pipeline stalls but we must
+  // hold the request active until acknowledged, otherwise writes don't commit
+  assign bus_req_valid = arb_mem_read || arb_mem_write_pulse || bus_req_issued;
   assign bus_req_addr  = arb_mem_addr;
   assign bus_req_wdata = arb_mem_write_data;
   assign bus_req_we    = arb_mem_write_pulse;

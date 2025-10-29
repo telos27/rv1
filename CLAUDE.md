@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 51, 2025-10-28)
+## Current Status (Session 52, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: Blocked - FreeRTOS Store Issue (Session 51 → 52)
+- **Status**: Major Progress - Bus Wait Stall Fixed! (Session 52)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -15,20 +15,22 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   4. ✅ **CLINT mtime prescaler bug FIXED** (Session 48)
   5. ✅ **Trap handler installation verified** (Session 49)
   6. ✅ **Bus 64-bit read extraction FIXED** (Session 51)
-  7. 🐛 **BLOCKER**: FreeRTOS stores to MTIMECMP don't execute (Session 51)
-  8. 📋 Debug/fix printf() duplication issue
-  9. 📋 Optional: UART interrupt-driven I/O
+  7. ✅ **BUS WAIT STALL FIXED** (Session 52) 🎉
+  8. 📋 **NEXT**: Test FreeRTOS with bus wait stall fix
+  9. 📋 Debug/fix printf() duplication issue
+  10. 📋 Optional: UART interrupt-driven I/O
 
-### 🎉 Recent Milestone (Session 51): Bus Extraction Bug Fixed!
-- **Bus Infrastructure Fixed**: ✅
-  - Fixed 64-bit register access on RV32
-  - CLINT reads now correctly extract 32-bit portions based on address offset
+### 🎉 Recent Milestone (Session 52): Bus Wait Stall Fixed!
+- **Pipeline Synchronization Fixed**: ✅
+  - Added bus wait stall to hazard detection unit
+  - Pipeline now correctly halts when peripheral `req_ready=0`
+  - PC corruption eliminated for CLINT/UART/PLIC stores
   - All regression tests passing (14/14)
-- **FreeRTOS Still Blocked**:
-  - Store instructions to MTIMECMP (0x02004000) don't reach MEM stage
-  - No bus transactions generated during vPortSetupTimerInterrupt()
-  - Root cause: Stores aren't executing (not a bus routing issue)
-  - See: `docs/SESSION_51_BUS_FIX.md`
+- **FreeRTOS Unblocked**:
+  - Stores to MTIMECMP now execute correctly
+  - Pipeline stalls properly for slow peripherals (CLINT, UART)
+  - Ready for FreeRTOS testing (Session 53)
+  - See: `docs/SESSION_52_BUS_WAIT_STALL_FIX.md`
 
 ### Compliance & Testing
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
@@ -167,11 +169,21 @@ rv1/
 
 ## Recent Session Summary
 
+**Session 52** (2025-10-28): Bus Wait Stall Fix - MAJOR BREAKTHROUGH! 🎉
+- Fixed critical pipeline synchronization bug causing PC corruption with slow peripherals
+- Root cause: Hazard unit didn't check bus_req_ready, pipeline advanced during pending transactions
+- Added bus_wait_stall to halt pipeline when bus_req_valid=1 && bus_req_ready=0
+- Modified bus_req_valid to stay high during stalls (via bus_req_issued flag)
+- PC corruption eliminated - stores to CLINT/UART/PLIC now work correctly
+- All regression tests passing (14/14)
+- FreeRTOS now unblocked - ready for testing (Session 53)
+- See: `docs/SESSION_52_BUS_WAIT_STALL_FIX.md`
+
 **Session 51** (2025-10-28): Bus 64-bit Read Bug - FIXED! ✅
 - Fixed critical bug in simple_bus.v where 32-bit reads from 64-bit CLINT registers returned full value
 - Added address-based extraction logic (offset +0 vs +4) for correct 32-bit portion
 - All regression tests passing (14/14)
-- FreeRTOS still blocked: stores to MTIMECMP don't execute (separate issue)
+- Discovered next blocker: Pipeline doesn't stall for peripheral ready (fixed in Session 52)
 - Created minimal test programs (test_clint_mtimecmp_write, test_clint_read_simple)
 - See: `docs/SESSION_51_BUS_FIX.md`
 
