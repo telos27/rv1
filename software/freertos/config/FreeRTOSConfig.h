@@ -55,7 +55,8 @@
 #define configMTIMECMP_BASE_ADDRESS     ( 0x02004000UL )  /* MTIMECMP for hart 0 */
 
 /* ISR Stack Size: 2KB (512 words) - used for interrupt context */
-#define configISR_STACK_SIZE_WORDS      ( 512 )
+/* WORKAROUND: Comment out to use linker-provided stack (xISRStackTop calculation bug) */
+// #define configISR_STACK_SIZE_WORDS      ( 512 )
 
 /* ========================================================================
  * FreeRTOS Core Configuration

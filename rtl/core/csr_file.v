@@ -452,7 +452,12 @@ module csr_file #(
             mstatus_r[MSTATUS_MXR_BIT]  <= csr_write_value[MSTATUS_MXR_BIT];
           end
           CSR_MIE:      mie_r      <= csr_write_value;
+          // MTVEC alignment: 2-byte with C ext, 4-byte without
+          `ifdef ENABLE_C_EXT
+          CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C ext)
+          `else
           CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          `endif
           CSR_MSCRATCH: mscratch_r <= csr_write_value;
           CSR_MEPC:     mepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C extension)
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
@@ -481,7 +486,12 @@ module csr_file #(
             mie_r[5] <= csr_write_value[5];  // STIE
             mie_r[1] <= csr_write_value[1];  // SSIE
           end
+          // STVEC alignment: 2-byte with C ext, 4-byte without
+          `ifdef ENABLE_C_EXT
+          CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C ext)
+          `else
           CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          `endif
           CSR_SSCRATCH: sscratch_r <= csr_write_value;
           CSR_SEPC:     sepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C extension)
           CSR_SCAUSE:   scause_r   <= csr_write_value;

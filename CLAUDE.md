@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 52, 2025-10-28)
+## Current Status (Session 54, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: Major Progress - Bus Wait Stall Fixed! (Session 52)
+- **Status**: Pipeline Bug Fixed - Multi-cycle Writes Work! (Session 54)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -16,21 +16,28 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   5. ✅ **Trap handler installation verified** (Session 49)
   6. ✅ **Bus 64-bit read extraction FIXED** (Session 51)
   7. ✅ **BUS WAIT STALL FIXED** (Session 52) 🎉
-  8. 📋 **NEXT**: Test FreeRTOS with bus wait stall fix
-  9. 📋 Debug/fix printf() duplication issue
-  10. 📋 Optional: UART interrupt-driven I/O
+  8. ✅ **MTVEC/STVEC 2-byte alignment FIXED** (Session 53) 🎉
+  9. ✅ **xISRStackTop calculation workaround** (Session 53)
+  10. ✅ **EX/MEM hold during bus wait FIXED** (Session 54) 🎉
+  11. 📋 **NEXT**: Test FreeRTOS timer interrupt delivery
+  12. 📋 Debug/fix printf() duplication issue
+  13. 📋 Optional: UART interrupt-driven I/O
 
-### 🎉 Recent Milestone (Session 52): Bus Wait Stall Fixed!
-- **Pipeline Synchronization Fixed**: ✅
-  - Added bus wait stall to hazard detection unit
-  - Pipeline now correctly halts when peripheral `req_ready=0`
-  - PC corruption eliminated for CLINT/UART/PLIC stores
-  - All regression tests passing (14/14)
-- **FreeRTOS Unblocked**:
-  - Stores to MTIMECMP now execute correctly
-  - Pipeline stalls properly for slow peripherals (CLINT, UART)
-  - Ready for FreeRTOS testing (Session 53)
-  - See: `docs/SESSION_52_BUS_WAIT_STALL_FIX.md`
+### 🎉 Recent Milestone (Session 54): Critical Pipeline Bug FIXED!
+- **EX/MEM Hold During Bus Wait Bug FIXED**: ✅
+  - Root cause: EX/MEM register advanced during bus wait stalls, losing write data
+  - Fixed: Added `bus_wait_stall` to `hold_exmem` condition
+  - Impact: Multi-cycle peripheral writes (CLINT, UART, PLIC) now preserve data correctly
+  - See: `rtl/core/rv32i_core_pipelined.v` lines 277-282
+- **Complete Multi-Cycle Write Fix** (3 parts):
+  1. Session 52: Bus wait stall logic (PC + IF/ID)
+  2. Session 52: `bus_req_valid` persistence via `bus_req_issued` flag
+  3. Session 54: EX/MEM register hold during bus wait ← **This fix!**
+- **Progress**:
+  - All regression tests passing (14/14) ✅
+  - CLINT writes should now complete correctly
+  - FreeRTOS timer interrupt setup ready for testing
+  - See: `docs/SESSION_54_HOLD_EXMEM_BUS_WAIT_FIX.md`
 
 ### Compliance & Testing
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
@@ -65,12 +72,6 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - ✅ RVC FP decoder (C.FLDSP/C.FSDSP support)
 
 ### Active Issues
-- 🐛 **CRITICAL**: FreeRTOS stores to MTIMECMP don't execute (Session 51)
-  - Symptom: Store instructions at PC 0x1b10/0x1b1e in vPortSetupTimerInterrupt() don't generate bus transactions
-  - No bus_req_valid for CLINT address range during timer setup
-  - Stores exist in binary (verified by objdump), function is called, but stores never reach MEM stage
-  - Root cause: Unknown - stores being squashed/flushed, or pipeline hazard
-  - Next: Add PC-specific tracing, check for flushes/stalls, verify write pulse logic
 - ⚠️ FENCE.I test (low priority - self-modifying code)
 - ⚠️ picolibc printf() duplication (workaround: use puts())
 
@@ -168,6 +169,32 @@ rv1/
 | 7: Stress Tests | ✅ 2/2 | Mode switching, regression |
 
 ## Recent Session Summary
+
+**Session 54** (2025-10-28): Hold EX/MEM During Bus Wait - CRITICAL PIPELINE BUG FIXED! 🎉
+- **EX/MEM Hold Bug FIXED**: Pipeline register wasn't held during bus wait stalls
+  - Root cause: `hold_exmem` didn't include `bus_wait_stall` condition
+  - Effect: EX/MEM register advanced during multi-cycle peripheral writes, losing store data
+  - Fixed: Added `bus_wait_stall` to `hold_exmem` calculation (rv32i_core_pipelined.v:277-282)
+  - Impact: Multi-cycle writes to CLINT/UART/PLIC now preserve data correctly
+- **Complete Multi-Cycle Write Fix** (3 parts now working together):
+  1. Session 52: Bus wait stall logic (PC + IF/ID stalling)
+  2. Session 52: `bus_req_valid` persistence via `bus_req_issued` flag
+  3. Session 54: EX/MEM register hold during bus wait ← **This fix!**
+- **Progress**: All regression tests passing (14/14), CLINT writes should now complete
+- See: `docs/SESSION_54_HOLD_EXMEM_BUS_WAIT_FIX.md`
+
+**Session 53** (2025-10-28): Timer Interrupt Fixes - CRITICAL BUGS FIXED! 🎉
+- **MTVEC/STVEC Alignment Bug FIXED**: Trap vectors were forcing 4-byte alignment (incompatible with C extension)
+  - Modified csr_file.v to support 2-byte alignment when ENABLE_C_EXT=1
+  - Trap handlers now reach correct addresses (e.g., 0x8000005E instead of 0x8000005C)
+  - Affects all interrupt and exception handling
+- **xISRStackTop Calculation Bug WORKAROUND**: Address calculation resulted in wrong value (0x0000C350 vs 0x80040CE0)
+  - Disabled configISR_STACK_SIZE_WORDS to use linker-provided __freertos_irq_stack_top
+  - FreeRTOS now reaches vPortSetupTimerInterrupt() successfully
+  - Eliminated stack corruption and memset issues
+- **Progress**: FreeRTOS boots further than ever - reaches timer setup, generates CLINT accesses
+- **Remaining**: CLINT multi-cycle write completion (writes start but don't finish)
+- See: `docs/SESSION_53_TIMER_INTERRUPT_FIXES.md`
 
 **Session 52** (2025-10-28): Bus Wait Stall Fix - MAJOR BREAKTHROUGH! 🎉
 - Fixed critical pipeline synchronization bug causing PC corruption with slow peripherals

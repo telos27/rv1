@@ -269,11 +269,17 @@ module rv_core_pipelined #(
   wire [1:0]      fp_forward_c;
 
   // Hold EX/MEM register when M instruction or A instruction or FP instruction or MMU is executing
+  // Session 53: Also hold when bus is waiting (peripherals with registered req_ready)
+  // Without this, EX/MEM register advances during bus wait, losing store write data
   wire            hold_exmem;
+  wire            bus_wait_stall;  // Bus wait condition (also calculated in hazard unit)
+
+  assign bus_wait_stall = bus_req_valid && !bus_req_ready;
   assign hold_exmem = (idex_is_mul_div && idex_valid && !ex_mul_div_ready) ||
                       (idex_is_atomic && idex_valid && !ex_atomic_done) ||
                       (idex_fp_alu_en && idex_valid && !ex_fpu_done) ||
-                      mmu_busy;  // Phase 3: Stall on MMU page table walk
+                      mmu_busy ||                    // Phase 3: Stall on MMU page table walk
+                      bus_wait_stall;                // Session 53: Hold during bus wait
 
   // M unit start signal: pulse once when M instruction first enters EX
   // Only start if not already busy or ready (prevents restarting)
