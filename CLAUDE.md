@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 56, 2025-10-28)
+## Current Status (Session 58, 2025-10-29)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: 🔧 **MSTATUS.FS Implemented - Instruction Decode Issue Found** (Session 56)
+- **Status**: ✅ **IMEM Data Port Fixed - Strings Loading!** (Session 58)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -21,47 +21,69 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   10. ✅ **EX/MEM hold during bus wait FIXED** (Session 54) 🎉
   11. ✅ **FreeRTOS boots and scheduler starts** (Session 55)
   12. ✅ **MSTATUS.FS field fully implemented** (Session 56) 🎉
-  13. 🚨 **BLOCKED**: Instruction decode issue - FLD not reaching control unit
-  14. 📋 **NEXT**: Debug instruction decode/pipeline (C.FLDSP expansion or corruption)
-  15. 📋 Test FreeRTOS task switching and timer interrupts
-  16. 📋 Debug/fix printf() duplication issue
-  17. 📋 Optional: UART interrupt-driven I/O
+  13. ✅ **FPU context save DISABLED - workaround applied** (Session 57) 🎉
+  14. ✅ **IMEM data port byte-level access FIXED** (Session 58) 🎉
+  15. ✅ **FreeRTOS prints startup banner** - strings loading correctly!
+  16. 📋 **NEXT**: Debug queue assertion (cycle 30,355)
+  17. 📋 Debug illegal instruction at cycle 39,415
+  18. 📋 Test FreeRTOS task switching and timer interrupts
+  19. 📋 Return to FPU instruction decode issue (deferred)
+  20. 📋 Optional: UART interrupt-driven I/O
 
-### 🎉 Session 56 Achievement: MSTATUS.FS Implementation Complete!
-- **Hardware Changes** (7 modifications across 4 files):
-  1. Added MSTATUS_FS_LSB/MSB constants to `rv_csr_defines.vh`
-  2. Initialize FS=11 (Dirty) on reset
-  3. Extract FS field and add output port in `csr_file.v`
-  4. **Critical**: Preserve FS field in MSTATUS write handler
-  5. Wire `mstatus_fs` signal through core pipeline
-  6. Add FS validation in control unit for all FP opcodes
-  7. Enhanced CSR debug output
-- **Testing**: ✅ All regression tests pass (14/14), FPU tests still work
-- **Discovery**: FreeRTOS DOES set MSTATUS.FS (contrary to documentation!)
-  - Uses `CSRRS mstatus, 0x2000` to enable FPU (same as SiFive fork)
-  - MSTATUS.FS remains at 11 (Dirty) throughout execution
-  - FS field is NOT the root cause!
+### 🎉 Session 58 Achievement: IMEM Data Port Fixed - Strings Loading! 🎉
+- **Bug Fixed**: Instruction memory halfword alignment broke byte-level data reads
+  - Root cause: C extension support added halfword alignment to ALL reads
+  - Impact: Startup code .rodata copy failed - strings read as 0x00000013 (NOP)
+  - Fix: Added `DATA_PORT` parameter to `instruction_memory` module
+    - `DATA_PORT=0`: Halfword-aligned (instruction fetch)
+    - `DATA_PORT=1`: Word-aligned (data reads, byte extraction by bus adapter)
+- **Result**: ✅ **FreeRTOS startup banner prints correctly!**
+  ```
+  ========================================
+    FreeRTOS Blinky Demo
+    Target: RV1 RV32IMAFDC Core
+    FreeRTOS Kernel: v11.1.0
+    CPU Clock: 50000000 Hz
+    Tick Rate: 1000 Hz
+  ========================================
 
-### 🚨 Current Issue (Session 56): Instruction Decode Mystery
-- **Exception Still Occurs**: ❌ at cycle 57099, PC=0x130
-  - Should be executing `fld ft0, 0(sp)` (compressed C.FLDSP = 0x2002)
-  - But mtval=0x00000013 (NOP instruction!)
-  - Control unit never sees OP_LOAD_FP opcode
-- **MSTATUS.FS Status**: ✅ Working correctly
-  - Initialized to FS=11 (Dirty)
-  - FreeRTOS attempts CSRRS but value stays at 11 (still valid!)
-  - All CSR traces show FS=11 throughout execution
-- **Real Issue**: Instruction not reaching control unit properly
-  - RVC decoder expansion problem?
-  - Pipeline instruction corruption?
-  - Fetch/decode mismatch?
-- **Next Actions**:
-  - Debug C.FLDSP (0x2002) expansion in RVC decoder
-  - Check why mtval shows 0x13 instead of 0x2002
-  - Trace instruction flow from IF→ID→EX stages
-  - Verify SP points to valid task stack
-  - Test FPU instructions in isolation
-  - **Quick workaround**: Disable FP context save (`portasmADDITIONAL_CONTEXT_SIZE = 0`)
+  Tasks created s
+  ```
+- **Testing**: All regression tests pass (14/14), FreeRTOS progresses further
+- **Remaining Issues**: Queue assertion, illegal instruction exceptions (investigating)
+
+### 🎉 Session 57 Achievement: FPU Workaround Applied - Major Progress!
+- **Workaround Implemented**: Disabled FPU context save/restore to bypass instruction decode bug
+  - Set `portasmADDITIONAL_CONTEXT_SIZE = 0` in FreeRTOS port
+  - Emptied `portasmSAVE_ADDITIONAL_REGISTERS` macro (removed all FSD instructions)
+  - Emptied `portasmRESTORE_ADDITIONAL_REGISTERS` macro (removed all FLD instructions)
+  - **Impact**: Tasks cannot use FPU across context switches (single-task FPU only)
+- **Result**: ✅ **FreeRTOS now runs 39K+ cycles!** (vs <1K before)
+  - Successfully bypasses FLD/FSD crash at PC=0x12E/0x130
+  - FreeRTOS kernel code executes
+  - Queue operations, task creation progressing
+  - ECALL traps working correctly
+- **New Issues Discovered**:
+  1. **.rodata copy issue**: Strings not loading correctly from IMEM (cycle ~40-200)
+     - Expected: "[Task" (0x5B 54 61 73)
+     - Actual: 0x00000013 (NOP)
+     - IMEM data port reads may be faulty
+  2. **Early assertion**: Cycle 1,829 (very early in init)
+  3. **Queue assertion**: Cycle 30,355 - overflow check triggers incorrectly
+     - queueLength appears to be pointer value instead of length
+  4. **Illegal instruction**: Cycle 39,415 - mtval=0x13 (same symptom as FPU bug!)
+     - Suggests underlying instruction decode/pipeline corruption issue remains
+- **Documentation Created**:
+  - `docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md` - Comprehensive tracking document
+  - `docs/SESSION_57_FPU_WORKAROUND_APPLIED.md` - Workaround details and analysis
+
+### 🚨 Deferred Issue: FPU Instruction Decode Bug (Session 56-57)
+- **Root Cause**: Unknown - FLD instructions cause illegal instruction exceptions
+- **Symptom**: mtval shows wrong instruction (0x13 instead of 0x2002)
+- **Hypothesis**: RVC decoder expansion or pipeline corruption bug
+- **Status**: Deferred - workaround applied to unblock FreeRTOS testing
+- **Investigation Plan**: See `docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md`
+- **Priority**: Medium-High - blocks full RV32IMAFDC multitasking support
 
 ### 🎉 Session 54 Milestone: EX/MEM Hold Fix (Validated in Session 55)
 - **EX/MEM Hold During Bus Wait Bug FIXED**: ✅
@@ -80,7 +102,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
 - **Privilege Tests**: 33/34 passing (97%)
 - **Quick Regression**: 14/14 tests, ~4s runtime
-- **FreeRTOS**: ❌ Crashes in main() before scheduler starts (Session 55 regression)
+- **FreeRTOS**: ⚠️ Runs 39K+ cycles with FPU workaround (Session 57), new issues discovered
 
 ### Recent Achievements (Session 46-51)
 - ✅ **Bus 64-bit read extraction FIXED** (Session 51)
@@ -207,7 +229,41 @@ rv1/
 
 ## Recent Session Summary
 
-**Session 56** (2025-10-28): MSTATUS.FS Implementation - Hardware Complete, New Mystery Found! 🎉
+**Session 58** (2025-10-29): IMEM Data Port Fixed - Strings Loading! 🎉
+- **Goal**: Debug .rodata copy issue where strings read as NOPs from IMEM
+- **Root Cause Found**: C extension halfword alignment broke byte-level data reads
+  - `instruction_memory` aligned ALL addresses to halfword boundary
+  - Data port reads at 0x101 returned mem[0x100:0x103] (wrong 4-byte chunk)
+  - Bus adapter byte extraction selected from wrong word
+- **Fix Applied**: Added `DATA_PORT` parameter to `instruction_memory.v`
+  - Instruction port (DATA_PORT=0): Halfword-aligned for C extension
+  - Data port (DATA_PORT=1): Word-aligned for proper byte extraction
+- **Result**: ✅ **FreeRTOS startup banner prints correctly!**
+  - Strings now load from IMEM: "FreeRTOS Blinky Demo", "RV1 RV32IMAFDC Core", etc.
+  - UART output clean and readable
+  - All regression tests pass (14/14)
+- **Next Issues**: Queue assertion (queueLength=0x800004b8, looks like pointer), illegal instruction
+- See: commit 7af994a, `rtl/memory/instruction_memory.v:15`, `rtl/rv_soc.v:277`
+
+**Session 57** (2025-10-29): FPU Workaround Applied - FreeRTOS Progresses! 🎉
+- **Goal**: Apply workaround to bypass FPU instruction decode bug and unblock FreeRTOS testing
+- **Achievement**: Disabled FPU context save/restore macros in FreeRTOS port
+  - Set `portasmADDITIONAL_CONTEXT_SIZE = 0`
+  - Emptied `portasmSAVE_ADDITIONAL_REGISTERS` and `portasmRESTORE_ADDITIONAL_REGISTERS`
+  - FreeRTOS now runs **39K+ cycles** instead of crashing at <1K cycles
+- **Progress**: FreeRTOS kernel executes, queue operations start, ECALL traps work
+- **New Issues Found**:
+  1. .rodata copy from IMEM not working correctly (strings read as 0x00000013)
+  2. Early assertion at cycle 1,829
+  3. Queue assertion at cycle 30,355 (overflow check false positive)
+  4. Illegal instruction at cycle 39,415 (mtval=0x13 - same symptom as FPU bug!)
+- **Documentation**: Created comprehensive tracking docs for FPU issue and workaround
+- **Impact**: FPU context switching disabled, but allows FreeRTOS testing to continue
+- **Status**: Workaround successful, FPU decode bug deferred for later investigation
+- **Next**: Debug .rodata copy issue and IMEM data port reads
+- See: `docs/SESSION_57_FPU_WORKAROUND_APPLIED.md`, `docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md`
+
+**Session 56** (2025-10-28): MSTATUS.FS Implementation - Hardware Complete, Decode Issue Found 🎉
 - **Goal**: Investigate FPU exception root cause (suspected missing MSTATUS.FS field)
 - **Achievement**: Full MSTATUS.FS field implementation (7 changes across 4 files)
   1. Added FS field constants to `rv_csr_defines.vh` (bits [14:13])
