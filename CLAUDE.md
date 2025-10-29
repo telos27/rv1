@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 54, 2025-10-28)
+## Current Status (Session 55, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: Pipeline Bug Fixed - Multi-cycle Writes Work! (Session 54)
+- **Status**: 🚨 **BLOCKED - FreeRTOS Crashes in main()** (Session 55)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -19,31 +19,53 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   8. ✅ **MTVEC/STVEC 2-byte alignment FIXED** (Session 53) 🎉
   9. ✅ **xISRStackTop calculation workaround** (Session 53)
   10. ✅ **EX/MEM hold during bus wait FIXED** (Session 54) 🎉
-  11. 📋 **NEXT**: Test FreeRTOS timer interrupt delivery
-  12. 📋 Debug/fix printf() duplication issue
-  13. 📋 Optional: UART interrupt-driven I/O
+  11. 🚨 **BLOCKED**: FreeRTOS crashes before timer setup (Session 55)
+  12. 📋 **NEXT**: Debug main() crash - stack/memory corruption suspected
+  13. 📋 Test FreeRTOS timer interrupt delivery (after crash fixed)
+  14. 📋 Debug/fix printf() duplication issue
+  15. 📋 Optional: UART interrupt-driven I/O
 
-### 🎉 Recent Milestone (Session 54): Critical Pipeline Bug FIXED!
+### 🚨 Current Issue (Session 55): FreeRTOS Crashes Before Scheduler
+- **Critical Regression Discovered**: ❌
+  - FreeRTOS crashes during main() initialization
+  - Never reaches `vTaskStartScheduler()` or `vPortSetupTimerInterrupt()`
+  - No CLINT writes occur (MTIMECMP never set)
+  - CPU ends up in infinite NOP loop
+  - See: `docs/SESSION_55_FREERTOS_CRASH_INVESTIGATION.md`
+- **Evidence**:
+  - UART output: "Taskscreatedsu" (truncated/corrupted)
+  - Crash location: After xTaskCreate(), during puts() calls in main()
+  - No trap/exception detected
+  - Session 54 EX/MEM fix validated as correct ✅
+- **Root Cause Candidates**:
+  1. Stack corruption (return address overwritten)
+  2. Memory corruption (.rodata or .data section)
+  3. UART/puts() malfunction causing crash
+  4. Return address issue (function return jumps to wrong address)
+- **Next Actions**:
+  - Add detailed PC tracing to pinpoint exact crash location
+  - Check stack pointer values throughout execution
+  - Verify .rodata section copied correctly to RAM
+  - Test with minimal bare-metal program to isolate issue
+
+### 🎉 Session 54 Milestone: EX/MEM Hold Fix (Validated in Session 55)
 - **EX/MEM Hold During Bus Wait Bug FIXED**: ✅
   - Root cause: EX/MEM register advanced during bus wait stalls, losing write data
   - Fixed: Added `bus_wait_stall` to `hold_exmem` condition
   - Impact: Multi-cycle peripheral writes (CLINT, UART, PLIC) now preserve data correctly
   - See: `rtl/core/rv32i_core_pipelined.v` lines 277-282
+  - **Validation**: Confirmed correct in Session 55 investigation
 - **Complete Multi-Cycle Write Fix** (3 parts):
   1. Session 52: Bus wait stall logic (PC + IF/ID)
   2. Session 52: `bus_req_valid` persistence via `bus_req_issued` flag
-  3. Session 54: EX/MEM register hold during bus wait ← **This fix!**
-- **Progress**:
-  - All regression tests passing (14/14) ✅
-  - CLINT writes should now complete correctly
-  - FreeRTOS timer interrupt setup ready for testing
-  - See: `docs/SESSION_54_HOLD_EXMEM_BUS_WAIT_FIX.md`
+  3. Session 54: EX/MEM register hold during bus wait
+- **Status**: Fix is correct, but FreeRTOS crashes before it can be tested
 
 ### Compliance & Testing
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
 - **Privilege Tests**: 33/34 passing (97%)
 - **Quick Regression**: 14/14 tests, ~4s runtime
-- **FreeRTOS**: Boots successfully, timer init complete, reaches scheduler ✅
+- **FreeRTOS**: ❌ Crashes in main() before scheduler starts (Session 55 regression)
 
 ### Recent Achievements (Session 46-51)
 - ✅ **Bus 64-bit read extraction FIXED** (Session 51)
@@ -169,6 +191,21 @@ rv1/
 | 7: Stress Tests | ✅ 2/2 | Mode switching, regression |
 
 ## Recent Session Summary
+
+**Session 55** (2025-10-28): FreeRTOS Crash Investigation - REGRESSION FOUND
+- **Goal**: Investigate timer interrupt delivery after Session 54 fix
+- **Discovery**: FreeRTOS crashes in main() BEFORE reaching timer setup
+  - Never reaches `vTaskStartScheduler()` or `vPortSetupTimerInterrupt()`
+  - Crash location: During/after puts() calls in main()
+  - UART output: "Taskscreatedsu" (truncated/corrupted)
+  - CPU ends up in infinite NOP loop (executing garbage memory)
+- **Validation**: Session 54 EX/MEM hold fix confirmed correct
+  - Address calculation verified: 0x400800 << 3 = 0x02004000 ✅
+  - Fix would work correctly if FreeRTOS reached that code
+- **Root Cause**: Unknown - likely stack/memory corruption or return address issue
+- **Progress**: Investigation complete, detailed analysis documented
+- **Next Session**: Debug main() crash before resuming timer interrupt work
+- See: `docs/SESSION_55_FREERTOS_CRASH_INVESTIGATION.md`
 
 **Session 54** (2025-10-28): Hold EX/MEM During Bus Wait - CRITICAL PIPELINE BUG FIXED! 🎉
 - **EX/MEM Hold Bug FIXED**: Pipeline register wasn't held during bus wait stalls
