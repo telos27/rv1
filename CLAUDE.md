@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 58, 2025-10-29)
+## Current Status (Session 60, 2025-10-29)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: ✅ **IMEM Data Port Fixed - Strings Loading!** (Session 58)
+- **Status**: ✅ **MULHU Operand Latch Bug FIXED - Queues Working!** (Session 60) 🎉
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -24,11 +24,51 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   13. ✅ **FPU context save DISABLED - workaround applied** (Session 57) 🎉
   14. ✅ **IMEM data port byte-level access FIXED** (Session 58) 🎉
   15. ✅ **FreeRTOS prints startup banner** - strings loading correctly!
-  16. 📋 **NEXT**: Debug queue assertion (cycle 30,355)
-  17. 📋 Debug illegal instruction at cycle 39,415
-  18. 📋 Test FreeRTOS task switching and timer interrupts
-  19. 📋 Return to FPU instruction decode issue (deferred)
-  20. 📋 Optional: UART interrupt-driven I/O
+  16. ✅ **Debug infrastructure built** - Call stack, watchpoints, register monitoring (Session 59) 🎉
+  17. ✅ **Queue assertion root cause found** - MULHU bug (Session 59)
+  18. ✅ **M-extension operand latch bug FIXED** (Session 60) 🎉
+  19. ✅ **Queue operations working** - Tasks created, scheduler starts! (Session 60) 🎉
+  20. 📋 **NEXT**: Debug FPU instruction decode issue (illegal instruction at cycle 39,415)
+  21. 📋 Test FreeRTOS task switching and timer interrupts
+  22. 📋 Optional: UART interrupt-driven I/O
+
+### 🎉 Session 60 Achievement: MULHU Operand Latch Bug FIXED! 🎉
+- **Critical Bug Fixed**: M-extension operand latching for back-to-back instructions
+  - Root cause: `m_operands_valid` flag only cleared when non-M instruction entered EX
+  - Impact: Second M-instruction used stale operands from first M-instruction
+  - Fix: Clear `m_operands_valid` when M-instruction completes OR non-M enters EX
+  - Location: `rtl/core/rv32i_core_pipelined.v:1389`
+- **FreeRTOS Progress**: ✅ **MAJOR BREAKTHROUGH - 9,000+ cycles further!**
+  - Before: Crashed at cycle ~30,355 (queue assertion)
+  - After: Runs to cycle 39,415+ (scheduler running!)
+  - UART output shows full banner: "Tasks created successfully! Starting FreeRTOS scheduler..."
+  - Queue creation works correctly (xQueueGenericCreateStatic, xQueueGenericReset)
+  - MULHU now returns correct values (0 for 1×84 high word)
+- **Testing**: All regression tests pass (14/14)
+- **New Issue Discovered**: Illegal instruction exception at cycle 39,415
+  - Same as deferred FPU decode bug from Session 57
+  - mtval=0x13 (NOP) instead of actual instruction
+  - Next priority: Debug FPU instruction decode/RVC expansion
+- See: `docs/SESSION_60_MULHU_OPERAND_LATCH_BUG_FIXED.md`
+
+### 🎉 Session 59 Achievement: Debug Infrastructure & MULHU Bug Found! 🎉
+- **Debug Infrastructure Built**: Comprehensive debugging framework for hardware/software co-debug
+  - `debug_trace.v` module: Call stack tracking, PC history, register monitoring, memory watchpoints
+  - Symbol extraction tool: Extracts function names from ELF files
+  - Integrated into FreeRTOS testbench with automatic snapshots
+  - Complete documentation in `docs/DEBUG_INFRASTRUCTURE.md`
+- **Queue Assertion Root Cause**: MULHU instruction returns wrong value
+  - Expected: MULHU(1, 84) = 0 (high word of 1 × 84 = 84)
+  - Actual: MULHU returns 0x0a (10 decimal = original queue length)
+  - **Hypothesis**: M-extension operand forwarding or latching bug
+  - Evidence: Stale data (queue length from previous operation) appearing in result
+- **Investigation Process**: Used new debug infrastructure to trace corruption
+  - Watchpoint caught write of 0x0a to queueLength field at cycle 30124
+  - Call stack showed xQueueGenericCreateStatic → xQueueGenericReset path
+  - Register tracing revealed MULHU incorrectly returning 0x0a
+- **Status**: Debug infrastructure working perfectly, MULHU bug isolated
+- **Next**: Debug M-extension unit operand handling and forwarding
+- See: `docs/SESSION_59_DEBUG_INFRASTRUCTURE_AND_QUEUE_BUG.md`
 
 ### 🎉 Session 58 Achievement: IMEM Data Port Fixed - Strings Loading! 🎉
 - **Bug Fixed**: Instruction memory halfword alignment broke byte-level data reads
@@ -228,6 +268,52 @@ rv1/
 | 7: Stress Tests | ✅ 2/2 | Mode switching, regression |
 
 ## Recent Session Summary
+
+**Session 60** (2025-10-29): MULHU Operand Latch Bug FIXED - Queue Operations Working! 🎉
+- **Goal**: Fix M-extension operand latching bug identified in Session 59
+- **Root Cause**: `m_operands_valid` flag only cleared when non-M instruction entered EX stage
+  - In back-to-back M-instructions, second instruction reused stale operands from first
+  - Example: MUL followed by MULHU - MULHU saw operands from MUL instead of fresh values
+  - Official tests passed because they don't have tightly-packed M-instruction sequences
+- **Fix Applied**: Modified `rv32i_core_pipelined.v:1389`
+  - Clear `m_operands_valid` when M-instruction completes (`ex_mul_div_ready`) OR non-M enters EX
+  - Ensures fresh operands latched for each M-instruction regardless of spacing
+- **FreeRTOS Progress**: ✅ **MAJOR BREAKTHROUGH!**
+  - Before: Crashed at cycle ~30,355 (queue assertion on MULHU overflow check)
+  - After: Runs to cycle 39,415+ (**9,060 cycles further!**)
+  - Full UART output: "Tasks created successfully! Starting FreeRTOS scheduler..."
+  - Queue operations work correctly (xQueueGenericCreateStatic, xQueueGenericReset)
+  - MULHU(1, 84) now returns 0 (correct) instead of 0x0a (stale data)
+- **Testing**: All regression tests pass (14/14)
+- **New Issue**: Illegal instruction exception at cycle 39,415 (deferred FPU decode bug from Session 57)
+- **Files Modified**:
+  - `rtl/core/rv32i_core_pipelined.v` (line 1389) - Fixed operand latch clearing
+  - `tools/test_freertos.sh` (lines 53, 109) - Added debug trace module support
+- **Next Session**: Debug FPU instruction decode issue (mtval=0x13, RVC expansion suspected)
+- See: `docs/SESSION_60_MULHU_OPERAND_LATCH_BUG_FIXED.md`
+
+**Session 59** (2025-10-29): Debug Infrastructure & MULHU Bug Found! 🎉
+- **Goal**: Build generic debugging infrastructure, then debug FreeRTOS queue assertion
+- **Achievement 1: Debug Infrastructure Built**
+  - Created `debug_trace.v` module with call stack tracking, PC history, register monitoring, watchpoints
+  - Created symbol extraction tool (`tools/extract_symbols.py`) to map addresses to function names
+  - Integrated into FreeRTOS testbench with automatic debug snapshots on assertion
+  - Comprehensive documentation in `docs/DEBUG_INFRASTRUCTURE.md`
+- **Achievement 2: Queue Assertion Root Cause Found**
+  - Used new debug infrastructure to trace memory corruption
+  - Watchpoint caught write of 0x0a (10 decimal) to queueLength field at cycle 30124
+  - Discovered MULHU instruction returning wrong value: 0x0a instead of 0
+  - **Root Cause**: MULHU(1, 84) should return 0 (high word), but returns 0x0a (stale queue length)
+  - **Hypothesis**: M-extension operand forwarding or latching bug causing stale data to persist
+- **Investigation Process**:
+  1. Fixed stale function addresses in testbench (binary changed since previous sessions)
+  2. Set memory watchpoints on queue structure (0x800004b8, 0x800004c8)
+  3. Traced function arguments through xQueueGenericCreateStatic
+  4. Discovered a0 register corruption before function entry
+  5. Found MULHU returning stale value from previous operation
+- **Status**: Debug infrastructure working perfectly, MULHU bug isolated and documented
+- **Next Session**: Debug M-extension unit operand handling and data forwarding
+- See: `docs/SESSION_59_DEBUG_INFRASTRUCTURE_AND_QUEUE_BUG.md`, `docs/DEBUG_INFRASTRUCTURE.md`
 
 **Session 58** (2025-10-29): IMEM Data Port Fixed - Strings Loading! 🎉
 - **Goal**: Debug .rodata copy issue where strings read as NOPs from IMEM

@@ -1386,7 +1386,9 @@ module rv_core_pipelined #(
       m_operand_a_latched <= ex_alu_operand_a_forwarded;
       m_operand_b_latched <= ex_rs2_data_forwarded;
       m_operands_valid <= 1'b1;
-    end else if (!idex_is_mul_div) begin
+    end else if (ex_mul_div_ready || !idex_is_mul_div) begin
+      // Clear valid flag when M instruction completes OR when non-M instruction enters EX
+      // This ensures back-to-back M instructions get fresh operands (Session 60)
       m_operands_valid <= 1'b0;
     end
   end

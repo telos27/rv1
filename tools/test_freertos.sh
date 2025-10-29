@@ -50,6 +50,7 @@ RTL_MEMORY="rtl/memory/*.v"
 RTL_PERIPHERALS="rtl/peripherals/*.v"
 RTL_INTERCONNECT="rtl/interconnect/*.v"
 RTL_TOP="rtl/*.v"
+TB_DEBUG="tb/debug/*.v"
 TB="tb/integration/tb_freertos.v"
 
 # Compile with Icarus Verilog
@@ -105,6 +106,7 @@ iverilog -g2012 \
     $RTL_PERIPHERALS \
     $RTL_INTERCONNECT \
     $RTL_TOP \
+    $TB_DEBUG \
     $TB
 
 if [ $? -ne 0 ]; then

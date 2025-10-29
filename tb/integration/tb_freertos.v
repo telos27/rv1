@@ -149,6 +149,74 @@ module tb_freertos;
   end
 
   // ========================================
+  // Session 59: Unified Debug Trace Infrastructure
+  // ========================================
+  debug_trace #(
+    .XLEN(32),
+    .PC_HISTORY_DEPTH(128),
+    .MAX_WATCHPOINTS(16)
+  ) debug (
+    .clk(clk),
+    .rst_n(reset_n),
+
+    // CPU state
+    .pc(pc),
+    .pc_next(DUT.core.pc_next),
+    .instruction(instruction),
+    .valid_instruction(DUT.core.memwb_valid),
+
+    // Register file access
+    .x1_ra(DUT.core.regfile.registers[1]),
+    .x2_sp(DUT.core.regfile.registers[2]),
+    .x10_a0(DUT.core.regfile.registers[10]),
+    .x11_a1(DUT.core.regfile.registers[11]),
+    .x12_a2(DUT.core.regfile.registers[12]),
+    .x13_a3(DUT.core.regfile.registers[13]),
+    .x14_a4(DUT.core.regfile.registers[14]),
+    .x15_a5(DUT.core.regfile.registers[15]),
+    .x16_a6(DUT.core.regfile.registers[16]),
+    .x17_a7(DUT.core.regfile.registers[17]),
+
+    // Memory access monitoring
+    .mem_valid(DUT.core.exmem_valid && (DUT.core.exmem_mem_read || DUT.core.exmem_mem_write)),
+    .mem_write(DUT.core.exmem_mem_write),
+    .mem_addr(DUT.core.exmem_alu_result),
+    .mem_wdata(DUT.core.exmem_mem_write_data),
+    .mem_rdata(DUT.core.mem_read_data),
+    .mem_wstrb(4'b1111),  // Full word for now
+
+    // Exception/interrupt info
+    .trap_taken(DUT.core.csr_file_inst.mcause_r != prev_mcause),
+    .trap_pc(pc),
+    .trap_cause(DUT.core.csr_file_inst.mcause_r),
+
+    // Control
+    .enable_trace(1'b1),
+    .trace_start_pc(32'h0),  // Trace from start
+    .trace_end_pc(32'h0)     // Never stop
+  );
+
+  // Configure debug watchpoints for queue debugging
+  initial begin
+    #100;  // Wait for reset
+    // Watchpoint on queue structure at 0x800004b8 (where queueLength gets corrupted)
+    debug.set_watchpoint(0, 32'h800004b8, 1);  // Watch writes to queue address
+    debug.set_watchpoint(1, 32'h800004c8, 1);  // Watch writes to queueLength field (offset +60)
+    $display("[DEBUG-INIT] Watchpoints configured:");
+    $display("  WP0: 0x800004b8 (queue base, WRITE)");
+    $display("  WP1: 0x800004c8 (queueLength field, WRITE)");
+  end
+
+  // Helper tasks to display debug info on demand
+  task display_debug_state;
+    begin
+      debug.display_registers();
+      debug.display_call_stack();
+      debug.display_pc_history(20);
+    end
+  endtask
+
+  // ========================================
   // Session 25: UART Debug Instrumentation
   // ========================================
   // Monitor UART writes, function calls, and exceptions
@@ -330,8 +398,8 @@ module tb_freertos;
       //           cycle_count, DUT.core.regfile.registers[1]);
       //end
 
-      // Detect main() reached (address 0x229C)
-      if (!main_reached && pc == 32'h0000229c) begin
+      // Detect main() reached (address 0x1b6e)
+      if (!main_reached && pc == 32'h00001b6e) begin
         main_reached = 1;
         $display("[MILESTONE] main() reached at cycle %0d", cycle_count);
       end
@@ -547,8 +615,11 @@ module tb_freertos;
   always @(posedge clk) begin
     if (reset_n) begin
       // Check for vApplicationAssertionFailed entry at ANY time
-      if (pc == 32'h00001cdc) begin
+      if (pc == 32'h00001c8c) begin
+        $display("");
+        $display("========================================");
         $display("[ASSERTION] *** vApplicationAssertionFailed() called at cycle %0d ***", cycle_count);
+        $display("========================================");
         $display("[ASSERTION] Return address (ra) = 0x%08h", DUT.core.regfile.registers[1]);
 
         // Decode which assertion based on ra
@@ -557,33 +628,58 @@ module tb_freertos;
           $display("[ASSERTION] Checking which assert in xQueueGenericReset...");
           $display("[ASSERTION] Possible: 0x11c8 (queue==NULL) or 0x11cc (size check)");
         end
+
+        // Display complete debug state
+        $display("");
+        display_debug_state();
+        $display("========================================");
+
+        // Stop simulation after assertion
+        #100;
+        $finish;
       end
 
-      // Track entry to xQueueGenericReset to see parameters
-      if (pc == 32'h0000115e) begin
+      // Track entry to xQueueGenericReset to see parameters (address 0x1114)
+      if (pc == 32'h00001114) begin
         $display("[QUEUE-RESET] xQueueGenericReset called at cycle %0d", cycle_count);
         $display("[QUEUE-RESET] a0 (queue ptr) = 0x%08h", DUT.core.regfile.registers[10]);
         $display("[QUEUE-RESET] a1 (reset type) = 0x%08h", DUT.core.regfile.registers[11]);
       end
 
-      // Track check at 0x116c (beqz a5,11cc) - checks if queueLength is zero
-      if (pc == 32'h0000116c) begin
-        $display("[QUEUE-CHECK] PC=0x116c: queueLength (a5) = 0x%08h", DUT.core.regfile.registers[15]);
+      // Track a0 corruption in xQueueGenericCreateStatic (0x11ba - 0x11e2)
+      if (pc >= 32'h000011ba && pc <= 32'h000011e2) begin
+        if (pc == 32'h000011ba || pc == 32'h000011c4 || pc == 32'h000011ce ||
+            pc == 32'h000011da || pc == 32'h000011de || pc == 32'h000011e2) begin
+          $display("[A0-TRACE] PC=0x%08h: a0 (x10) = 0x%08h", pc, DUT.core.regfile.registers[10]);
+        end
+      end
+
+      // Track store at 0x11e2 that corrupts queueLength
+      if (pc == 32'h000011e2) begin
+        $display("[STORE-DEBUG] PC=0x11e2: sw a0,60(s0)");
+        $display("[STORE-DEBUG]   a0 (x10) = 0x%08h (value to store)", DUT.core.regfile.registers[10]);
+        $display("[STORE-DEBUG]   s0 (x8) = 0x%08h (base pointer)", DUT.core.regfile.registers[8]);
+        $display("[STORE-DEBUG]   Target address = 0x%08h", DUT.core.regfile.registers[8] + 60);
+      end
+
+      // Track check at 0x1122 (beqz a5,1182) - checks if queueLength is zero
+      if (pc == 32'h00001122) begin
+        $display("[QUEUE-CHECK] PC=0x1122: queueLength (a5) = 0x%08h", DUT.core.regfile.registers[15]);
         if (DUT.core.regfile.registers[15] == 0) begin
           $display("[QUEUE-CHECK] *** ASSERTION WILL FAIL: queueLength is ZERO! ***");
         end
       end
 
-      // Track where a5 gets loaded from memory at 0x1168
-      if (pc == 32'h00001168) begin
-        $display("[LOAD-CHECK] PC=0x1168: Loading queueLength from offset 60");
-        $display("[LOAD-CHECK]   s0 (base ptr) = 0x%08h", DUT.core.regfile.registers[8]);
-        $display("[LOAD-CHECK]   Will load from addr = 0x%08h", DUT.core.regfile.registers[8] + 60);
+      // Track where a5 gets loaded from memory at 0x111e
+      if (pc == 32'h0000111e) begin
+        $display("[LOAD-CHECK] PC=0x111e: Loading queueLength from offset 60");
+        $display("[LOAD-CHECK]   a0 (base ptr) = 0x%08h", DUT.core.regfile.registers[10]);
+        $display("[LOAD-CHECK]   Will load from addr = 0x%08h", DUT.core.regfile.registers[10] + 60);
       end
 
-      // Track multiplication inputs at 0x1170 (mulhu a5,a5,a4)
-      if (pc == 32'h00001170) begin
-        $display("[QUEUE-CHECK] PC=0x1170: About to execute MULHU:");
+      // Track multiplication inputs at 0x1126 (mulhu a5,a5,a4)
+      if (pc == 32'h00001126) begin
+        $display("[QUEUE-CHECK] PC=0x1126: About to execute MULHU:");
         $display("[QUEUE-CHECK]   a5 (queueLength) = %0d (0x%08h)",
                  DUT.core.regfile.registers[15], DUT.core.regfile.registers[15]);
         $display("[QUEUE-CHECK]   a4 (itemSize) = %0d (0x%08h)",
@@ -592,9 +688,9 @@ module tb_freertos;
                  DUT.core.regfile.registers[15] * DUT.core.regfile.registers[14]);
       end
 
-      // Track check at 0x1174 (bnez a5,11cc) - checks if multiplication overflows
-      if (pc == 32'h00001174) begin
-        $display("[QUEUE-CHECK] PC=0x1174: mulhu result (a5) = 0x%08h", DUT.core.regfile.registers[15]);
+      // Track check at 0x112a (bnez a5,1182) - checks if multiplication overflows
+      if (pc == 32'h0000112a) begin
+        $display("[QUEUE-CHECK] PC=0x112a: mulhu result (a5) = 0x%08h", DUT.core.regfile.registers[15]);
         if (DUT.core.regfile.registers[15] != 0) begin
           $display("[QUEUE-CHECK] *** ASSERTION WILL FAIL: queueLength * itemSize OVERFLOWS! ***");
         end
