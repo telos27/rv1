@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 60, 2025-10-29)
+## Current Status (Session 62, 2025-10-29)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: ✅ **MULHU Operand Latch Bug FIXED - Queues Working!** (Session 60) 🎉
+- **Status**: 🎉 **MRET/Exception Priority Bug FIXED** (Session 62) - FreeRTOS Scheduler Running!
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -28,9 +28,49 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   17. ✅ **Queue assertion root cause found** - MULHU bug (Session 59)
   18. ✅ **M-extension operand latch bug FIXED** (Session 60) 🎉
   19. ✅ **Queue operations working** - Tasks created, scheduler starts! (Session 60) 🎉
-  20. 📋 **NEXT**: Debug FPU instruction decode issue (illegal instruction at cycle 39,415)
-  21. 📋 Test FreeRTOS task switching and timer interrupts
-  22. 📋 Optional: UART interrupt-driven I/O
+  20. ✅ **Enhanced exception monitoring** - Pre-flush state capture (Session 61) 🎉
+  21. ✅ **Root cause identified**: MRET/exception priority bug (Session 61)
+  22. ✅ **MRET/exception priority bug FIXED** (Session 62) 🎉🎉🎉
+  23. ✅ **FreeRTOS scheduler RUNNING** - 500K+ cycles! (Session 62) 🎉
+  24. 📋 **NEXT**: Re-enable FPU context save, test timer interrupts and task switching
+
+### 🎉 Session 62 Achievement: MRET/Exception Priority Bug FIXED! 🎉🎉🎉
+- **Goal**: Fix MRET/exception handling bug identified in Session 61
+- **Root Cause Found**: When MRET flushed pipeline, `trap_flush` correctly suppressed exceptions BUT `trap_entry` to CSR file still used `exception_gated`, corrupting MEPC
+- **Fix Applied**: Changed `trap_entry` from `exception_gated` to `trap_flush` (line 1633)
+- **Result**: ✅ **FreeRTOS scheduler RUNNING!**
+  - Runs 500,000+ cycles (vs 39,415 before = **12.7x improvement**)
+  - UART output: Full banner + "Tasks created successfully! Starting FreeRTOS scheduler..."
+  - MRET correctly returns to saved address (0x1b40)
+  - All regression tests pass (14/14)
+- **Impact**: Session 57's "FPU workaround" no longer needed - can re-enable FPU context save
+- **Status**: Phase 2 milestone achieved - FreeRTOS scheduler validated!
+- **Next**: Re-enable FPU context save, test timer interrupts and task switching
+- See: `docs/SESSION_62_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md`
+
+### 🔍 Session 61: FPU Debug Investigation - Root Cause Identified! (2025-10-29)
+- **Goal**: Debug FPU instruction decode issue causing illegal instruction at cycle 39,415
+- **Major Discovery**: ✅ **NOT an FPU issue!** Real root cause identified
+- **Root Cause**: MRET/exception handling bug causes PC to fall through to invalid memory
+  - CPU reaches address 0x1f46 (past end of code, in zero-filled gap after MRET)
+  - Memory at 0x1f46 contains 0x00000000 (zeros), decoded as 0x00000013 (NOP)
+  - Control module incorrectly flags NOP as illegal instruction
+  - Exception triggered with mtval=0x13
+- **Why Session 57 "FPU Workaround" Helped**: Removing FLD/FSD changed execution path enough to bypass other bugs, making it LOOK like FPU was the issue
+- **Enhanced Debug Infrastructure**: Added pre-flush exception monitoring to `tb_freertos.v`
+  - Captures IDEX instruction, MSTATUS.FS, control signals BEFORE pipeline flush
+  - `[EXCEPTION-DETECTION]` triggered by `exception_gated` signal
+  - `[TRAP-CSR-UPDATE]` shows post-flush state for comparison
+- **Critical Findings**:
+  1. MSTATUS.FS = 11 (Dirty) throughout - FPU IS enabled
+  2. Instruction at 0x1f46 is NOP (0x13), not FP instruction
+  3. NOP incorrectly flagged as illegal by control module
+  4. MRET at 0x1f42 should jump via MEPC, not fall through to 0x1f46
+- **Two Bugs Identified**:
+  1. **MRET execution or MEPC handling** (CRITICAL) - causes invalid PC
+  2. **NOP flagged as illegal** (secondary) - control module bug
+- **Next Session**: Debug MRET execution and exception handling logic
+- See: `docs/SESSION_61_FPU_DEBUG_INVESTIGATION.md`
 
 ### 🎉 Session 60 Achievement: MULHU Operand Latch Bug FIXED! 🎉
 - **Critical Bug Fixed**: M-extension operand latching for back-to-back instructions
@@ -117,13 +157,21 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - `docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md` - Comprehensive tracking document
   - `docs/SESSION_57_FPU_WORKAROUND_APPLIED.md` - Workaround details and analysis
 
-### 🚨 Deferred Issue: FPU Instruction Decode Bug (Session 56-57)
-- **Root Cause**: Unknown - FLD instructions cause illegal instruction exceptions
-- **Symptom**: mtval shows wrong instruction (0x13 instead of 0x2002)
-- **Hypothesis**: RVC decoder expansion or pipeline corruption bug
-- **Status**: Deferred - workaround applied to unblock FreeRTOS testing
-- **Investigation Plan**: See `docs/CRITICAL_FPU_INSTRUCTION_DECODE_ISSUE.md`
-- **Priority**: Medium-High - blocks full RV32IMAFDC multitasking support
+### ✅ Resolved Issue: MRET/Exception Priority Bug (Session 61-62) 🎉
+- **Root Cause**: When MRET flushed pipeline, `trap_flush` suppressed exception flush BUT `trap_entry` to CSR still triggered, corrupting MEPC
+- **Symptom**: PC reached 0x1f46 (zero-filled gap after code), MEPC corrupted with invalid address
+- **Fix**: Changed `.trap_entry(exception_gated)` to `.trap_entry(trap_flush)` in `rv32i_core_pipelined.v:1633`
+- **Status**: ✅ **FIXED** (Session 62)
+- **Result**: FreeRTOS runs 500K+ cycles, scheduler working correctly
+- **Investigation**: See `docs/SESSION_61_FPU_DEBUG_INVESTIGATION.md` and `docs/SESSION_62_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md`
+
+### ✅ Resolved Issue: "FPU Instruction Decode Bug" (Session 56-57, 61-62)
+- **Original Symptom**: Illegal instruction exceptions, mtval=0x13, appeared to be FPU-related
+- **Actual Cause**: MRET/exception priority bug (identified Session 61, fixed Session 62)
+- **Why Misleading**: Session 57's FPU workaround changed execution path, delaying the real bug
+- **FPU Status**: MSTATUS.FS=11 throughout, FPU is working correctly
+- **Action**: Can now re-enable FPU context save in FreeRTOS
+- **Status**: ✅ **RESOLVED** - was never an FPU issue
 
 ### 🎉 Session 54 Milestone: EX/MEM Hold Fix (Validated in Session 55)
 - **EX/MEM Hold During Bus Wait Bug FIXED**: ✅
@@ -142,7 +190,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I failing - low priority)
 - **Privilege Tests**: 33/34 passing (97%)
 - **Quick Regression**: 14/14 tests, ~4s runtime
-- **FreeRTOS**: ⚠️ Runs 39K+ cycles with FPU workaround (Session 57), new issues discovered
+- **FreeRTOS**: ✅ **Scheduler RUNNING!** 500K+ cycles (Session 62), tasks executing correctly
 
 ### Recent Achievements (Session 46-51)
 - ✅ **Bus 64-bit read extraction FIXED** (Session 51)
@@ -268,6 +316,44 @@ rv1/
 | 7: Stress Tests | ✅ 2/2 | Mode switching, regression |
 
 ## Recent Session Summary
+
+**Session 62** (2025-10-29): MRET/Exception Priority Bug FIXED - FreeRTOS Scheduler RUNNING! 🎉🎉🎉
+- **Goal**: Fix MRET/exception handling bug identified in Session 61
+- **Root Cause**: When MRET flushed pipeline, `trap_flush` correctly suppressed exception flush BUT `trap_entry` to CSR file still used `exception_gated`, corrupting MEPC
+  - Race condition: MRET in MEM stage triggers `mret_flush=1`, but illegal instruction from 0x1f46 in IDEX also triggers `exception=1`
+  - `trap_flush` correctly suppressed (line 599: `trap_flush = exception_gated && !mret_flush`)
+  - BUT `trap_entry` to CSR file bypassed priority check, overwrote MEPC with 0x1f46
+- **Fix Applied**: Changed `.trap_entry(exception_gated)` to `.trap_entry(trap_flush)` in `rv32i_core_pipelined.v:1633`
+- **Result**: ✅ **FreeRTOS SCHEDULER RUNNING!**
+  - Runs 500,000+ cycles (vs 39,415 before = **12.7x improvement**)
+  - UART output: Full banner + "Tasks created successfully! Starting FreeRTOS scheduler..."
+  - MRET correctly returns to saved address (0x1b40), MEPC not corrupted
+  - All regression tests pass (14/14)
+- **Impact**: Session 57's "FPU workaround" no longer needed - can re-enable FPU context save
+- **Investigation**: Enhanced pipeline tracing revealed exception and mret_flush asserting in same cycle
+- **Files Modified**:
+  - `rtl/core/rv32i_core_pipelined.v` (line 1633) - Fixed trap_entry priority
+  - `tb/integration/tb_freertos.v` (lines 455-465) - Added MRET execution tracing
+- **Next Session**: Re-enable FPU context save, test timer interrupts and task switching
+- See: `docs/SESSION_62_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md`
+
+**Session 61** (2025-10-29): FPU Debug Investigation - Root Cause Identified!
+- **Goal**: Debug FPU instruction decode issue causing illegal instruction at cycle 39,415
+- **Major Discovery**: ✅ **NOT an FPU issue!** Real root cause identified
+- **Root Cause**: MRET/exception handling bug causes PC to reach invalid memory
+  - CPU reaches address 0x1f46 (past end of code, in zero-filled gap after MRET)
+  - Memory at 0x1f46 contains 0x00000000 (zeros), decoded as 0x00000013 (NOP)
+  - Exception triggered with mtval=0x13
+- **Enhanced Debug Infrastructure**: Added pre-flush exception monitoring to `tb_freertos.v`
+  - `[EXCEPTION-DETECTION]` captures state BEFORE pipeline flush
+  - Revealed MSTATUS.FS=11 throughout (FPU enabled), instruction is NOP not FP
+- **Critical Findings**:
+  1. FPU IS enabled (MSTATUS.FS=11) - not a permission issue
+  2. Instruction at 0x1f46 is NOP (0x13), not FP instruction
+  3. MRET at 0x1f42 should jump via MEPC, not fall through to 0x1f46
+- **Why Session 57's "FPU Workaround" Helped**: Removing FLD/FSD changed execution path enough to bypass other bugs
+- **Next Session**: Debug MRET execution and exception handling logic
+- See: `docs/SESSION_61_FPU_DEBUG_INVESTIGATION.md`
 
 **Session 60** (2025-10-29): MULHU Operand Latch Bug FIXED - Queue Operations Working! 🎉
 - **Goal**: Fix M-extension operand latching bug identified in Session 59

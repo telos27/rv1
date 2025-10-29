@@ -1630,7 +1630,7 @@ module rv_core_pipelined #(
     .csr_we(idex_csr_we && idex_valid && !exception),  // Don't commit CSR writes on exceptions
     .csr_access(idex_is_csr && idex_valid),
     .csr_rdata(ex_csr_rdata),
-    .trap_entry(exception_gated),  // Use gated signal for immediate trap (0-cycle latency)
+    .trap_entry(trap_flush),       // Use trap_flush (already suppresses exceptions during xRET)
     .trap_pc(exception_pc),        // Use current exception PC (not registered)
     .trap_cause(exception_code),   // Use current exception code (not registered)
     .trap_is_interrupt(combined_is_interrupt), // Indicate if this is an interrupt vs exception

@@ -310,7 +310,46 @@ module tb_freertos;
   //  end
   //end
 
-  // Exception/trap monitoring
+  // Enhanced exception monitoring - capture state BEFORE pipeline flush
+  reg exception_detected_prev;
+  initial exception_detected_prev = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Detect exception at the moment it occurs (before CSR update and pipeline flush)
+      if (DUT.core.exception_gated && !exception_detected_prev) begin
+        $display("");
+        $display("[EXCEPTION-DETECTION] *** Exception detected at cycle %0d (BEFORE flush) ***", cycle_count);
+        $display("       PC (current)      = 0x%08h", DUT.core.pc_current);
+        $display("       IFID PC           = 0x%08h", DUT.core.ifid_pc);
+        $display("       IFID instruction  = 0x%08h (raw in IFID)", DUT.core.ifid_instruction);
+        $display("       IDEX PC           = 0x%08h", DUT.core.idex_pc);
+        $display("       IDEX instruction  = 0x%08h (in IDEX - used for mtval)", DUT.core.idex_instruction);
+        $display("       IDEX valid        = %b", DUT.core.idex_valid);
+        $display("       IDEX illegal_inst = %b", DUT.core.idex_illegal_inst);
+        $display("       Exception code    = %0d", DUT.core.exception_code);
+        $display("       Exception PC      = 0x%08h", DUT.core.exception_pc);
+        $display("       Exception val     = 0x%08h", DUT.core.exception_val);
+        $display("       MSTATUS           = 0x%08h", DUT.core.csr_file_inst.mstatus_r);
+        $display("       MSTATUS.FS        = %b (00=Off, 01=Initial, 10=Clean, 11=Dirty)",
+                 DUT.core.csr_file_inst.mstatus_r[14:13]);
+        $display("       Control illegal   = %b", DUT.core.id_illegal_inst);
+        $display("       Flush signals     = ifid:%b idex:%b", DUT.core.flush_ifid, DUT.core.flush_idex);
+
+        // Decode IDEX instruction for better understanding
+        if (DUT.core.idex_instruction[1:0] == 2'b11) begin
+          $display("       Instruction type  = 32-bit (non-compressed)");
+          $display("       Opcode            = 0b%07b", DUT.core.idex_instruction[6:0]);
+        end else begin
+          $display("       Instruction type  = 16-bit compressed (bits [1:0] = %b)",
+                   DUT.core.idex_instruction[1:0]);
+        end
+      end
+      exception_detected_prev = DUT.core.exception_gated;
+    end
+  end
+
+  // Exception/trap monitoring (after CSR update)
   reg [63:0] prev_mcause;
   reg [31:0] prev_mepc;
   initial prev_mcause = 0;
@@ -321,15 +360,16 @@ module tb_freertos;
       // Monitor CSRs for trap entry
       if (DUT.core.csr_file_inst.mcause_r != prev_mcause || DUT.core.csr_file_inst.mepc_r != prev_mepc) begin
         if (DUT.core.csr_file_inst.mcause_r != 0) begin
-          $display("[TRAP] Exception/Interrupt detected at cycle %0d", cycle_count);
+          $display("");
+          $display("[TRAP-CSR-UPDATE] Exception CSRs updated at cycle %0d (AFTER flush)", cycle_count);
           $display("       mcause = 0x%016h (interrupt=%b, code=%0d)",
                    DUT.core.csr_file_inst.mcause_r,
                    DUT.core.csr_file_inst.mcause_r[63],
                    DUT.core.csr_file_inst.mcause_r[3:0]);
           $display("       mepc   = 0x%08h", DUT.core.csr_file_inst.mepc_r);
-          $display("       mtval  = 0x%08h (from ifid_instruction)", DUT.core.csr_file_inst.mtval_r);
+          $display("       mtval  = 0x%08h (captured instruction)", DUT.core.csr_file_inst.mtval_r);
           $display("       PC     = 0x%08h (trap handler)", pc);
-          $display("       ifid_instruction = 0x%08h (ID stage)", DUT.core.ifid_instruction);
+          $display("       ifid_instruction = 0x%08h (ID stage NOW)", DUT.core.ifid_instruction);
           $display("       if_instruction_raw = 0x%08h (IF stage raw)", DUT.core.if_instruction_raw);
           $display("       if_instruction = 0x%08h (IF stage final)", DUT.core.if_instruction);
         end
@@ -410,6 +450,18 @@ module tb_freertos;
           scheduler_reached = 1;
           $display("[MILESTONE] Scheduler starting around cycle %0d", cycle_count);
         end
+      end
+
+      // Session 61: Track MRET execution and PC updates around cycle 39,370-39,420
+      if (cycle_count >= 39370 && cycle_count <= 39420) begin
+        $display("[MRET-TRACE] cycle=%0d PC=%h ifid_PC=%h idex_PC=%h exmem_PC=%h",
+                 cycle_count, pc, DUT.core.ifid_pc, DUT.core.idex_pc, DUT.core.exmem_pc);
+        $display("             idex_inst=%h exmem_inst=%h",
+                 DUT.core.idex_instruction, DUT.core.exmem_instruction);
+        $display("             idex_is_mret=%b exmem_is_mret=%b mret_flush=%b",
+                 DUT.core.idex_is_mret, DUT.core.exmem_is_mret, DUT.core.mret_flush);
+        $display("             mepc=%h pc_next=%h exception=%b",
+                 DUT.core.mepc, DUT.core.pc_next, DUT.core.exception);
       end
 
       // Monitor .rodata copy loop (PC 0x56-0x68) - Session 33 debug
