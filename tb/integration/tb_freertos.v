@@ -382,8 +382,10 @@ module tb_freertos;
   // Progress indicator - print every 10k cycles and track key milestones
   reg main_reached;
   reg scheduler_reached;
+  reg invalid_pc_warned;
   initial main_reached = 0;
   initial scheduler_reached = 0;
+  initial invalid_pc_warned = 0;
 
   always @(posedge clk) begin
     if (reset_n) begin
@@ -452,8 +454,43 @@ module tb_freertos;
         end
       end
 
-      // Session 61: Track MRET execution and PC updates around cycle 39,370-39,420
-      if (cycle_count >= 39370 && cycle_count <= 39420) begin
+      // Session 63: Track PC progression - sample frequently after cycle 39420
+      if (cycle_count == 39500 || cycle_count == 40000 || cycle_count == 41000 ||
+          cycle_count == 42000 || cycle_count == 43000 || cycle_count == 44000 ||
+          cycle_count == 45000 || cycle_count == 50000 || cycle_count == 60000) begin
+        $display("[PC-TRACK] cycle=%0d PC=0x%08h instruction=0x%08h", cycle_count, pc, instruction);
+      end
+
+      // Also detect when PC goes outside valid ranges
+      if (pc > 32'h90000000 && !invalid_pc_warned) begin
+        invalid_pc_warned = 1;
+        $display("");
+        $display("========================================");
+        $display("[PC-INVALID] PC entered invalid memory at cycle %0d", cycle_count);
+        $display("  PC = 0x%08h (outside all valid memory ranges!)", pc);
+        $display("  Instruction = 0x%08h", instruction);
+        $display("  Previous PC samples:");
+        $display("========================================");
+      end
+
+      // Session 63: Track init_array_loop execution (PC 0xa8-0xc8)
+      if (pc >= 32'h000000a8 && pc <= 32'h000000c8) begin
+        $display("[INIT-ARRAY] cycle=%0d PC=%h instruction=%h",
+                 cycle_count, pc, instruction);
+        $display("             t0(x5)=%h t1(x6)=%h t2(x7)=%h",
+                 DUT.core.regfile.registers[5], DUT.core.regfile.registers[6], DUT.core.regfile.registers[7]);
+      end
+
+      // Session 63: Track sp changes - detect when sp != 0x80040a90
+      if (cycle_count >= 39171 && cycle_count <= 39400) begin
+        if (DUT.core.regfile.registers[2] != 32'h80040a90 && DUT.core.regfile.registers[2] != 32'h80040a10) begin
+          $display("[SP-CHANGE] cycle=%0d PC=%h sp=%h (changed from 0x80040a90!)",
+                   cycle_count, pc, DUT.core.regfile.registers[2]);
+        end
+      end
+
+      // Session 61/62/63: Track MRET execution and PC corruption (39,370-39,500)
+      if (cycle_count >= 39370 && cycle_count <= 39500) begin
         $display("[MRET-TRACE] cycle=%0d PC=%h ifid_PC=%h idex_PC=%h exmem_PC=%h",
                  cycle_count, pc, DUT.core.ifid_pc, DUT.core.idex_pc, DUT.core.exmem_pc);
         $display("             idex_inst=%h exmem_inst=%h",

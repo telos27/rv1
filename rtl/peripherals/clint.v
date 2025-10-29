@@ -285,14 +285,25 @@ module clint #(
   // Monitor for debugging (Icarus Verilog compatible)
   always @(posedge clk) begin
     if (req_valid) begin
-      $display("[CLINT-REQ] Cycle %0d: req_valid=%b addr=0x%04h we=%b wdata=0x%016h ready=%b | is_mtime=%b is_mtimecmp=%b is_msip=%b hart_id=%0d",
-               $time/10, req_valid, req_addr, req_we, req_wdata, req_ready, is_mtime, is_mtimecmp, is_msip, hart_id);
+      $display("[CLINT-REQ] Cycle %0d: req_valid=%b addr=0x%04h we=%b wdata=0x%016h size=%0d ready=%b | is_mtime=%b is_mtimecmp=%b is_msip=%b hart_id=%0d",
+               $time/10, req_valid, req_addr, req_we, req_wdata, req_size, req_ready, is_mtime, is_mtimecmp, is_msip, hart_id);
     end
     if (req_valid && req_we && is_mtime) begin
       $display("  -> MTIME WRITE: 0x%016h (cycle %0d)", req_wdata, $time/10);
     end
     if (req_valid && req_we && is_mtimecmp) begin
-      $display("  -> MTIMECMP[%0d] WRITE: 0x%016h (cycle %0d) | mtime=%0d", hart_id, req_wdata, $time/10, mtime);
+      $display("  -> MTIMECMP[%0d] WRITE: 0x%016h size=%0d addr[2]=%b (cycle %0d) | mtime=%0d | mtimecmp_before=0x%016h", hart_id, req_wdata, req_size, req_addr[2], $time/10, mtime, mtimecmp[hart_id]);
+    end
+  end
+
+  // Display MTIMECMP value after write completes
+  always @(posedge clk) begin
+    if (req_valid && req_we && is_mtimecmp && req_ready) begin
+      $display("  -> MTIMECMP[%0d] AFTER WRITE: 0x%016h (cycle %0d)", hart_id, mtimecmp[hart_id], $time/10);
+    end
+    // Monitor timer interrupt triggering
+    if (mtime >= 53800 && mtime <= 54000) begin
+      $display("[CLINT-TIMER] mtime=%0d mtimecmp[0]=0x%016h mti_o[0]=%b (cycle %0d)", mtime, mtimecmp[0], mti_o[0], $time/10);
     end
     if (req_valid && req_we && is_msip) begin
       $display("  -> MSIP[%0d] WRITE: %b (cycle %0d)", hart_id, req_wdata[0], $time/10);
