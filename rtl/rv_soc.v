@@ -273,7 +273,8 @@ module rv_soc #(
   instruction_memory #(
     .XLEN(XLEN),
     .MEM_SIZE(IMEM_SIZE),
-    .MEM_FILE(MEM_FILE)
+    .MEM_FILE(MEM_FILE),
+    .DATA_PORT(1)              // Enable byte-level access for .rodata copying
   ) imem_data_port (
     .clk(clk),
     .addr(imem_req_addr),

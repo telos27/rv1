@@ -11,7 +11,8 @@
 module instruction_memory #(
   parameter XLEN     = `XLEN,     // Address width: 32 or 64 bits
   parameter MEM_SIZE = 65536,     // Memory size in bytes (64KB default)
-  parameter MEM_FILE = ""         // Hex file to initialize memory
+  parameter MEM_FILE = "",        // Hex file to initialize memory
+  parameter DATA_PORT = 0         // 1 = data port (byte-level access), 0 = instruction port (halfword-aligned)
 ) (
   input  wire             clk,          // Clock for writes
   input  wire [XLEN-1:0]  addr,         // Byte address for reads
@@ -66,19 +67,29 @@ module instruction_memory #(
   // This allows fetching compressed (16-bit) instructions at any half-word boundary
   // Mask address to fit within memory size (handles different base addresses)
   wire [XLEN-1:0] masked_addr = addr & (MEM_SIZE - 1);  // Mask to memory size
-  wire [XLEN-1:0] halfword_addr = {masked_addr[XLEN-1:1], 1'b0};  // Align to halfword boundary
 
-  // Fetch 32 bits (4 bytes) starting at the half-word aligned address
-  // This enables reading a full 32-bit instruction or two 16-bit compressed instructions
-  assign instruction = {mem[halfword_addr+3], mem[halfword_addr+2],
-                        mem[halfword_addr+1], mem[halfword_addr]};
+  // For instruction port: align to halfword boundary (C extension support)
+  // For data port: use word-aligned address (byte extraction done externally)
+  wire [XLEN-1:0] halfword_addr = {masked_addr[XLEN-1:1], 1'b0};  // Align to halfword boundary
+  wire [XLEN-1:0] word_addr = {masked_addr[XLEN-1:2], 2'b00};     // Align to word boundary
+  wire [XLEN-1:0] read_addr = DATA_PORT ? word_addr : halfword_addr;
+
+  // Fetch 32 bits (4 bytes) starting at the aligned address
+  // For instruction port: enables reading a full 32-bit instruction or two 16-bit compressed instructions
+  // For data port: returns word-aligned 32-bit data (byte/halfword extraction done by bus adapter)
+  assign instruction = {mem[read_addr+3], mem[read_addr+2],
+                        mem[read_addr+1], mem[read_addr]};
 
   // Debug: Monitor fetches at problematic address (using posedge clk to avoid spam)
   reg [XLEN-1:0] prev_addr;
   always @(posedge clk) begin
     if (addr >= 32'h2100 && addr <= 32'h2120 && addr != prev_addr) begin
-      $display("[IMEM-FETCH] addr=0x%08h, hw_addr=0x%08h, instr=0x%08h",
-               addr, halfword_addr, instruction);
+      if (DATA_PORT)
+        $display("[IMEM-DATA] addr=0x%08h, word_addr=0x%08h, data=0x%08h",
+                 addr, word_addr, instruction);
+      else
+        $display("[IMEM-FETCH] addr=0x%08h, hw_addr=0x%08h, instr=0x%08h",
+                 addr, halfword_addr, instruction);
     end
     prev_addr <= addr;
   end
