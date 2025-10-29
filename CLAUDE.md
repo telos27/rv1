@@ -6,7 +6,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status (Session 55, 2025-10-28)
 
 ### 🎯 CURRENT PHASE: Phase 2 Optimization - Enhanced FreeRTOS Testing
-- **Status**: 🚨 **BLOCKED - FreeRTOS Crashes in main()** (Session 55)
+- **Status**: 🚨 **BLOCKED - FPU Context Restore Exception** (Session 55)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Tasks**:
   1. ✅ Basic FreeRTOS boot validated (Session 46)
@@ -19,34 +19,38 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   8. ✅ **MTVEC/STVEC 2-byte alignment FIXED** (Session 53) 🎉
   9. ✅ **xISRStackTop calculation workaround** (Session 53)
   10. ✅ **EX/MEM hold during bus wait FIXED** (Session 54) 🎉
-  11. 🚨 **BLOCKED**: FreeRTOS crashes before timer setup (Session 55)
-  12. 📋 **NEXT**: Debug main() crash - stack/memory corruption suspected
-  13. 📋 Test FreeRTOS timer interrupt delivery (after crash fixed)
-  14. 📋 Debug/fix printf() duplication issue
-  15. 📋 Optional: UART interrupt-driven I/O
+  11. ✅ **FreeRTOS boots and scheduler starts** (Session 55)
+  12. 🚨 **BLOCKED**: Task switching fails - FPU exception at xPortStartFirstTask
+  13. 📋 **NEXT**: Fix FPU context restore exception (3 options: fix FPU, disable FP context, lazy FPU)
+  14. 📋 Test FreeRTOS task switching and timer interrupts
+  15. 📋 Debug/fix printf() duplication issue
+  16. 📋 Optional: UART interrupt-driven I/O
 
-### 🚨 Current Issue (Session 55): FreeRTOS Crashes Before Scheduler
-- **Critical Regression Discovered**: ❌
-  - FreeRTOS crashes during main() initialization
-  - Never reaches `vTaskStartScheduler()` or `vPortSetupTimerInterrupt()`
-  - No CLINT writes occur (MTIMECMP never set)
-  - CPU ends up in infinite NOP loop
-  - See: `docs/SESSION_55_FREERTOS_CRASH_INVESTIGATION.md`
-- **Evidence**:
-  - UART output: "Taskscreatedsu" (truncated/corrupted)
-  - Crash location: After xTaskCreate(), during puts() calls in main()
-  - No trap/exception detected
-  - Session 54 EX/MEM fix validated as correct ✅
-- **Root Cause Candidates**:
-  1. Stack corruption (return address overwritten)
-  2. Memory corruption (.rodata or .data section)
-  3. UART/puts() malfunction causing crash
-  4. Return address issue (function return jumps to wrong address)
+### 🚨 Current Issue (Session 55): FPU Context Restore Exception
+- **FreeRTOS Boots Successfully**: ✅
+  - Scheduler starts, tasks created
+  - UART output: "Tasks created successfully! Starting FreeRTOS scheduler..."
+  - 198 characters transmitted successfully
+- **Task Switching Blocked**: ❌
+  - Exception at cycle 57099 when `xPortStartFirstTask` tries to restore FP context
+  - PC = 0x130: `fld ft0, 0(sp)` (first FP register restore)
+  - mcause = 0x02 (illegal instruction exception)
+  - System stuck in exception handler infinite loop (PC cycling 0x1ce-0x1d0)
+- **Root Cause**: FPU context restore fails
+  - **Hypothesis 1**: MSTATUS.FS = 0 (FPU disabled at trap time)
+  - **Hypothesis 2**: Invalid SP (stack pointer to bad memory)
+  - **Hypothesis 3**: FPU hardware bug (FP load/store issue)
+- **Investigation Complete**:
+  - ✅ Memory layout verified (778 KB / 1024 KB, no overflow)
+  - ✅ Stack bounds checked (main: 0x800C1850-0x800C2850, task stacks in heap)
+  - ✅ F/D/M/A/C extensions enabled in test script
+  - ✅ Enhanced crash tracing tools created
+  - See: `docs/SESSION_55_FINAL_ANALYSIS.md`
 - **Next Actions**:
-  - Add detailed PC tracing to pinpoint exact crash location
-  - Check stack pointer values throughout execution
-  - Verify .rodata section copied correctly to RAM
-  - Test with minimal bare-metal program to isolate issue
+  - Check MSTATUS.FS value at exception time
+  - Verify SP points to valid task stack
+  - Test FPU instructions in isolation
+  - **Quick workaround**: Disable FP context save (`portasmADDITIONAL_CONTEXT_SIZE = 0`)
 
 ### 🎉 Session 54 Milestone: EX/MEM Hold Fix (Validated in Session 55)
 - **EX/MEM Hold During Bus Wait Bug FIXED**: ✅

@@ -70,6 +70,22 @@ fi
 if [ -n "$DEBUG_BUS" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_BUS=1"
 fi
+# Session 55: Crash debugging flags
+if [ -n "$DEBUG_PC_TRACE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_PC_TRACE=1"
+fi
+if [ -n "$DEBUG_STACK_TRACE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_STACK_TRACE=1"
+fi
+if [ -n "$DEBUG_RA_TRACE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_RA_TRACE=1"
+fi
+if [ -n "$DEBUG_FUNC_CALLS" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_FUNC_CALLS=1"
+fi
+if [ -n "$DEBUG_CRASH_DETECT" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_CRASH_DETECT=1"
+fi
 
 iverilog -g2012 \
     -o "$SIM_OUT" \
@@ -77,6 +93,10 @@ iverilog -g2012 \
     -I rtl/config \
     -I external/wbuart32/rtl \
     -D XLEN=32 \
+    -D ENABLE_M_EXT=1 \
+    -D ENABLE_A_EXT=1 \
+    -D ENABLE_F_EXT=1 \
+    -D ENABLE_D_EXT=1 \
     -D ENABLE_C_EXT=1 \
     -D ENABLE_BSS_FAST_CLEAR=1 \
     $DEBUG_FLAGS \

@@ -695,6 +695,166 @@ module tb_freertos;
   end
 
   // ========================================
+  // Session 55: PC/Stack/Return Address Crash Tracing
+  // ========================================
+  // Detailed tracing to identify crash location
+
+  `ifdef DEBUG_PC_TRACE
+  // Trace ALL PC changes with instruction info
+  reg [31:0] prev_pc_trace;
+  initial prev_pc_trace = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      if (pc != prev_pc_trace) begin
+        $display("[PC-TRACE] Cycle %0d: PC = 0x%08h, instr = 0x%08h",
+                 cycle_count, pc, instruction);
+      end
+      prev_pc_trace = pc;
+    end
+  end
+  `endif
+
+  `ifdef DEBUG_STACK_TRACE
+  // Monitor stack pointer (x2/sp) changes
+  reg [31:0] prev_sp_trace;
+  initial prev_sp_trace = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      if (DUT.core.regfile.registers[2] != prev_sp_trace) begin
+        $display("[SP-TRACE] Cycle %0d: SP changed from 0x%08h to 0x%08h (delta: %0d), PC = 0x%08h",
+                 cycle_count, prev_sp_trace, DUT.core.regfile.registers[2],
+                 $signed(DUT.core.regfile.registers[2] - prev_sp_trace), pc);
+      end
+      prev_sp_trace = DUT.core.regfile.registers[2];
+    end
+  end
+  `endif
+
+  `ifdef DEBUG_RA_TRACE
+  // Monitor return address (x1/ra) changes
+  reg [31:0] prev_ra_trace;
+  initial prev_ra_trace = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      if (DUT.core.regfile.registers[1] != prev_ra_trace) begin
+        $display("[RA-TRACE] Cycle %0d: RA changed from 0x%08h to 0x%08h, PC = 0x%08h",
+                 cycle_count, prev_ra_trace, DUT.core.regfile.registers[1], pc);
+      end
+      prev_ra_trace = DUT.core.regfile.registers[1];
+    end
+  end
+  `endif
+
+  `ifdef DEBUG_FUNC_CALLS
+  // Track key function calls/returns based on PC
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // main() entry at 0x22d4
+      if (pc == 32'h000022d4) begin
+        $display("========================================");
+        $display("[FUNC-CALL] main() ENTERED at cycle %0d", cycle_count);
+        $display("[FUNC-CALL]   SP = 0x%08h", DUT.core.regfile.registers[2]);
+        $display("========================================");
+      end
+
+      // uart_init() at 0x2434
+      if (pc == 32'h00002434) begin
+        $display("[FUNC-CALL] uart_init() at cycle %0d, RA = 0x%08h",
+                 cycle_count, DUT.core.regfile.registers[1]);
+      end
+
+      // puts() at 0x2462
+      if (pc == 32'h00002462) begin
+        $display("[FUNC-CALL] puts() at cycle %0d, arg a0 = 0x%08h, RA = 0x%08h",
+                 cycle_count, DUT.core.regfile.registers[10], DUT.core.regfile.registers[1]);
+      end
+
+      // printf() at 0x26ea
+      if (pc == 32'h000026ea) begin
+        $display("[FUNC-CALL] printf() at cycle %0d, RA = 0x%08h",
+                 cycle_count, DUT.core.regfile.registers[1]);
+      end
+
+      // xTaskCreate() at 0xf88
+      if (pc == 32'h00000f88) begin
+        $display("[FUNC-CALL] xTaskCreate() at cycle %0d, RA = 0x%08h",
+                 cycle_count, DUT.core.regfile.registers[1]);
+      end
+
+      // Detect JALR with invalid target (crash indicator)
+      if (DUT.core.memwb_valid && instruction[6:0] == 7'b1100111) begin  // JALR
+        if (pc > 32'h00010000 || (pc >= 32'h00004000 && pc < 32'h80000000)) begin
+          $display("========================================");
+          $display("ERROR: JALR to INVALID ADDRESS!");
+          $display("  Cycle: %0d", cycle_count);
+          $display("  PC: 0x%08h (likely garbage)", pc);
+          $display("  Instruction: 0x%08h", instruction);
+          $display("  RA (x1): 0x%08h", DUT.core.regfile.registers[1]);
+          $display("  SP (x2): 0x%08h", DUT.core.regfile.registers[2]);
+          $display("========================================");
+        end
+      end
+    end
+  end
+  `endif
+
+  `ifdef DEBUG_CRASH_DETECT
+  // Detect potential crash patterns
+  reg [31:0] stuck_pc_count;
+  reg [31:0] last_stuck_pc;
+  initial stuck_pc_count = 0;
+  initial last_stuck_pc = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Detect PC stuck in tight loop (potential hang)
+      if (pc == last_stuck_pc) begin
+        stuck_pc_count = stuck_pc_count + 1;
+        if (stuck_pc_count == 100) begin
+          $display("========================================");
+          $display("WARNING: PC STUCK AT 0x%08h for 100 cycles", pc);
+          $display("  Instruction: 0x%08h", instruction);
+          $display("  SP: 0x%08h", DUT.core.regfile.registers[2]);
+          $display("  RA: 0x%08h", DUT.core.regfile.registers[1]);
+          $display("========================================");
+        end
+      end else begin
+        stuck_pc_count = 0;
+        last_stuck_pc = pc;
+      end
+
+      // Detect stack overflow (SP below stack bottom 0x800C1850)
+      // NOTE: FreeRTOS tasks have their own stacks allocated from heap
+      // Main/ISR stack: 0x800C1850-0x800C2850
+      // Task stacks are in heap region (0x80000980-0x80040980)
+      // Only flag if SP is completely out of valid ranges
+      if (DUT.core.regfile.registers[2] < 32'h80000000 ||
+          DUT.core.regfile.registers[2] > 32'h80100000) begin
+        $display("========================================");
+        $display("ERROR: STACK POINTER OUT OF DMEM!");
+        $display("  Cycle: %0d", cycle_count);
+        $display("  SP: 0x%08h (outside DMEM 0x80000000-0x80100000)", DUT.core.regfile.registers[2]);
+        $display("  PC: 0x%08h", pc);
+        $display("========================================");
+      end
+
+      // Detect stack over-growth (SP above stack top 0x800C2850)
+      if (DUT.core.regfile.registers[2] > 32'h800C2850) begin
+        $display("========================================");
+        $display("WARNING: SP ABOVE INITIAL STACK TOP");
+        $display("  Cycle: %0d", cycle_count);
+        $display("  SP: 0x%08h (above initial top 0x800C2850)", DUT.core.regfile.registers[2]);
+        $display("  PC: 0x%08h", pc);
+        $display("========================================");
+      end
+    end
+  end
+  `endif
+
+  // ========================================
   // MULHU Pipeline Trace - Session 45 Debug
   // ========================================
   // Detailed trace of MULHU instruction through all pipeline stages
