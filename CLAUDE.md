@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 67, 2025-10-29)
+## Current Status (Session 68, 2025-10-30)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: ⚠️ **FreeRTOS prints banner but crashes at scheduler start** - Two critical bugs fixed!
+- **Status**: 🔍 **Debugging JAL→compressed instruction bug** - Root cause investigation ongoing
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
@@ -17,9 +17,24 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ C extension config bug FIXED (Session 66) 🎉
   - ✅ **Testbench false positive FIXED (Session 67)** - Assertion watchpoint corrected! 🎉
   - ✅ **FreeRTOS FPU binary rebuilt (Session 67)** - Stale binary replaced! 🎉
-  - 📋 **NEXT**: Debug scheduler crash at xPortStartFirstTask (PC → 0xa5a5a5XX)
+  - 🔍 **Session 68**: Identified JAL→compressed return bug, created minimal test case
+  - 📋 **NEXT**: Continue debugging JAL/compressed instruction interaction (Session 69)
 
-### Latest Sessions (67, 66, 65, 64, 63-corrected)
+### Latest Sessions (68, 67, 66, 65, 64, 63-corrected)
+
+**Session 68** (2025-10-30): JAL→Compressed Instruction Bug Investigation 🔍
+- **Issue**: FreeRTOS hangs in infinite loop between memset() RET and prvInitialiseNewTask()
+- **Pattern**: JAL (4-byte) followed by compressed instruction (2-byte) at return address
+- **Minimal test**: Created `test_jal_compressed_return.s` that reproduces hang
+- **Analysis**:
+  - Instruction fetch appears correct (0x589c = C.LW at return address)
+  - PC increment logic appears correct (PC+2 for compressed)
+  - JAL saves correct return address (ra = 0x4ca)
+  - Call depth underflows after first successful returns (0 → 0xFFFFFFFF)
+- **Attempted fix**: Selecting bits based on PC[1] - INCORRECT, broke tests, reverted
+- **Root cause**: Still under investigation - likely pipeline/timing issue
+- **Next**: VCD waveform analysis, pipeline flush investigation (Session 69)
+- See: `docs/SESSION_68_JAL_COMPRESSED_RETURN_BUG.md`
 
 **Session 67** (2025-10-29): Testbench False Positive & FPU Binary Fixed! 🎉🎉
 - **Bug #1 - Testbench**: Assertion watchpoint at wrong address (0x1c8c instead of 0x23e8)

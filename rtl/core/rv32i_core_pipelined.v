@@ -2775,4 +2775,30 @@ module rv_core_pipelined #(
   end
   `endif
 
+  // Debug: JAL/RET compressed instruction issue (Session 68)
+  `ifdef DEBUG_JAL_RET
+  integer debug_cycle;
+  initial debug_cycle = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) debug_cycle = debug_cycle + 1;
+
+    if (reset_n && pc_current >= 32'h80000010 && pc_current <= 32'h80000040) begin
+      $display("[JAL_DEBUG] Cycle=%0d PC=0x%08h instr_raw=0x%08h instr_final=0x%08h is_comp=%b",
+               debug_cycle, pc_current, if_instruction_raw, if_instruction, if_is_compressed);
+      $display("            instr_raw[15:0]=0x%04h instr_raw[31:16]=0x%04h PC[1:0]=%b",
+               if_instruction_raw[15:0], if_instruction_raw[31:16], pc_current[1:0]);
+      // Show pipeline state
+      if (idex_valid) begin
+        $display("            IDEX: PC=0x%08h opcode=%b rd=x%0d jump=%b",
+                 idex_pc, idex_opcode, idex_rd_addr, idex_jump);
+      end
+      // Show register writes (especially x1/ra)
+      if (memwb_reg_write && memwb_valid && memwb_rd_addr == 5'd1) begin
+        $display("            WB: x1(ra) <= 0x%08h", wb_data);
+      end
+    end
+  end
+  `endif
+
 endmodule
