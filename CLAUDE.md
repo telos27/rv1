@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 68, 2025-10-30)
+## Current Status (Session 69, 2025-10-30)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: 🔍 **Debugging JAL→compressed instruction bug** - Root cause investigation ongoing
+- **Status**: 🔍 **Debugging JAL→compressed instruction bug** - VCD analysis completed, root cause narrowed
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
@@ -18,9 +18,32 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ **Testbench false positive FIXED (Session 67)** - Assertion watchpoint corrected! 🎉
   - ✅ **FreeRTOS FPU binary rebuilt (Session 67)** - Stale binary replaced! 🎉
   - 🔍 **Session 68**: Identified JAL→compressed return bug, created minimal test case
-  - 📋 **NEXT**: Continue debugging JAL/compressed instruction interaction (Session 69)
+  - 🔍 **Session 69**: VCD waveform analysis - PC increment bug confirmed, likely timing issue
+  - 📋 **NEXT**: Add debug instrumentation, direct console output analysis (Session 70)
 
-### Latest Sessions (68, 67, 66, 65, 64, 63-corrected)
+### Latest Sessions (69, 68, 67, 66, 65, 64, 63-corrected)
+
+**Session 69** (2025-10-30): VCD Waveform Analysis - PC Increment Bug Investigation 🔍
+- **Goal**: Deep VCD analysis to identify root cause of JAL→compressed bug
+- **Process**:
+  - Generated 185MB VCD waveform from minimal test case
+  - Created Python analysis scripts to extract key signals
+  - Traced PC increment logic cycle-by-cycle
+  - Analyzed instruction fetch and compression detection
+- **Key Finding**: PC increments by +2 instead of +4 after JAL instruction
+  - Cycle 9: PC=0x14, fetches JAL (0x018000ef), `if_is_compressed=0` ✓
+  - Cycle 10: PC=0x16 ← **WRONG!** Should be 0x18 (PC+4)
+  - Compression detection correctly identifies JAL as NOT compressed
+  - But PC increment still uses +2 instead of +4
+- **Analysis**: Likely timing issue between instruction fetch and PC increment calculation
+- **Tools Created**: 6 Python VCD analysis scripts for signal extraction and correlation
+- **VCD Insights**:
+  - Signal timing clarified: `if_pc` (VCD) = `ifid_pc` (pipeline register, 1 cycle behind)
+  - Compression detection logic verified correct
+  - PC increment calculation logic verified correct
+  - Issue is in TIMING or DATA being used for calculation
+- **Next**: Add debug instrumentation for direct console output, test simpler cases
+- See: `docs/SESSION_69_VCD_ANALYSIS_PC_INCREMENT_BUG.md`
 
 **Session 68** (2025-10-30): JAL→Compressed Instruction Bug Investigation 🔍
 - **Issue**: FreeRTOS hangs in infinite loop between memset() RET and prvInitialiseNewTask()
