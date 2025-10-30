@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 66, 2025-10-29)
+## Current Status (Session 67, 2025-10-29)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: ⚠️ **Investigating FreeRTOS infinite loop** - C extension bug fixed, compressed instructions working
+- **Status**: ⚠️ **FreeRTOS prints banner but crashes at scheduler start** - Two critical bugs fixed!
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
@@ -14,10 +14,26 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ CPU hardware fully validated (Sessions 62-63)
   - ✅ Stack initialization verified CORRECT (Session 64)
   - ✅ Pipeline flush logic validated CORRECT (Session 65) 🎉
-  - ✅ **C extension config bug FIXED (Session 66)** - Compressed instructions work! 🎉
-  - 📋 **NEXT**: Debug FreeRTOS infinite loop (different bug, 22K+ cycles)
+  - ✅ C extension config bug FIXED (Session 66) 🎉
+  - ✅ **Testbench false positive FIXED (Session 67)** - Assertion watchpoint corrected! 🎉
+  - ✅ **FreeRTOS FPU binary rebuilt (Session 67)** - Stale binary replaced! 🎉
+  - 📋 **NEXT**: Debug scheduler crash at xPortStartFirstTask (PC → 0xa5a5a5XX)
 
-### Latest Sessions (66, 65, 64, 63-corrected)
+### Latest Sessions (67, 66, 65, 64, 63-corrected)
+
+**Session 67** (2025-10-29): Testbench False Positive & FPU Binary Fixed! 🎉🎉
+- **Bug #1 - Testbench**: Assertion watchpoint at wrong address (0x1c8c instead of 0x23e8)
+  - Caused false positive at cycle 33,569 terminating simulation prematurely
+  - Fixed: Updated `tb/integration/tb_freertos.v:792` to use correct address
+  - Result: Simulation runs full 500K cycles (15x improvement)
+- **Bug #2 - Stale Binary**: FreeRTOS compiled with FPU context save despite Session 57 workaround
+  - xPortStartFirstTask had FPU instructions causing illegal instruction loop
+  - Root cause: Binary compiled BEFORE workaround source code changes
+  - Fixed: Rebuilt FreeRTOS (`make clean && make`), FPU instructions now removed
+  - Result: No more FPU exceptions, prints full banner via UART
+- **Current Issue**: FreeRTOS crashes after "Starting FreeRTOS scheduler..." (PC → 0xa5a5a5XX)
+- **Status**: Major progress (2 bugs fixed), new crash exposed (stack/context issue)
+- See: `docs/SESSION_67_TESTBENCH_FALSE_POSITIVE_AND_FPU_REBUILD.md`
 
 **Session 66** (2025-10-29): C Extension Misalignment Bug FIXED! 🎉🎉🎉
 - **Root Cause**: `CONFIG_RV32I` in rv_config.vh forcibly disabled ENABLE_C_EXT, overriding command-line `-DENABLE_C_EXT=1`
@@ -75,7 +91,9 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Impact**: Session 57's "FPU workaround" no longer needed - can re-enable FPU context save
 - See: `docs/SESSION_62_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md`
 
-### Key Bug Fixes (Sessions 46-66)
+### Key Bug Fixes (Sessions 46-67)
+- ✅ Testbench false positive (Session 67) - CRITICAL fix: assertion watchpoint at wrong address
+- ✅ Stale FreeRTOS binary (Session 67) - CRITICAL fix: rebuilt with FPU disabled
 - ✅ C extension config bug (Session 66) - CRITICAL fix enabling compressed instructions at 2-byte boundaries
 - ✅ MRET/exception priority bug (Session 62) - CRITICAL fix enabling FreeRTOS scheduler
 - ✅ M-extension operand latch bug (Session 60) - Back-to-back M-instructions now work
@@ -95,7 +113,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I low priority)
 - **Privilege Tests**: 33/34 passing (97%)
 - **Quick Regression**: 14/14 tests, ~4s runtime
-- **FreeRTOS**: Scheduler running 500K+ cycles, debugging crash
+- **FreeRTOS**: Prints banner (198 chars via UART), crashes at scheduler start (PC → 0xa5a5a5XX)
 
 ## Test Infrastructure (CRITICAL - USE THIS!)
 
@@ -230,7 +248,8 @@ rv1/
 See `docs/KNOWN_ISSUES.md` for complete tracking and history.
 
 **Current:**
-- ⚠️ FreeRTOS crash investigation (Session 64) - Stack init verified correct, debugging real cause
+- ⚠️ FreeRTOS scheduler crash (Session 67) - PC jumps to 0xa5a5a5XX after "Starting scheduler..."
+- ⚠️ FPU instruction decode bug (Session 56-57) - FPU context save/restore disabled as workaround
 
 **Low Priority:**
 - ⚠️ FENCE.I test (self-modifying code, 80/81 = 98.8%)

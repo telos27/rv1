@@ -788,7 +788,8 @@ module tb_freertos;
   always @(posedge clk) begin
     if (reset_n) begin
       // Check for vApplicationAssertionFailed entry at ANY time
-      if (pc == 32'h00001c8c) begin
+      // Session 67: Fixed address - was 0x1c8c (wrong!), now 0x23e8 (correct)
+      if (pc == 32'h000023e8) begin
         $display("");
         $display("========================================");
         $display("[ASSERTION] *** vApplicationAssertionFailed() called at cycle %0d ***", cycle_count);
