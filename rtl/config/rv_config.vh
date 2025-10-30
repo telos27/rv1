@@ -198,23 +198,29 @@
 `ifdef CONFIG_RV32I
   `undef XLEN
   `define XLEN 32
-  `undef ENABLE_M_EXT
-  `define ENABLE_M_EXT 0
-  `undef ENABLE_A_EXT
-  `define ENABLE_A_EXT 0
-  `undef ENABLE_C_EXT
-  `define ENABLE_C_EXT 0
+  // Only set defaults if not already defined from command line
+  `ifndef ENABLE_M_EXT
+    `define ENABLE_M_EXT 0
+  `endif
+  `ifndef ENABLE_A_EXT
+    `define ENABLE_A_EXT 0
+  `endif
+  `ifndef ENABLE_C_EXT
+    `define ENABLE_C_EXT 0
+  `endif
 `endif
 
 `ifdef CONFIG_RV32IM
   `undef XLEN
   `define XLEN 32
-  `undef ENABLE_M_EXT
   `define ENABLE_M_EXT 1
-  `undef ENABLE_A_EXT
-  `define ENABLE_A_EXT 0
-  `undef ENABLE_C_EXT
-  `define ENABLE_C_EXT 0
+  // Only set defaults if not already defined from command line
+  `ifndef ENABLE_A_EXT
+    `define ENABLE_A_EXT 0
+  `endif
+  `ifndef ENABLE_C_EXT
+    `define ENABLE_C_EXT 0
+  `endif
 `endif
 
 `ifdef CONFIG_RV32IMA

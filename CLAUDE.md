@@ -3,20 +3,30 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 65, 2025-10-29)
+## Current Status (Session 66, 2025-10-29)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: ⚠️ **Investigating FreeRTOS issues** - Pipeline hardware validated, software-level debugging needed
+- **Status**: ⚠️ **Investigating FreeRTOS infinite loop** - C extension bug fixed, compressed instructions working
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
   - ✅ FreeRTOS scheduler RUNNING - 500K+ cycles! 🎉
   - ✅ CPU hardware fully validated (Sessions 62-63)
   - ✅ Stack initialization verified CORRECT (Session 64)
-  - ✅ **Pipeline flush logic validated CORRECT (Session 65)** 🎉
-  - 📋 **NEXT**: Debug FreeRTOS software-level issues (infinite loops, task behavior)
+  - ✅ Pipeline flush logic validated CORRECT (Session 65) 🎉
+  - ✅ **C extension config bug FIXED (Session 66)** - Compressed instructions work! 🎉
+  - 📋 **NEXT**: Debug FreeRTOS infinite loop (different bug, 22K+ cycles)
 
-### Latest Sessions (65, 64, 63-corrected, 62)
+### Latest Sessions (66, 65, 64, 63-corrected)
+
+**Session 66** (2025-10-29): C Extension Misalignment Bug FIXED! 🎉🎉🎉
+- **Root Cause**: `CONFIG_RV32I` in rv_config.vh forcibly disabled ENABLE_C_EXT, overriding command-line `-DENABLE_C_EXT=1`
+- **Impact**: Caused instruction address misalignment exceptions for 2-byte aligned addresses (0x0e, 0x200e, etc.)
+- **Fix**: Modified rv_config.vh to respect command-line overrides using `ifndef` guards
+- **Result**: Compressed instructions (RET, C.JR, etc.) now execute correctly at 2-byte boundaries
+- **Verification**: 14/14 quick regression tests PASS, FreeRTOS runs 22K+ cycles (vs 500K before)
+- **Status**: Critical bug fixed, but FreeRTOS still has infinite loop (different issue)
+- See: `docs/SESSION_66_C_EXTENSION_MISALIGNMENT_BUG_FIXED.md`
 
 **Session 65** (2025-10-29): Pipeline Flush Investigation - Hardware Validated! ✅
 - **Goal**: Investigate if pipeline flush logic causes JAL/JALR to fail
@@ -65,7 +75,8 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Impact**: Session 57's "FPU workaround" no longer needed - can re-enable FPU context save
 - See: `docs/SESSION_62_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md`
 
-### Key Bug Fixes (Sessions 46-64)
+### Key Bug Fixes (Sessions 46-66)
+- ✅ C extension config bug (Session 66) - CRITICAL fix enabling compressed instructions at 2-byte boundaries
 - ✅ MRET/exception priority bug (Session 62) - CRITICAL fix enabling FreeRTOS scheduler
 - ✅ M-extension operand latch bug (Session 60) - Back-to-back M-instructions now work
 - ✅ Debug infrastructure built (Session 59) - Call stack, watchpoints, register monitoring
@@ -78,7 +89,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - ✅ CLINT mtime prescaler (Session 48) - Atomic 64-bit reads on RV32
 - ✅ M-extension forwarding (Session 46) - MULHU data forwarding
 
-**For complete session history, see**: `docs/CHANGELOG.md`
+**For complete session history, see**: `docs/SESSION_*.md` files
 
 ## Compliance & Testing
 - **98.8% RV32 Compliance**: 80/81 official tests passing (FENCE.I low priority)
