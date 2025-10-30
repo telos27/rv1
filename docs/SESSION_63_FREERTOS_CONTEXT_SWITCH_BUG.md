@@ -1,18 +1,42 @@
 # Session 63: FreeRTOS Context Switch Bug - Root Cause Identified
 
 **Date**: 2025-10-29
-**Status**: ✅ **ROOT CAUSE FOUND** - Task stack initialization issue
+**Status**: ⚠️ **CONCLUSION REVISED** - See Session 64 for corrected analysis
 **Branch**: main (continuing from 38c2408)
+
+---
+
+## ⚠️ IMPORTANT CORRECTION (Session 64, 2025-10-29)
+
+**The conclusion of this session was INCORRECT!** Session 64 investigation with memory watchpoints revealed:
+
+1. ✅ **`pxPortInitialiseStack()` IS working correctly** - Verified with memory write traces
+2. ✅ **Stack initialization completes successfully** - ra=0 at sp+4 (0x80000868) is CORRECT (xTaskReturnAddress)
+3. ❌ **"Uninitialized stack" diagnosis was WRONG** - ra=0 is the EXPECTED initial value for new tasks
+
+**What actually happens:**
+- Cycle 13865: `prvInitialiseNewTask()` fills stack with 0xa5 debug pattern
+- Cycle 14945: `pxPortInitialiseStack()` writes 0x00000000 to ra location (0x80000868) ✅
+- No further writes to stack - initialization is CORRECT ✅
+
+**The real bug is elsewhere** - not stack initialization! Possible causes:
+1. CPU JAL/JALR not writing return addresses correctly
+2. Trap handler not saving/restoring registers correctly
+3. Different root cause entirely
+
+See `docs/SESSION_64_STACK_INITIALIZATION_INVESTIGATION.md` for details.
+
+---
 
 ## Session Goal
 
 Investigate why FreeRTOS appears to run 500K cycles but crashes. Verify Session 62 MRET fix and identify remaining issues.
 
-## TL;DR - Root Cause Found!
+## TL;DR - Root Cause Found! (REVISED - SEE ABOVE)
 
 **Session 62's MRET fix IS working correctly!** ✅
 
-**Real Issue**: FreeRTOS context-switches to a task with an **uninitialized/corrupted stack**, causing ra=0 which jumps to reset vector (0x0) and crashes the system.
+**Original Conclusion (INCORRECT)**: FreeRTOS context-switches to a task with an **uninitialized/corrupted stack**, causing ra=0 which jumps to reset vector (0x0) and crashes the system.
 
 ---
 

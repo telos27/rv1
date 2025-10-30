@@ -248,6 +248,18 @@ module tb_freertos;
     end
   end
 
+  // Memory write watchpoint - Track writes to Task B's stack (sp=0x80000864)
+  // Watch ra location: sp+4 = 0x80000868
+  always @(posedge clk) begin
+    if (reset_n && DUT.core.exmem_mem_write && DUT.core.exmem_valid) begin
+      // Check if writing to address range 0x80000860-0x80000880 (Task B stack)
+      if (DUT.core.exmem_alu_result >= 32'h80000860 && DUT.core.exmem_alu_result <= 32'h80000880) begin
+        $display("[STACK-WRITE] Cycle %0d: PC=0x%08h writes 0x%08h to addr=0x%08h",
+                 cycle_count, DUT.core.exmem_pc, DUT.core.exmem_mem_write_data, DUT.core.exmem_alu_result);
+      end
+    end
+  end
+
   // Function entry tracking - DISABLED FOR SPEED
   //reg uart_init_entered;
   //reg printf_entered;
@@ -309,6 +321,78 @@ module tb_freertos;
   //    end
   //  end
   //end
+
+  // RA register write monitoring - Session 64
+  always @(posedge clk) begin
+    if (reset_n && cycle_count >= 39420 && cycle_count <= 39432) begin
+      // Monitor all writes to ra (x1)
+      if (DUT.core.memwb_reg_write && DUT.core.memwb_rd_addr == 5'd1) begin
+        $display("[RA-WRITE-ATTEMPT] Cycle %0d: Trying to write ra=0x%08h", cycle_count, DUT.core.wb_data);
+        $display("       memwb_valid   = %b (comes from exmem_valid && !exception_from_mem && !hold_exmem)", DUT.core.memwb_valid);
+        $display("       int_reg_write_en = %b", DUT.core.int_reg_write_enable);
+        $display("       --- Checking why memwb_valid=0 ---");
+        $display("       exmem_valid      = %b (was JAL valid in MEM stage?)", DUT.core.exmem_valid);
+        $display("       exception_from_mem = %b (did JAL cause exception?)", DUT.core.exception_from_mem);
+        $display("       hold_exmem       = %b (was EXMEM held?)", DUT.core.hold_exmem);
+        if (DUT.core.int_reg_write_enable) begin
+          $display("       ✅ WRITE ENABLED - ra will be updated");
+        end else begin
+          $display("       ❌ WRITE BLOCKED - ra will NOT be updated!");
+        end
+      end
+      // Monitor forwarding when reading ra
+      if (DUT.core.idex_valid && DUT.core.idex_rs1_addr == 5'd1) begin
+        $display("[RA-FORWARD] Cycle %0d: IDEX reading rs1=x1 (ra)", cycle_count);
+        $display("       idex_PC       = 0x%08h", DUT.core.idex_pc);
+        $display("       idex_instr    = 0x%08h", DUT.core.idex_instruction);
+        $display("       idex_rs1_data = 0x%08h (from IDEX pipe reg)", DUT.core.idex_rs1_data);
+        $display("       forward_a     = %b", DUT.core.forward_a);
+        $display("       memwb_rd      = x%0d", DUT.core.memwb_rd_addr);
+        $display("       memwb_reg_wr  = %b", DUT.core.memwb_reg_write);
+        $display("       memwb_valid   = %b", DUT.core.memwb_valid);
+        $display("       wb_data       = 0x%08h", DUT.core.wb_data);
+        $display("       ex_alu_op_a_fwd = 0x%08h (after forward)", DUT.core.ex_alu_operand_a_forwarded);
+        $display("");
+      end
+      // Monitor IDEX pipeline register every cycle
+      $display("[IDEX-STATE] Cycle %0d: PC=0x%08h idex_PC=0x%08h idex_instr=0x%08h idex_valid=%b idex_rs1=%0d",
+               cycle_count, DUT.core.pc_current, DUT.core.idex_pc, DUT.core.idex_instruction,
+               DUT.core.idex_valid, DUT.core.idex_rs1_addr);
+      // Monitor flush signals
+      if (DUT.core.flush_idex || DUT.core.ex_take_branch) begin
+        $display("       [FLUSH] flush_idex=%b ex_take_branch=%b trap_flush=%b",
+                 DUT.core.flush_idex, DUT.core.ex_take_branch, DUT.core.trap_flush);
+      end
+      // Monitor ra value in register file every cycle
+      $display("[RA-VALUE] Cycle %0d: ra=0x%08h",
+               cycle_count, DUT.core.regfile.registers[1]);
+    end
+  end
+
+  // JALR debug monitoring - Session 64
+  always @(posedge clk) begin
+    if (reset_n && cycle_count >= 39480 && cycle_count <= 39495) begin
+      // Monitor JALR instruction in ID/EX stage
+      if (DUT.core.idex_valid && DUT.core.idex_jump && DUT.core.idex_opcode == 7'b1100111) begin
+        $display("[JALR-DEBUG] Cycle %0d: JALR detected in IDEX", cycle_count);
+        $display("       IDEX PC         = 0x%08h", DUT.core.idex_pc);
+        $display("       IDEX instr      = 0x%08h", DUT.core.idex_instruction);
+        $display("       idex_jump       = %b", DUT.core.idex_jump);
+        $display("       idex_branch     = %b", DUT.core.idex_branch);
+        $display("       idex_rs1        = x%0d", DUT.core.idex_rs1_addr);
+        $display("       idex_rs1_data   = 0x%08h", DUT.core.idex_rs1_data);
+        $display("       idex_imm        = 0x%08h", DUT.core.idex_imm);
+        $display("       ex_alu_op_a_fwd = 0x%08h (forwarded rs1)", DUT.core.ex_alu_operand_a_forwarded);
+        $display("       ex_jump_target  = 0x%08h (rs1+imm)", DUT.core.ex_jump_target);
+        $display("       ex_take_branch  = %b", DUT.core.ex_take_branch);
+        $display("       pc_next         = 0x%08h", DUT.core.pc_next);
+        $display("       trap_flush      = %b", DUT.core.trap_flush);
+        $display("       mret_flush      = %b", DUT.core.mret_flush);
+        $display("       stall_pc        = %b", DUT.core.stall_pc);
+        $display("");
+      end
+    end
+  end
 
   // Enhanced exception monitoring - capture state BEFORE pipeline flush
   reg exception_detected_prev;
