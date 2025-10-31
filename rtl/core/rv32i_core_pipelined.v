@@ -292,6 +292,46 @@ module rv_core_pipelined #(
   wire            fpu_start;
   assign fpu_start = idex_fp_alu_en && idex_valid && !ex_fpu_busy;
 
+  `ifdef DEBUG_JALR_TRACE
+  // Trace JALR instruction through all pipeline stages
+  integer jalr_cycle_count;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      jalr_cycle_count <= 0;
+    end else begin
+      jalr_cycle_count <= jalr_cycle_count + 1;
+
+      // ID Stage: Check if JALR is being decoded
+      if (ifid_valid && id_opcode == 7'b1100111) begin
+        $display("[CYCLE %0d] JALR in ID stage:", jalr_cycle_count);
+        $display("  ifid_pc=%08h ifid_instr=%08h is_compressed=%b", ifid_pc, ifid_instruction, ifid_is_compressed);
+        $display("  id_jump=%b id_branch=%b stall_ifid=%b flush_ifid=%b", id_jump, id_branch, stall_ifid, flush_ifid);
+      end
+      // IDEX Latch: Check if JALR is being latched into EX stage
+      if (flush_idex && !hold_exmem) begin
+        if (id_opcode == 7'b1100111 && ifid_valid) begin
+          $display("[CYCLE %0d] JALR FLUSHED before entering EX:", jalr_cycle_count);
+          $display("  flush_idex=%b hold_exmem=%b", flush_idex, hold_exmem);
+          $display("  flush sources: trap=%b mret=%b sret=%b hazard=%b ex_take_branch=%b",
+                   trap_flush, mret_flush, sret_flush, flush_idex_hazard, ex_take_branch);
+        end
+      end else if (!hold_exmem && ifid_valid && id_opcode == 7'b1100111) begin
+        $display("[CYCLE %0d] JALR latching into IDEX:", jalr_cycle_count);
+        $display("  jump_in=%b branch_in=%b", id_jump, id_branch);
+      end
+      // EX Stage: Check if JALR is executing
+      if (idex_valid && idex_opcode == 7'b1100111) begin
+        $display("[CYCLE %0d] JALR in EX stage:", jalr_cycle_count);
+        $display("  idex_pc=%08h idex_instr=%08h idex_is_compressed=%b", idex_pc, idex_instruction, idex_is_compressed);
+        $display("  idex_jump=%b idex_branch=%b ex_take_branch=%b", idex_jump, idex_branch, ex_take_branch);
+        $display("  rs1_addr=x%0d rs1_data=%08h target=%08h", idex_rs1_addr, ex_alu_operand_a_forwarded, ex_jump_target);
+        $display("  Branch unit inputs: rs1_data=%08h rs2_data=%08h funct3=%03b branch=%b jump=%b",
+                 ex_alu_operand_a_forwarded, ex_rs2_data_forwarded, idex_funct3, idex_branch, idex_jump);
+      end
+    end
+  end
+  `endif
+
   `ifdef DEBUG_FPU
   always @(posedge clk) begin
     if (fpu_start) begin
