@@ -2827,4 +2827,158 @@ module rv_core_pipelined #(
   end
   `endif
 
+  //==========================================================================
+  // Session 72: Enhanced Pipeline Debug Instrumentation
+  // Provides synchronized view of all pipeline stages for easier debugging
+  //==========================================================================
+  `ifdef DEBUG_PIPELINE
+  integer pipe_cycle;
+  initial pipe_cycle = 0;
+
+  always @(posedge clk) begin
+    if (!reset_n) begin
+      pipe_cycle = 0;
+    end else begin
+      pipe_cycle = pipe_cycle + 1;
+
+      // Only show cycles with valid instructions or control flow changes
+      if (ifid_valid || idex_valid || exmem_valid || memwb_valid ||
+          ex_take_branch || trap_flush || mret_flush || sret_flush) begin
+
+        $display("================================================================================");
+        $display("[CYCLE %0d] Pipeline State:", pipe_cycle);
+        $display("================================================================================");
+
+        // IF Stage
+        $display("IF:  PC=%08h → %08h | instr=%08h comp=%b | stall=%b flush=%b",
+                 pc_current, pc_next, if_instruction_raw, if_is_compressed,
+                 stall_pc, flush_ifid);
+        if (trap_flush) $display("     TRAP: vec=%08h code=%h", trap_vector, exception_code);
+        if (mret_flush) $display("     MRET: mepc=%08h", mepc);
+        if (sret_flush) $display("     SRET: sepc=%08h", sepc);
+
+        // ID Stage
+        if (ifid_valid && !flush_ifid) begin
+          $display("ID:  PC=%08h | instr=%08h | op=%07b func3=%03b rd=x%0d rs1=x%0d rs2=x%0d",
+                   ifid_pc, ifid_instruction, id_opcode, id_funct3, id_rd, id_rs1, id_rs2);
+          $display("     imm=%08h | br=%b jmp=%b mem_r=%b mem_w=%b reg_w=%b",
+                   id_immediate, id_branch, id_jump, id_mem_read, id_mem_write, id_reg_write);
+        end else if (flush_ifid) begin
+          $display("ID:  <FLUSHED>");
+        end else begin
+          $display("ID:  <BUBBLE>");
+        end
+
+        // EX Stage
+        if (idex_valid && !flush_idex) begin
+          $display("EX:  PC=%08h | op=%07b func3=%03b rd=x%0d | br=%b jmp=%b",
+                   idex_pc, idex_opcode, idex_funct3, idex_rd_addr, idex_branch, idex_jump);
+          $display("     rs1=x%0d(fwd=%08h) rs2=x%0d(fwd=%08h) imm=%08h",
+                   idex_rs1_addr, ex_alu_operand_a_forwarded,
+                   idex_rs2_addr, ex_rs2_data_forwarded, idex_imm);
+          if (idex_branch || idex_jump) begin
+            $display("     BR/JMP: take=%b tgt=%08h (br_tgt=%08h jmp_tgt=%08h)",
+                     ex_take_branch,
+                     idex_jump ? ex_jump_target : ex_branch_target,
+                     ex_branch_target, ex_jump_target);
+          end
+          $display("     ALU: result=%08h", ex_alu_result);
+        end else if (flush_idex) begin
+          $display("EX:  <FLUSHED>");
+        end else begin
+          $display("EX:  <BUBBLE>");
+        end
+
+        // MEM Stage
+        if (exmem_valid) begin
+          $display("MEM: PC=%08h | rd=x%0d alu=%08h | mem_r=%b mem_w=%b",
+                   exmem_pc, exmem_rd_addr, exmem_alu_result,
+                   exmem_mem_read, exmem_mem_write);
+          if (exmem_mem_write) begin
+            $display("     MEM_WRITE: data=%08h", exmem_mem_write_data);
+          end
+        end else begin
+          $display("MEM: <BUBBLE>");
+        end
+
+        // WB Stage
+        if (memwb_valid) begin
+          $display("WB:  rd=x%0d <= %08h | reg_w=%b",
+                   memwb_rd_addr, wb_data, memwb_reg_write);
+        end else begin
+          $display("WB:  <BUBBLE>");
+        end
+
+        $display("--------------------------------------------------------------------------------");
+        $display("");
+      end
+    end
+  end
+  `endif
+
+  //==========================================================================
+  // Session 72: JAL/JALR Specific Debug Instrumentation
+  // Traces jump/branch execution with detailed register and target info
+  //==========================================================================
+  `ifdef DEBUG_JAL
+  integer jal_cycle;
+  initial jal_cycle = 0;
+
+  always @(posedge clk) begin
+    if (!reset_n) begin
+      jal_cycle = 0;
+    end else begin
+      jal_cycle = jal_cycle + 1;
+
+      // Detect JAL/JALR in ID stage
+      if (ifid_valid && (id_opcode == 7'b1101111 || id_opcode == 7'b1100111)) begin
+        if (id_opcode == 7'b1101111) begin
+          $display("[CYCLE %0d] JAL detected in ID stage:", jal_cycle);
+          $display("  PC=%08h instr=%08h", ifid_pc, ifid_instruction);
+          $display("  rd=x%0d imm=%08h (%0d)", id_rd, id_immediate, $signed(id_immediate));
+          $display("  Target: PC + imm = %08h + %08h = %08h",
+                   ifid_pc, id_immediate, ifid_pc + id_immediate);
+          $display("  Return: PC + 4 = %08h (will be saved to x%0d)",
+                   ifid_pc + 4, id_rd);
+        end else begin
+          $display("[CYCLE %0d] JALR detected in ID stage:", jal_cycle);
+          $display("  PC=%08h instr=%08h", ifid_pc, ifid_instruction);
+          $display("  rd=x%0d rs1=x%0d imm=%08h", id_rd, id_rs1, id_immediate);
+          $display("  Target: rs1 + imm (will be calculated in EX with forwarding)");
+          $display("  Return: PC + 4 = %08h (will be saved to x%0d)",
+                   ifid_pc + 4, id_rd);
+        end
+      end
+
+      // Trace jump execution in EX stage
+      if (idex_valid && idex_jump && ex_take_branch) begin
+        if (idex_opcode == 7'b1101111) begin
+          $display("[CYCLE %0d] JAL executing in EX stage:", jal_cycle);
+        end else begin
+          $display("[CYCLE %0d] JALR executing in EX stage:", jal_cycle);
+        end
+        $display("  idex_pc=%08h idex_imm=%08h", idex_pc, idex_imm);
+        $display("  Jump target: %08h", ex_jump_target);
+        $display("  Return addr (PC+4): %08h → x%0d", idex_pc + 4, idex_rd_addr);
+        $display("  pc_next will be: %08h", pc_next);
+        $display("  Pipeline flush: ifid=%b idex=%b", flush_ifid, flush_idex);
+      end
+
+      // Trace register writes for ra (x1)
+      if (memwb_valid && memwb_reg_write && memwb_rd_addr == 5'd1) begin
+        $display("[CYCLE %0d] Writing to x1 (ra) in WB stage:", jal_cycle);
+        $display("  x1 <= %08h", wb_data);
+      end
+
+      // Detect RET (jalr x0, ra, 0)
+      if (ifid_valid && id_opcode == 7'b1100111 && id_rd == 5'd0 && id_rs1 == 5'd1) begin
+        $display("[CYCLE %0d] RET detected in ID stage:", jal_cycle);
+        $display("  PC=%08h", ifid_pc);
+        $display("  Current ra (x1) = %08h", id_rs1_data);
+        $display("  Will return to: %08h", id_rs1_data + id_immediate);
+      end
+    end
+  end
+  `endif
+
 endmodule

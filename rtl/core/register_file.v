@@ -52,4 +52,20 @@ module register_file #(
                     (rd_wen && (rd_addr == rs2_addr) && (rd_addr != 5'h0)) ? rd_data :
                     registers[rs2_addr];
 
+  // Debug register writes (track x7/t2 corruption)
+  `ifdef DEBUG_REG_WRITE
+  always @(posedge clk) begin
+    if (reset_n && rd_wen && rd_addr != 5'h0) begin
+      // Track writes to x7 (t2) - the register that gets corrupted
+      if (rd_addr == 5'd7) begin
+        $display("[REG_WRITE] x7 (t2) <= %h", rd_data);
+      end
+      // Also show any write of the corruption pattern
+      if (rd_data == 32'ha5a5a5a5 || rd_data == 64'ha5a5a5a5a5a5a5a5) begin
+        $display("[REG_WRITE_CORRUPT] x%0d <= %h (corruption pattern!)", rd_addr, rd_data);
+      end
+    end
+  end
+  `endif
+
 endmodule

@@ -87,6 +87,10 @@ fi
 if [ -n "$DEBUG_CRASH_DETECT" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_CRASH_DETECT=1"
 fi
+# Session 71: Register corruption debugging
+if [ -n "$DEBUG_REG_WRITE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_REG_WRITE=1"
+fi
 
 iverilog -g2012 \
     -o "$SIM_OUT" \

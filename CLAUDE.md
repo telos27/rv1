@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 70, 2025-10-31)
+## Current Status (Session 71, 2025-10-31)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: 🔍 **Debugging register corruption** - JAL→compressed bug investigation COMPLETE (no bug found!)
+- **Status**: 🔍 **Debugging infinite loop** - FreeRTOS verified correct!
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
@@ -18,11 +18,34 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ **Testbench false positive FIXED (Session 67)** - Assertion watchpoint corrected! 🎉
   - ✅ **FreeRTOS FPU binary rebuilt (Session 67)** - Stale binary replaced! 🎉
   - ✅ **JAL→compressed investigation COMPLETE (Session 70)** - No bug exists! 🎉
-  - 🔍 **Session 70**: Added debug instrumentation, verified JAL→compressed works correctly
-  - ⚠️ **Current Issue**: FreeRTOS crashes with register corruption (t2=0xa5a5a5a5)
-  - 📋 **NEXT**: Investigate register/stack corruption in FreeRTOS
+  - ✅ **FreeRTOS verified CORRECT (Session 71)** - Uninitialized registers & task return address are per spec! 🎉
+  - ⚠️ **Current Issue**: FreeRTOS infinite loop at 0x200e ↔ 0x4ca (original Session 68 bug)
+  - 📋 **NEXT**: Investigate infinite loop between memset() RET and prvInitialiseNewTask()
 
-### Latest Sessions (70, 69, 68, 67, 66, 65, 64, 63-corrected)
+### Latest Sessions (71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
+
+**Session 71** (2025-10-31): FreeRTOS Verification - No Bugs Found! ✅🎉
+- **Goal**: Verify suspected FreeRTOS bugs (uninitialized registers, task return address)
+- **Achievement**: ✅ **Both "bugs" are correct behavior** - FreeRTOS implementation matches spec!
+- **Investigation**:
+  - Added register write tracking (`DEBUG_REG_WRITE` flag)
+  - Traced all writes to x7 (t2) - only 3 writes, never 0xa5a5a5a5
+  - Verified corruption pattern never written to register file
+- **"Bug" #1 - Uninitialized Registers**: ✅ **CORRECT per RISC-V ABI**
+  - Caller-saved registers (t0-t6, a0-a7) can contain garbage when function starts
+  - C functions initialize temporaries before use (compiler guarantees)
+  - FreeRTOS only needs to initialize ra and a0 for task start
+- **"Bug" #2 - configTASK_RETURN_ADDRESS=0**: ✅ **CORRECT GCC RISC-V default**
+  - Official GCC RISC-V port defaults to 0 (not prvTaskExitError like ARM)
+  - Acceptable because tasks should never return (infinite loops)
+  - If task returns, jumping to 0x00 resets system (fail-safe)
+- **Real Bug**: Infinite loop at 0x200e ↔ 0x4ca is NOT register corruption
+  - Different issue from Session 70's hypothesis
+  - Original Session 68 bug still unresolved
+- **Files Modified**: `rtl/core/register_file.v`, `tools/test_freertos.sh`
+- See: `docs/SESSION_71_FREERTOS_VERIFICATION_NO_BUGS.md`
+
+### Latest Sessions (71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
 
 **Session 70** (2025-10-31): JAL Debug Instrumentation - Bug Does Not Exist! ✅🎉
 - **Goal**: Add debug instrumentation to identify JAL→compressed PC increment bug
