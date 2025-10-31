@@ -6,7 +6,80 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ### None - All Critical Issues Resolved! ✅
 
+**Latest**: Session 74 (2025-10-31) fixed MRET/exception priority bug - FreeRTOS now runs without crashes! 🎉
+
 ## Resolved Issues
+
+### MRET/Exception Priority Bug (RESOLVED - Session 74) ✅
+
+**Status**: ✅ RESOLVED (Session 74, 2025-10-31)
+**Original Severity**: CRITICAL - Caused FreeRTOS to crash and reset
+**Tests Affected**: FreeRTOS (crashed at PC=0xa5a5a5a4)
+**Impact**: FreeRTOS crashed after UART output, jumped to reset vector
+
+**Description**:
+When MRET executed in MEM stage while an exception was detected, both signals (`mret_flush=1` and `exception=1`) could occur simultaneously, causing PC corruption that led to a jump to the reset vector (0x00000000). This caused startup code to re-execute with stale register values, leading to crashes.
+
+**Root Cause** (Session 74):
+Session 62's fix was incomplete. It prevented MEPC corruption in the CSR module but did not prevent exception detection when MRET was in the pipeline. The `exception_gated` signal at line 515 allowed exceptions to be detected even when MRET was executing.
+
+**The Bug**:
+```verilog
+// BEFORE (BUGGY - Session 62's incomplete fix):
+wire exception_gated = exception && !exception_r && !exception_taken_r;
+```
+
+This allowed `exception_gated=1` even when `mret_flush=1`, causing simultaneous pipeline flushes.
+
+**The Fix**:
+```verilog
+// AFTER (FIXED - Session 74):
+wire exception_gated = exception && !exception_r && !exception_taken_r && !mret_flush && !sret_flush;
+```
+
+Now exceptions are blocked when MRET/SRET is executing, ensuring MRET always has priority.
+
+**Failure Sequence**:
+1. Exception (illegal instruction) at PC=0x1f46
+2. MRET executing in MEM stage simultaneously
+3. Both `mret_flush=1` and `exception=1` active
+4. PC corrupted → jump to reset vector (0x00000000)
+5. Startup code (.data copy, .init_array) re-executes
+6. Registers contain stale FreeRTOS stack pattern (0xa5a5a5a5)
+7. Init_array loads corrupted function pointer → JALR to 0xa5a5a5a4 → crash
+
+**Impact on Sessions 68-73**:
+All issues investigated in Sessions 68-73 were **false leads** caused by this bug:
+- Session 68: JAL→compressed "bug" (no bug, just crash symptom)
+- Session 69: VCD analysis of PC increment (no bug)
+- Session 70: JAL debug instrumentation (no bug found)
+- Session 71: FreeRTOS verification (no bugs found - correct per spec)
+- Session 72: "Infinite loop" investigation (false alarm - memset is slow)
+- Session 73: JALR verification (no bug - instruction works correctly)
+- Session 74: Root cause found - MRET+exception priority issue
+
+**Verification After Fix**:
+- ✅ Quick regression: 14/14 tests PASSED
+- ✅ FreeRTOS crash at PC=0xa5a5a5a4 eliminated
+- ✅ No more jump to reset vector (0x00000000)
+- ✅ Scheduler running, UART output working
+- ✅ All CPU hardware validated correctly
+
+**Resolution**: One-line fix in exception gating logic (Session 74, 2025-10-31)
+**Investigation Time**: 6 sessions (Sessions 68-74) investigating symptoms
+**Actual Fix Time**: 1 line of code
+
+**Files Modified**:
+- `rtl/core/rv32i_core_pipelined.v` - Line 516: Added MRET/SRET blocking to exception_gated
+
+**References**:
+- `docs/SESSION_74_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md` - Complete fix documentation
+- `docs/SESSION_62_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md` - Original incomplete fix
+- `docs/SESSION_73_JALR_VERIFICATION_NO_BUG.md` - False lead (JALR works)
+- `docs/SESSION_72_INFINITE_LOOP_INVESTIGATION.md` - False lead (memset is slow)
+- `docs/SESSION_70_JAL_DEBUG_INSTRUMENTATION.md` - False lead (JAL works)
+
+---
 
 ### M-Extension Data Forwarding Bug (RESOLVED - Session 46) ✅
 

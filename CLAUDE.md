@@ -3,29 +3,62 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 73, 2025-10-31)
+## Current Status (Session 74, 2025-10-31)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: ✅ **JALR verified CORRECT** - Session 72 was false diagnosis!
+- **Status**: ✅ **MRET/EXCEPTION PRIORITY BUG FIXED (AGAIN!)** - FreeRTOS crash eliminated! 🎉🎉🎉
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
-  - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
-  - ✅ FreeRTOS scheduler RUNNING - 500K+ cycles! 🎉
-  - ✅ CPU hardware fully validated (Sessions 62-63)
+  - ✅ MRET/exception priority bug FIXED (Session 62 - incomplete)
+  - ✅ **MRET/exception priority bug FIXED PROPERLY (Session 74)** 🎉🎉🎉
+  - ✅ **FreeRTOS scheduler RUNNING - No crashes!** 🎉
+  - ✅ **UART output working** - Character transmission confirmed! 🎉
+  - ✅ CPU hardware fully validated (Sessions 62-74)
   - ✅ Stack initialization verified CORRECT (Session 64)
   - ✅ Pipeline flush logic validated CORRECT (Session 65) 🎉
   - ✅ C extension config bug FIXED (Session 66) 🎉
-  - ✅ **Testbench false positive FIXED (Session 67)** - Assertion watchpoint corrected! 🎉
-  - ✅ **FreeRTOS FPU binary rebuilt (Session 67)** - Stale binary replaced! 🎉
-  - ✅ **JAL→compressed investigation COMPLETE (Session 70)** - No bug exists! 🎉
-  - ✅ **FreeRTOS verified CORRECT (Session 71)** - Uninitialized registers & task return address are per spec! 🎉
-  - ✅ **"Infinite loop" was false alarm (Session 72)** - Just slow memset() execution! 🎉
-  - ✅ **JALR verified CORRECT (Session 73)** - test_jalr_ret_simple PASSES! 🎉
-  - ⚠️ **Current Issue**: FreeRTOS crash at PC=0xa5a5a5a4 (register corruption, NOT JALR bug)
-  - 🔍 **Root Cause**: JALR executes correctly but jumps to corrupted register value
-  - 📋 **NEXT**: Investigate register/stack corruption in FreeRTOS (context switch/task creation)
+  - ✅ Testbench false positive FIXED (Session 67) 🎉
+  - ✅ FreeRTOS FPU binary rebuilt (Session 67) 🎉
+  - ✅ JAL→compressed investigation COMPLETE (Session 70) - No bug exists! 🎉
+  - ✅ FreeRTOS verified CORRECT (Session 71) - Uninitialized registers & task return address are per spec! 🎉
+  - ✅ "Infinite loop" was false alarm (Session 72) - Just slow memset() execution! 🎉
+  - ✅ JALR verified CORRECT (Session 73) - test_jalr_ret_simple PASSES! 🎉
+  - ✅ **Register corruption eliminated (Session 74)** - Root cause was MRET+exception bug! 🎉
+  - 📋 **NEXT**: Continue FreeRTOS validation (queue overflow assertions are software config)
 
-### Latest Sessions (73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
+### Latest Sessions (74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
+
+**Session 74** (2025-10-31): MRET/Exception Priority Bug Fixed (AGAIN!) ✅🎉🎉🎉
+- **Goal**: Fix FreeRTOS crash at PC=0xa5a5a5a4
+- **Achievement**: ✅ **Session 62's fix was incomplete - properly fixed now!**
+- **Root Cause Identified**: MRET+exception simultaneous occurrence
+  - Session 62 prevented MEPC corruption in CSR module
+  - Did NOT prevent exception detection when MRET in pipeline
+  - Caused `mret_flush=1` and `exception=1` simultaneously
+  - Led to PC corruption → jump to reset (0x00000000) → startup code re-execution → crash
+- **The Fix** (ONE line!):
+  - Modified line 516: `exception_gated` now blocks when MRET/SRET executing
+  - Added `!mret_flush && !sret_flush` to exception_gated condition
+  - Ensures MRET always has priority over exceptions
+- **Investigation Process**:
+  - Added `DEBUG_REG_CORRUPTION` flag to track 0xa5a5a5a5 pattern writes
+  - Discovered NO register writes with corrupted values
+  - Traced PC flow: exception at cycle 39415 → JALR to 0x0 → startup code → crash
+  - Found init_array code executing twice with stale register values
+- **Test Results**:
+  - ✅ FreeRTOS crash at PC=0xa5a5a5a4 eliminated
+  - ✅ No more jump to reset vector (0x00000000)
+  - ✅ Scheduler running, UART output working
+  - ✅ All regression tests pass (14/14)
+- **Impact**: Resolves ALL issues from Sessions 68-73 (were false leads caused by this bug)
+  - All CPU hardware validated correctly
+  - Sessions 68-73 investigated non-existent bugs (JAL, JALR, stack init, etc.)
+- **Debug Infrastructure**: `DEBUG_REG_CORRUPTION` flag (lines 2738-2782)
+  - Tracks 0xa5a5a5a5 pattern writes, sp/ra/t0/t1/t2 modifications
+- **Files Modified**: `rtl/core/rv32i_core_pipelined.v`
+- See: `docs/SESSION_74_MRET_EXCEPTION_PRIORITY_BUG_FIXED.md`
+
+### Latest Sessions (74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64)
 
 **Session 73** (2025-10-31): JALR Verification - No Bug Found! ✅🎉
 - **Goal**: Investigate suspected JALR instruction bug from Session 72
