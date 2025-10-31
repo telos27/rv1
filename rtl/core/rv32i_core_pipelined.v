@@ -2981,4 +2981,119 @@ module rv_core_pipelined #(
   end
   `endif
 
+  //==========================================================================
+  // Session 72: Infinite Loop Debug Instrumentation
+  // Traces execution around addresses 0x200e (memset ret) and 0x4ca (prvInitialiseNewTask)
+  //==========================================================================
+  `ifdef DEBUG_LOOP_TRACE
+  integer loop_cycle;
+  integer loop_count;
+  initial begin
+    loop_cycle = 0;
+    loop_count = 0;
+  end
+
+  // Detect infinite loop pattern
+  reg [XLEN-1:0] prev_pc;
+  reg [XLEN-1:0] prev_prev_pc;
+
+  always @(posedge clk) begin
+    if (!reset_n) begin
+      loop_cycle = 0;
+      loop_count = 0;
+      prev_pc = 0;
+      prev_prev_pc = 0;
+    end else begin
+      loop_cycle = loop_cycle + 1;
+
+      // Track PC history for loop detection
+      prev_prev_pc = prev_pc;
+      prev_pc = pc_current;
+
+      // Detect loop: PC alternates between two addresses
+      if (pc_current == prev_prev_pc && pc_current != prev_pc) begin
+        loop_count = loop_count + 1;
+        if (loop_count == 1) begin
+          $display("\n[LOOP DETECTED] Cycle %0d: Infinite loop between 0x%08h ↔ 0x%08h",
+                   loop_cycle, pc_current, prev_pc);
+        end
+      end else begin
+        loop_count = 0;
+      end
+
+      // Trace execution around critical addresses (0x200e, 0x4ca, 0x4c6)
+      // Also trace the whole memset function (0x2000-0x200f) and prvInitialiseNewTask range
+      if (pc_current == 32'h0000200e || pc_current == 32'h000004ca || pc_current == 32'h000004c6 ||
+          (pc_current >= 32'h000004c0 && pc_current <= 32'h000004d0) ||
+          (pc_current >= 32'h00002000 && pc_current <= 32'h0000200f)) begin
+
+        $display("\n[LOOP_TRACE] Cycle %0d ========================================", loop_cycle);
+        $display("PC=%08h instr=%08h comp=%b", pc_current, if_instruction_raw, if_is_compressed);
+
+        // Show key registers (a0-a2, s1, ra, sp)
+        $display("Registers: ra=%08h sp=%08h a0=%08h a1=%08h a2=%08h s1=%08h",
+                 regfile.registers[1], regfile.registers[2],
+                 regfile.registers[10], regfile.registers[11], regfile.registers[12],
+                 regfile.registers[9]);
+
+        // Show pipeline state
+        if (ifid_valid) begin
+          $display("ID: PC=%08h instr=%08h opcode=%07b jmp=%b br=%b",
+                   ifid_pc, ifid_instruction, id_opcode, id_jump, id_branch);
+        end
+        if (idex_valid) begin
+          $display("EX: PC=%08h rd=x%0d alu=%08h jmp=%b br=%b opcode=%07b",
+                   idex_pc, idex_rd_addr, ex_alu_result, idex_jump, idex_branch, idex_opcode);
+          if (idex_jump || idex_branch) begin
+            $display("    Jump/Branch: take=%b target=%08h",
+                     ex_take_branch, idex_jump ? ex_jump_target : ex_branch_target);
+          end
+        end
+        if (exmem_valid) begin
+          $display("MEM: PC=%08h rd=x%0d result=%08h mem_r=%b mem_w=%b",
+                   exmem_pc, exmem_rd_addr, exmem_alu_result,
+                   exmem_mem_read, exmem_mem_write);
+        end
+        if (memwb_valid) begin
+          $display("WB: rd=x%0d <= %08h", memwb_rd_addr, wb_data);
+        end
+
+        // Memory access details at 0x4ca (loads s1[48])
+        if (pc_current == 32'h000004ca) begin
+          $display("*** At 0x4ca: About to execute 'lw a5,48(s1)'");
+          $display("    s1=%08h → s1+48=%08h", regfile.registers[9], regfile.registers[9] + 48);
+        end
+
+        // Call at 0x4c6 (jal to memset)
+        if (pc_current == 32'h000004c6) begin
+          $display("*** At 0x4c6: About to call memset");
+          $display("    Target: 0x2000 (memset), Return: 0x4ca");
+        end
+
+        // Return at 0x200e
+        if (pc_current == 32'h0000200e) begin
+          $display("*** At 0x200e: RET from memset");
+          $display("    ra=%08h (return target)", regfile.registers[1]);
+          $display("    pc_next=%08h (will jump here next cycle)", pc_next);
+          $display("    ex_take_branch=%b ex_jump_target=%08h", ex_take_branch, ex_jump_target);
+          if (idex_valid && idex_jump) begin
+            $display("    EX stage executing JALR:");
+            $display("      idex_pc=%08h idex_imm=%08h", idex_pc, idex_imm);
+            $display("      rs1_data=%08h (base for jump)", ex_alu_operand_a_forwarded);
+            $display("      target = (rs1 + imm) & ~1 = (%08h + %08h) & ~1 = %08h",
+                     ex_alu_operand_a_forwarded, idex_imm, ex_jump_target);
+          end
+        end
+      end
+
+      // Stop simulation after 100 loop iterations
+      if (loop_count > 100) begin
+        $display("\n[LOOP_TRACE] ERROR: Stuck in infinite loop for 100+ iterations");
+        $display("Loop between: 0x%08h ↔ 0x%08h", pc_current, prev_pc);
+        $finish;
+      end
+    end
+  end
+  `endif
+
 endmodule

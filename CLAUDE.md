@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 71, 2025-10-31)
+## Current Status (Session 72, 2025-10-31)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: 🔍 **Debugging infinite loop** - FreeRTOS verified correct!
+- **Status**: ⚠️ **JALR instruction bug discovered** - Simple test case fails!
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
@@ -19,10 +19,40 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ **FreeRTOS FPU binary rebuilt (Session 67)** - Stale binary replaced! 🎉
   - ✅ **JAL→compressed investigation COMPLETE (Session 70)** - No bug exists! 🎉
   - ✅ **FreeRTOS verified CORRECT (Session 71)** - Uninitialized registers & task return address are per spec! 🎉
-  - ⚠️ **Current Issue**: FreeRTOS infinite loop at 0x200e ↔ 0x4ca (original Session 68 bug)
-  - 📋 **NEXT**: Investigate infinite loop between memset() RET and prvInitialiseNewTask()
+  - ✅ **"Infinite loop" was false alarm (Session 72)** - Just slow memset() execution! 🎉
+  - ⚠️ **Current Issue**: JALR instruction not executing - `ex_take_branch=0` when it should be 1
+  - ⚠️ **Blocker**: Even simple `test_jalr_ret_simple` fails (times out)
+  - 📋 **NEXT**: Debug why JALR instruction doesn't set `ex_take_branch` signal
 
-### Latest Sessions (71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
+### Latest Sessions (72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
+
+**Session 72** (2025-10-31): Infinite Loop Investigation - False Alarm! ✅🎉
+- **Goal**: Investigate "infinite loop" at 0x200e ↔ 0x4ca
+- **Achievement**: ✅ **"Infinite loop" was normal memset() execution** - False alarm!
+- **Key Findings**:
+  - memset() filling 900+ bytes with pattern 0xa5 (legitimate FreeRTOS stack init)
+  - Takes ~7 cycles/byte × 900 bytes = 6,300+ cycles
+  - Short timeout (2s) terminated simulation mid-execution, appeared as "infinite loop"
+  - With longer timeout (10s), memset completes but FreeRTOS crashes at PC=0xa5a5a5a4
+- **Real Bug Identified**: ⚠️ **JALR instruction failure**
+  - Created `test_jalr_ret_simple` - minimal JALR/RET test
+  - Test **FAILS** (times out) - proves JALR bug exists in simple cases
+  - Pipeline shows `ex_take_branch=0` when executing RET, should be 1
+  - JALR in EX stage not triggering branch unit
+- **Instrumentation**: Added `DEBUG_LOOP_TRACE` flag
+  - Comprehensive execution tracing around critical addresses
+  - Full pipeline state visibility (IF/ID/EX/MEM/WB)
+  - Loop detection with auto-termination
+- **Conclusion**: Sessions 68-71 investigated **non-existent bugs** (wild goose chase!)
+  - NOT a JAL→compressed bug (Session 68-69)
+  - NOT uninitialized registers (Session 71)
+  - NOT an infinite loop (Session 72)
+  - **YES**: Basic JALR instruction broken - needs immediate fix
+- **Files Modified**: `rtl/core/rv32i_core_pipelined.v`, `tools/test_freertos.sh`
+- **Test Created**: `tests/asm/test_jalr_ret_simple.s` (currently failing)
+- See: `docs/SESSION_72_INFINITE_LOOP_INVESTIGATION.md`
+
+### Latest Sessions (72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
 
 **Session 71** (2025-10-31): FreeRTOS Verification - No Bugs Found! ✅🎉
 - **Goal**: Verify suspected FreeRTOS bugs (uninitialized registers, task return address)

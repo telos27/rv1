@@ -91,6 +91,16 @@ fi
 if [ -n "$DEBUG_REG_WRITE" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_REG_WRITE=1"
 fi
+# Session 72: Infinite loop debugging
+if [ -n "$DEBUG_LOOP_TRACE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_LOOP_TRACE=1"
+fi
+if [ -n "$DEBUG_PIPELINE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_PIPELINE=1"
+fi
+if [ -n "$DEBUG_JAL" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_JAL=1"
+fi
 
 iverilog -g2012 \
     -o "$SIM_OUT" \
