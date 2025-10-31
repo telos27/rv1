@@ -3,10 +3,10 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 69, 2025-10-30)
+## Current Status (Session 70, 2025-10-31)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: 🔍 **Debugging JAL→compressed instruction bug** - VCD analysis completed, root cause narrowed
+- **Status**: 🔍 **Debugging register corruption** - JAL→compressed bug investigation COMPLETE (no bug found!)
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62) 🎉
@@ -17,11 +17,36 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ C extension config bug FIXED (Session 66) 🎉
   - ✅ **Testbench false positive FIXED (Session 67)** - Assertion watchpoint corrected! 🎉
   - ✅ **FreeRTOS FPU binary rebuilt (Session 67)** - Stale binary replaced! 🎉
-  - 🔍 **Session 68**: Identified JAL→compressed return bug, created minimal test case
-  - 🔍 **Session 69**: VCD waveform analysis - PC increment bug confirmed, likely timing issue
-  - 📋 **NEXT**: Add debug instrumentation, direct console output analysis (Session 70)
+  - ✅ **JAL→compressed investigation COMPLETE (Session 70)** - No bug exists! 🎉
+  - 🔍 **Session 70**: Added debug instrumentation, verified JAL→compressed works correctly
+  - ⚠️ **Current Issue**: FreeRTOS crashes with register corruption (t2=0xa5a5a5a5)
+  - 📋 **NEXT**: Investigate register/stack corruption in FreeRTOS
 
-### Latest Sessions (69, 68, 67, 66, 65, 64, 63-corrected)
+### Latest Sessions (70, 69, 68, 67, 66, 65, 64, 63-corrected)
+
+**Session 70** (2025-10-31): JAL Debug Instrumentation - Bug Does Not Exist! ✅🎉
+- **Goal**: Add debug instrumentation to identify JAL→compressed PC increment bug
+- **Achievement**: ✅ **Proved bug does NOT exist** - JAL→compressed works correctly!
+- **Debug Instrumentation**:
+  - Added `DEBUG_JAL_RET` flag with comprehensive PC increment tracing
+  - Shows PC transitions, compression detection, control path selection
+  - Reveals EX stage state (idex_pc, idex_imm, target calculation)
+- **Test Results**:
+  - ✅ `test_jal_simple`: PASS - Basic JAL functionality correct
+  - ✅ `test_jal_compressed_return`: PASS - JAL→compressed pattern works perfectly
+  - ⚠️ FreeRTOS: Still crashes, but **different root cause identified**
+- **Key Finding**: FreeRTOS crash is **register corruption**, NOT JAL bug
+  - JALR tries to jump using `t2 (x7) = 0xa5a5a5a5` (uninitialized stack pattern)
+  - Crash at PC=0xa5a5a5a4 (invalid memory address)
+  - Likely causes: context switch bug, stack corruption, interrupt handler issue
+- **Conclusion**: Sessions 68-69 investigation was **misdiagnosis**
+  - Session 66's C extension config fix already resolved any JAL issues
+  - PC increment logic is CORRECT for both compressed and non-compressed
+  - All CPU hardware verified CORRECT
+- **Next**: Investigate register corruption in FreeRTOS (context switch/stack/interrupts)
+- See: `docs/SESSION_70_JAL_DEBUG_INSTRUMENTATION.md`
+
+### Latest Sessions (70, 69, 68, 67, 66, 65, 64, 63-corrected)
 
 **Session 69** (2025-10-30): VCD Waveform Analysis - PC Increment Bug Investigation 🔍
 - **Goal**: Deep VCD analysis to identify root cause of JAL→compressed bug

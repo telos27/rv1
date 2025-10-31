@@ -585,6 +585,32 @@ module rv_core_pipelined #(
   assign pc_plus_4 = pc_current + 32'd4;
   assign pc_increment = if_is_compressed ? pc_plus_2 : pc_plus_4;
 
+  // DEBUG: PC increment logic tracing
+  `ifdef DEBUG_JAL_RET
+  always @(posedge clk) begin
+    if (reset_n && !stall_pc) begin
+      $display("[PC_INC] PC=%h → %h | instr=%h [1:0]=%b is_comp=%b | inc=%h (+%0d)",
+               pc_current, pc_next, if_instruction_raw, if_instruction_raw[1:0],
+               if_is_compressed, pc_increment, if_is_compressed ? 2 : 4);
+      // Show what's controlling pc_next
+      if (trap_flush) $display("  → TRAP (vec=%h)", trap_vector);
+      else if (mret_flush) $display("  → MRET (mepc=%h)", mepc);
+      else if (sret_flush) $display("  → SRET (sepc=%h)", sepc);
+      else if (ex_take_branch) $display("  → BR/JMP (idex_pc=%h + imm=%h → tgt=%h, is_jump=%b, idex_is_comp=%b)",
+                                        idex_pc, idex_imm, idex_jump ? ex_jump_target : ex_branch_target, idex_jump, idex_is_compressed);
+      else $display("  → INC");
+
+      // Sanity check
+      if (if_instruction_raw[1:0] == 2'b11 && if_is_compressed) begin
+        $display("  *** BUG: Non-compressed instr marked as compressed!");
+      end
+      if (pc_next != pc_increment && !trap_flush && !mret_flush && !sret_flush && !ex_take_branch) begin
+        $display("  *** BUG: PC_NEXT mismatch! Expected %h, got %h", pc_increment, pc_next);
+      end
+    end
+  end
+  `endif
+
   // Trap and xRET handling
   // Use GATED exception for immediate flush to prevent next instruction from executing
   // The exception_gated signal prevents propagation to subsequent instructions
