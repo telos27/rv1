@@ -512,7 +512,8 @@ module rv_core_pipelined #(
 
   // Gate exception signal to prevent propagation to subsequent instructions
   // Once exception_r is latched, ignore new exceptions until fully processed
-  wire exception_gated = exception && !exception_r && !exception_taken_r;
+  // Also block exceptions when MRET/SRET is in MEM stage to prevent simultaneous flush
+  wire exception_gated = exception && !exception_r && !exception_taken_r && !mret_flush && !sret_flush;
 
   // Compute trap target privilege for the CURRENT exception (not latched)
   // This must use the un-latched exception_code and current_priv to get correct delegation
@@ -2729,6 +2730,53 @@ module rv_core_pipelined #(
       end else begin
         $display("[REGFILE_WB] @%0t BLOCKED rd=x%0d data=%h (wb_sel=%b valid=0 GATED BY WRITEBACK LOGIC)",
                  $time, memwb_rd_addr, wb_data, memwb_wb_sel);
+      end
+    end
+  end
+  `endif
+
+  // Debug: Register corruption detection (0xa5a5a5a5 pattern tracking)
+  `ifdef DEBUG_REG_CORRUPTION
+  always @(posedge clk) begin
+    if (memwb_valid && (memwb_reg_write || memwb_int_reg_write_fp) && memwb_rd_addr != 5'b0) begin
+      // Track writes of 0xa5a5a5a5 pattern (FreeRTOS stack fill pattern)
+      if (wb_data == 32'ha5a5a5a5 || wb_data[31:8] == 24'ha5a5a5) begin
+        $display("[REG_CORRUPTION] *** PATTERN DETECTED *** @%0t Writing 0xa5a5a5a5 pattern to x%0d! data=%h (wb_sel=%b)",
+                 $time, memwb_rd_addr, wb_data, memwb_wb_sel);
+        $display("  Source: alu=%h mem=%h pc+4=%h csr=%h mul_div=%h atomic=%h fp_int=%h",
+                 memwb_alu_result, memwb_mem_read_data, memwb_pc_plus_4, memwb_csr_rdata,
+                 memwb_mul_div_result, memwb_atomic_result, memwb_int_result_fp);
+        $display("  Pipeline: PC=%h instr=%h", memwb_pc, memwb_instruction);
+      end
+
+      // Track stack pointer (x2/sp) modifications
+      if (memwb_rd_addr == 5'd2) begin
+        $display("[REG_CORRUPTION] Stack pointer write: sp (x2) <= %h @%0t (wb_sel=%b PC=%h)",
+                 wb_data, $time, memwb_wb_sel, memwb_pc);
+      end
+
+      // Track critical registers used in crash (x7=t2 seen in Session 72)
+      if (memwb_rd_addr == 5'd7) begin
+        $display("[REG_CORRUPTION] t2 (x7) write: t2 <= %h @%0t (wb_sel=%b PC=%h instr=%h)",
+                 wb_data, $time, memwb_wb_sel, memwb_pc, memwb_instruction);
+      end
+
+      // Track return address register (x1/ra)
+      if (memwb_rd_addr == 5'd1) begin
+        $display("[REG_CORRUPTION] ra (x1) write: ra <= %h @%0t (wb_sel=%b PC=%h)",
+                 wb_data, $time, memwb_wb_sel, memwb_pc);
+      end
+
+      // Track t0 (x5) - used in init_array setup
+      if (memwb_rd_addr == 5'd5) begin
+        $display("[REG_CORRUPTION] t0 (x5) write: t0 <= %h @%0t (wb_sel=%b PC=%h instr=%h)",
+                 wb_data, $time, memwb_wb_sel, memwb_pc, memwb_instruction);
+      end
+
+      // Track t1 (x6) - used in init_array setup
+      if (memwb_rd_addr == 5'd6) begin
+        $display("[REG_CORRUPTION] t1 (x6) write: t1 <= %h @%0t (wb_sel=%b PC=%h instr=%h)",
+                 wb_data, $time, memwb_wb_sel, memwb_pc, memwb_instruction);
       end
     end
   end
