@@ -4,9 +4,70 @@ This document tracks known bugs and limitations in the RV32IMAFDC implementation
 
 ## Active Issues
 
-### None - All Critical Issues Resolved! ✅
+### Load Instruction Bug - Returns Wrong Value (Session 75) 🔍
 
-**Latest**: Session 74 (2025-10-31) fixed MRET/exception priority bug - FreeRTOS now runs without crashes! 🎉
+**Status**: ⚠️ ACTIVE (Identified Session 75, 2025-10-31 - Not yet fixed)
+**Severity**: CRITICAL - Blocks FreeRTOS continuous operation
+**Tests Affected**: FreeRTOS (stops at ~42K cycles after 3 ticks)
+**Impact**: FreeRTOS queue overflow check fails incorrectly, execution stops
+
+**Description**:
+Load word instruction `LW a5, 60(a0)` at address 0x111e in `xQueueGenericReset` returns wrong value (10 instead of expected 1). This causes FreeRTOS queue overflow check to fail incorrectly, triggering an assertion path that stops execution.
+
+**Evidence** (Session 75):
+- Testbench debug shows `RegFile rs1 (x15) = 0x0000000a` at cycle 30143
+- Expected: queueLength = 1
+- Actual: a5 = 10 (0x0a)
+- No instructions between LW (0x111e) and MULHU (0x1126) modify a5
+- MULHU correctly computes high word of (10 × 84) = 0 (but input is wrong)
+
+**Assembly Context**:
+```asm
+111e:  lw    a5, 60(a0)      # Load queueLength - RETURNS 10 INSTEAD OF 1 ❌
+1120:  mv    s0, a0          # Save base pointer
+1122:  beqz  a5, 1182        # Check if queueLength == 0
+1124:  lw    a4, 64(s0)      # Load itemSize = 84 ✓
+1126:  mulhu a5, a5, a4      # High word of queueLength × itemSize
+112a:  bnez  a5, 1182        # If overflow (high word != 0), fail
+```
+
+**Current Behavior**:
+1. ✅ FreeRTOS boots successfully
+2. ✅ Scheduler starts, tasks created
+3. ✅ Both tasks print "Started!" and first "Tick"
+4. ❌ Execution stops at ~42K cycles (only 3 total "Tick" messages)
+5. ❌ Should run indefinitely (tasks have `while(1)` loops)
+
+**NOT a MULHU Bug**:
+Initially suspected MULHU (like Sessions 44-60), but investigation proved:
+- MULHU arithmetic is correct (computes high word of 10×84 = 0)
+- Session 60 fix still in place (operand latching works)
+- Input to MULHU is already wrong (a5=10 before MULHU executes)
+
+**Possible Root Causes**:
+1. **Memory corruption**: Queue structure in memory contains 10 instead of 1
+2. **Load instruction bug**: LW returning wrong data from memory
+3. **Data forwarding bug**: Wrong value forwarded from previous store
+
+**Debug Information**:
+- Testbench tracking in `tb/integration/tb_freertos.v:840-872, 1128-1186`
+- MULHU pipeline trace shows inputs/outputs
+- Queue check shows predicted assertion failure
+- Load-use hazard detected (might be related)
+
+**Next Steps** (Session 76):
+1. Add load/store tracking for address `a0+60`
+2. Dump memory contents at queue location
+3. Trace all writes to queueLength field
+4. Verify data forwarding from EX/MEM/WB stages
+5. Check if memory actually contains 1 or 10
+
+**References**:
+- `docs/SESSION_75_LOAD_INSTRUCTION_BUG_INVESTIGATION.md` - Full investigation
+- `docs/SESSION_60_MULHU_OPERAND_LATCH_BUG_FIXED.md` - Previous MULHU fix (still working)
+- `docs/SESSION_46_MULHU_BUG_FIXED.md` - Original MULHU forwarding fix (still working)
+
+---
 
 ## Resolved Issues
 

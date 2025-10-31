@@ -3,16 +3,17 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 74, 2025-10-31)
+## Current Status (Session 75, 2025-10-31)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: ✅ **MRET/EXCEPTION PRIORITY BUG FIXED (AGAIN!)** - FreeRTOS crash eliminated! 🎉🎉🎉
+- **Status**: 🔍 **LOAD INSTRUCTION BUG IDENTIFIED** - LW returning wrong value
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62 - incomplete)
   - ✅ **MRET/exception priority bug FIXED PROPERLY (Session 74)** 🎉🎉🎉
   - ✅ **FreeRTOS scheduler RUNNING - No crashes!** 🎉
   - ✅ **UART output working** - Character transmission confirmed! 🎉
+  - ✅ **Task switching working** - Both tasks run and print! 🎉
   - ✅ CPU hardware fully validated (Sessions 62-74)
   - ✅ Stack initialization verified CORRECT (Session 64)
   - ✅ Pipeline flush logic validated CORRECT (Session 65) 🎉
@@ -24,9 +25,36 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ "Infinite loop" was false alarm (Session 72) - Just slow memset() execution! 🎉
   - ✅ JALR verified CORRECT (Session 73) - test_jalr_ret_simple PASSES! 🎉
   - ✅ **Register corruption eliminated (Session 74)** - Root cause was MRET+exception bug! 🎉
-  - 📋 **NEXT**: Continue FreeRTOS validation (queue overflow assertions are software config)
+  - ⚠️ **Load instruction bug identified (Session 75)** - LW a5,60(a0) returns 10 instead of 1
+  - 📋 **NEXT**: Fix load bug - investigate if memory corruption, load logic, or forwarding issue
 
-### Latest Sessions (74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
+### Latest Sessions (75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
+
+**Session 75** (2025-10-31): Load Instruction Bug Investigation 🔍
+- **Goal**: Investigate why FreeRTOS stops after 3 ticks
+- **Achievement**: ✅ **Root cause identified - Load instruction returning wrong value**
+- **Investigation Process**:
+  - Initially suspected ECALL bug → Confirmed ECALLs are correct (task yield mechanism)
+  - Suspected MULHU bug (déjà vu from Sessions 44-60) → Confirmed MULHU working correctly
+  - Deep analysis revealed **LW instruction bug**: Returns 10 instead of 1
+- **Bug Details**:
+  - Address: 0x111e - `LW a5, 60(a0)` in `xQueueGenericReset`
+  - Expected: queueLength = 1
+  - Actual: a5 = 10 (0x0a)
+  - Impact: Queue overflow check fails incorrectly
+  - Result: FreeRTOS stops at ~42K cycles
+- **Evidence**:
+  - Testbench shows `RegFile rs1 (x15) = 0x0000000a` at cycle 30143
+  - MULHU correctly computes high word of (10 × 84)
+  - No instructions between LW and MULHU that modify a5
+- **Possible Causes**:
+  1. Memory contains 10 (corruption at write time)
+  2. Load instruction returns wrong data (read logic bug)
+  3. Data forwarding bug (wrong forwarded value)
+- **Status**: Bug identified but not fixed - need load/store tracking
+- See: `docs/SESSION_75_LOAD_INSTRUCTION_BUG_INVESTIGATION.md`
+
+### Latest Sessions (75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64)
 
 **Session 74** (2025-10-31): MRET/Exception Priority Bug Fixed (AGAIN!) ✅🎉🎉🎉
 - **Goal**: Fix FreeRTOS crash at PC=0xa5a5a5a4
