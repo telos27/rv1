@@ -58,7 +58,7 @@ C_OBJS = $(addprefix $(BUILD_DIR)/, $(notdir $(C_SRCS:.c=.o)))
 ASM_OBJS = $(addprefix $(BUILD_DIR)/, $(notdir $(ASM_SRCS:.S=.o)))
 ALL_OBJS = $(C_OBJS) $(ASM_OBJS)
 
-.PHONY: all clean blinky enhanced queue sync help
+.PHONY: all clean blinky enhanced queue sync minimal help
 
 all: $(BUILD_DIR)/$(PROJECT).elf $(BUILD_DIR)/$(PROJECT).hex
 	@echo "Built $(DEMO) demo successfully!"
@@ -90,6 +90,9 @@ queue:
 
 sync:
 	$(MAKE) DEMO=sync
+
+minimal:
+	$(MAKE) DEMO=minimal
 
 $(BUILD_DIR)/$(PROJECT).elf: $(ALL_OBJS) | $(BUILD_DIR)
 	@echo "Linking $@..."

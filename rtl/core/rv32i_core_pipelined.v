@@ -3184,4 +3184,134 @@ module rv_core_pipelined #(
   end
   `endif
 
+  //==========================================================================
+  // Session 75: Load Instruction Debug - Track LW bug
+  // Goal: Identify why LW a5,60(a0) returns 10 instead of 1
+  // Tracks: 1) Memory writes to target address
+  //         2) Load instruction data path (addr calc, mem read, forwarding)
+  //         3) Register file writes to a5 (x15)
+  //==========================================================================
+  `ifdef DEBUG_LOAD_BUG
+  integer load_cycle = 0;
+  reg [XLEN-1:0] target_addr = 0;  // Will be computed when we see the load
+  reg tracking_enabled = 0;
+
+  always @(posedge clk) begin
+    if (!reset_n) begin
+      load_cycle <= 0;
+      target_addr <= 0;
+      tracking_enabled <= 0;
+    end else begin
+      load_cycle <= load_cycle + 1;
+
+      // ============================================================
+      // PART 1: Track all memory WRITES to watch for corruption
+      // ============================================================
+      if (exmem_valid && exmem_mem_write) begin
+        // Show all store instructions with address and data
+        // funct3[1:0] encodes size: 00=byte, 01=halfword, 10=word, 11=doubleword
+        $display("[STORE] Cycle %0d: PC=%08h writes %08h to addr %08h (funct3=%b)",
+                 load_cycle, exmem_pc, exmem_mem_write_data, exmem_alu_result,
+                 exmem_funct3);
+
+        // If we're tracking and this write hits the target address, highlight it
+        if (tracking_enabled) begin
+          // Check if write overlaps with target address (accounting for size)
+          // funct3[1:0]: 00=1 byte, 01=2 bytes, 10=4 bytes, 11=8 bytes
+          if (exmem_alu_result <= target_addr &&
+              (exmem_alu_result + (1 << exmem_funct3[1:0])) > target_addr) begin
+            $display("  *** WRITE TO TRACKED ADDRESS 0x%08h! Data=%08h ***",
+                     target_addr, exmem_mem_write_data);
+          end
+        end
+      end
+
+      // ============================================================
+      // PART 2: Detect the problematic LOAD instruction
+      // Track LW instruction at PC=0x111e (from Session 75)
+      // ============================================================
+
+      // Detect load in ID stage (decode)
+      if (ifid_valid && !flush_ifid && id_opcode == 7'b0000011 && ifid_pc == 32'h0000111e) begin
+        $display("\n[LOAD_DETECT] Cycle %0d: Found LW at PC=0x111e in ID stage", load_cycle);
+        $display("  Instruction: %08h", ifid_instruction);
+        $display("  rs1=x%0d imm=%0d (offset=60)", id_rs1, id_imm_i);
+        $display("  ID rs1_data=%08h (from regfile/forward)", id_rs1_data);
+        $display("  Expected target addr = rs1_data + 60 = 0x%08h", id_rs1_data + 60);
+      end
+
+      // Track load in EX stage (address calculation)
+      if (idex_valid && !flush_idex && idex_opcode == 7'b0000011 && idex_pc == 32'h0000111e) begin
+        $display("\n[LOAD_EX] Cycle %0d: LW in EX stage - Address calculation", load_cycle);
+        $display("  PC=%08h rd=x%0d", idex_pc, idex_rd_addr);
+        $display("  ALU operand A (base) = %08h", ex_alu_operand_a_forwarded);
+        $display("  ALU operand B (offset) = %08h", ex_alu_operand_b);
+        $display("  Computed address = %08h", ex_alu_result);
+        $display("  Forward_A=%b Forward_B=%b", forward_a, forward_b);
+
+        // Enable tracking for this address
+        target_addr <= ex_alu_result;
+        tracking_enabled <= 1;
+      end
+
+      // Track load in MEM stage (memory read)
+      if (exmem_valid && exmem_mem_read && exmem_pc == 32'h0000111e) begin
+        $display("\n[LOAD_MEM] Cycle %0d: LW in MEM stage - Memory access", load_cycle);
+        $display("  PC=%08h rd=x%0d", exmem_pc, exmem_rd_addr);
+        $display("  Address = %08h", exmem_alu_result);
+        $display("  Bus request: valid=%b addr=%08h we=%b size=%b",
+                 bus_req_valid, bus_req_addr, bus_req_we, bus_req_size);
+        $display("  Bus response: ready=%b rdata=%016h", bus_req_ready, bus_req_rdata);
+        $display("  mem_read_data (after arbitration) = %08h", mem_read_data);
+        $display("  funct3=%b (load size/sign)", exmem_funct3);
+      end
+
+      // Track load in WB stage (register write)
+      if (memwb_valid && memwb_reg_write && memwb_rd_addr == 5'd15 &&
+          memwb_wb_sel == 3'b001) begin  // wb_sel=001 means memory data
+        $display("\n[LOAD_WB] Cycle %0d: Writing load result to x15 (a5)", load_cycle);
+        $display("  memwb_mem_read_data = %08h", memwb_mem_read_data);
+        $display("  wb_data (final) = %08h", wb_data);
+        $display("  wb_sel = %b (001=memory)", memwb_wb_sel);
+
+        // Check if this is the wrong value
+        if (wb_data == 32'h0000000a) begin
+          $display("  *** BUG DETECTED: Writing 10 (0x0a) instead of expected 1! ***");
+        end else if (wb_data == 32'h00000001) begin
+          $display("  *** CORRECT: Writing expected value 1 ***");
+        end
+      end
+
+      // ============================================================
+      // PART 3: Track ALL writes to x15 (a5) to see data flow
+      // ============================================================
+      if (memwb_valid && memwb_reg_write && memwb_rd_addr == 5'd15) begin
+        $display("[A5_WRITE] Cycle %0d: x15 <= %08h (source: wb_sel=%b %s) PC=%08h",
+                 load_cycle, wb_data, memwb_wb_sel,
+                 (memwb_wb_sel == 3'b000) ? "ALU" :
+                 (memwb_wb_sel == 3'b001) ? "MEM" :
+                 (memwb_wb_sel == 3'b010) ? "PC+4" :
+                 (memwb_wb_sel == 3'b011) ? "CSR" :
+                 (memwb_wb_sel == 3'b100) ? "MUL/DIV" :
+                 (memwb_wb_sel == 3'b101) ? "ATOMIC" :
+                 (memwb_wb_sel == 3'b110) ? "FP->INT" : "???",
+                 exmem_pc);  // Note: exmem_pc one cycle behind but shows which instruction
+      end
+
+      // ============================================================
+      // PART 4: Track memory reads around the target address
+      // ============================================================
+      if (tracking_enabled && exmem_valid && exmem_mem_read) begin
+        // Show all memory reads to see if address calculation is correct
+        if (exmem_alu_result >= (target_addr - 32) &&
+            exmem_alu_result <= (target_addr + 32)) begin
+          $display("[MEM_READ_NEARBY] Cycle %0d: PC=%08h reads from %08h (target=%08h offset=%0d)",
+                   load_cycle, exmem_pc, exmem_alu_result, target_addr,
+                   $signed(exmem_alu_result - target_addr));
+        end
+      end
+    end
+  end
+  `endif
+
 endmodule

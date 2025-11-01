@@ -6,7 +6,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ## Current Status (Session 75, 2025-10-31)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Debugging
-- **Status**: 🔍 **LOAD INSTRUCTION BUG IDENTIFIED** - LW returning wrong value
+- **Status**: 🎉 **CLINT TIMER BUG FIXED** - Timer interrupts now firing!
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62 - incomplete)
@@ -25,34 +25,41 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ "Infinite loop" was false alarm (Session 72) - Just slow memset() execution! 🎉
   - ✅ JALR verified CORRECT (Session 73) - test_jalr_ret_simple PASSES! 🎉
   - ✅ **Register corruption eliminated (Session 74)** - Root cause was MRET+exception bug! 🎉
-  - ⚠️ **Load instruction bug identified (Session 75)** - LW a5,60(a0) returns 10 instead of 1
-  - 📋 **NEXT**: Fix load bug - investigate if memory corruption, load logic, or forwarding issue
+  - ✅ **CLINT timer bug FIXED (Session 75)** - req_ready timing bug, first timer interrupts ever! 🎉🎉🎉
+  - ⚠️ **Timer interrupts pending but not taken** - CPU doesn't enter trap handler
+  - 📋 **NEXT**: Debug interrupt delivery path (MSTATUS.MIE, WFI, MIP.MTIP)
 
 ### Latest Sessions (75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
 
-**Session 75** (2025-10-31): Load Instruction Bug Investigation 🔍
-- **Goal**: Investigate why FreeRTOS stops after 3 ticks
-- **Achievement**: ✅ **Root cause identified - Load instruction returning wrong value**
+**Session 75** (2025-10-31): CLINT Timer Bug FIXED - Critical Breakthrough! 🎉🎉🎉
+- **Goal**: Investigate why FreeRTOS stops after 1 tick
+- **Achievement**: ✅ **CLINT timer bug fixed - Timer interrupts firing for FIRST TIME EVER!**
 - **Investigation Process**:
-  - Initially suspected ECALL bug → Confirmed ECALLs are correct (task yield mechanism)
-  - Suspected MULHU bug (déjà vu from Sessions 44-60) → Confirmed MULHU working correctly
-  - Deep analysis revealed **LW instruction bug**: Returns 10 instead of 1
-- **Bug Details**:
-  - Address: 0x111e - `LW a5, 60(a0)` in `xQueueGenericReset`
-  - Expected: queueLength = 1
-  - Actual: a5 = 10 (0x0a)
-  - Impact: Queue overflow check fails incorrectly
-  - Result: FreeRTOS stops at ~42K cycles
-- **Evidence**:
-  - Testbench shows `RegFile rs1 (x15) = 0x0000000a` at cycle 30143
-  - MULHU correctly computes high word of (10 × 84)
-  - No instructions between LW and MULHU that modify a5
-- **Possible Causes**:
-  1. Memory contains 10 (corruption at write time)
-  2. Load instruction returns wrong data (read logic bug)
-  3. Data forwarding bug (wrong forwarded value)
-- **Status**: Bug identified but not fixed - need load/store tracking
-- See: `docs/SESSION_75_LOAD_INSTRUCTION_BUG_INVESTIGATION.md`
+  - Initially suspected "load bug" → FALSE - timer queue correctly has queueLength=10
+  - Discovered timer interrupts never firing despite vPortSetupTimerInterrupt() executing
+  - Found bus writes to CLINT failing: `clint_req_valid=1, clint_req_ready=0`
+  - Root cause: `req_ready` was registered (1-cycle delay) instead of combinational
+- **The Bug** (rtl/peripherals/clint.v:34, 217):
+  ```verilog
+  output reg  req_ready;           // ❌ Registered
+  req_ready <= req_valid;          // ❌ 1-cycle delay
+  ```
+  - Bus transaction requires `valid && ready` **in same cycle**
+  - Registered ready delayed by 1 cycle → transaction fails
+  - MTIMECMP never written → Timer never programmed → No interrupts
+- **The Fix**:
+  ```verilog
+  output wire req_ready;           // ✅ Combinational
+  assign req_ready = req_valid;    // ✅ Same-cycle response
+  ```
+  - Also changed `MTIME_PRESCALER` from 10 to 1 (FreeRTOS expects mtime @ CPU freq)
+- **Results**:
+  - ✅ CLINT writes successful: MTIMECMP = 0x0000cd45 (52,549)
+  - ✅ Timer interrupts fire: `[MTIP] Cycle 75497: Timer interrupt pending! mtip=1`
+  - ✅ **FIRST TIME EVER** seeing timer interrupts in entire project!
+  - ⚠️ CPU doesn't take interrupt yet (stays in idle loop, no trap)
+- **Next**: Debug interrupt delivery (MSTATUS.MIE, WFI, MIP.MTIP)
+- See: `docs/SESSION_75_CLINT_TIMER_BUG_FIXED.md`
 
 ### Latest Sessions (75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64)
 

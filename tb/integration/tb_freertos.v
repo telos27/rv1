@@ -9,7 +9,7 @@ module tb_freertos;
 
   // Parameters - FreeRTOS needs more memory and time
   parameter CLK_PERIOD = 20;          // 50 MHz clock (matches FreeRTOS config)
-  parameter TIMEOUT_CYCLES = 500000;  // 500k cycles = 10ms @ 50MHz (enough for boot + task switching)
+  parameter TIMEOUT_CYCLES = 5000000;  // 5M cycles = 100ms @ 50MHz (enough for minimal test)
 
   // Memory sizes for FreeRTOS (from linker script)
   parameter IMEM_SIZE = 65536;  // 64KB for code
@@ -191,7 +191,7 @@ module tb_freertos;
     .trap_cause(DUT.core.csr_file_inst.mcause_r),
 
     // Control
-    .enable_trace(1'b1),
+    .enable_trace(1'b0),    // Disabled for speed - enable for debugging
     .trace_start_pc(32'h0),  // Trace from start
     .trace_end_pc(32'h0)     // Never stop
   );
@@ -323,6 +323,8 @@ module tb_freertos;
   //end
 
   // RA register write monitoring - Session 64
+  // DISABLED for performance - Session 75 minimal test
+  /*
   always @(posedge clk) begin
     if (reset_n && cycle_count >= 39420 && cycle_count <= 39432) begin
       // Monitor all writes to ra (x1)
@@ -368,8 +370,11 @@ module tb_freertos;
                cycle_count, DUT.core.regfile.registers[1]);
     end
   end
+  */
 
   // JALR debug monitoring - Session 64
+  // DISABLED for performance - Session 75 minimal test
+  /*
   always @(posedge clk) begin
     if (reset_n && cycle_count >= 39480 && cycle_count <= 39495) begin
       // Monitor JALR instruction in ID/EX stage
@@ -393,6 +398,7 @@ module tb_freertos;
       end
     end
   end
+  */
 
   // Enhanced exception monitoring - capture state BEFORE pipeline flush
   reg exception_detected_prev;
@@ -566,14 +572,19 @@ module tb_freertos;
       end
 
       // Session 63: Track sp changes - detect when sp != 0x80040a90
+      // DISABLED for performance - Session 75 minimal test
+      /*
       if (cycle_count >= 39171 && cycle_count <= 39400) begin
         if (DUT.core.regfile.registers[2] != 32'h80040a90 && DUT.core.regfile.registers[2] != 32'h80040a10) begin
           $display("[SP-CHANGE] cycle=%0d PC=%h sp=%h (changed from 0x80040a90!)",
                    cycle_count, pc, DUT.core.regfile.registers[2]);
         end
       end
+      */
 
       // Session 61/62/63: Track MRET execution and PC corruption (39,370-39,500)
+      // DISABLED for performance - Session 75 minimal test
+      /*
       if (cycle_count >= 39370 && cycle_count <= 39500) begin
         $display("[MRET-TRACE] cycle=%0d PC=%h ifid_PC=%h idex_PC=%h exmem_PC=%h",
                  cycle_count, pc, DUT.core.ifid_pc, DUT.core.idex_pc, DUT.core.exmem_pc);
@@ -584,6 +595,7 @@ module tb_freertos;
         $display("             mepc=%h pc_next=%h exception=%b",
                  DUT.core.mepc, DUT.core.pc_next, DUT.core.exception);
       end
+      */
 
       // Monitor .rodata copy loop (PC 0x56-0x68) - Session 33 debug
       if (pc >= 32'h00000056 && pc <= 32'h00000068) begin
@@ -677,6 +689,70 @@ module tb_freertos;
       $display("  UART chars: %0d", uart_char_count);
       $display("========================================");
       $finish;
+    end
+  end
+
+  // Session 75: PC monitoring to debug early termination
+  integer pc_trace_count;
+  initial pc_trace_count = 0;
+
+  always @(posedge clk) begin
+    if (reset_n && cycle_count >= 27000) begin
+      pc_trace_count = pc_trace_count + 1;
+
+      // Simplified PC trace - only show every 10000 cycles to reduce log spam
+      if (pc_trace_count % 10000 == 0) begin
+        $display("[PC-TRACE] Cycle %0d: PC=0x%08h", cycle_count, pc);
+      end
+    end
+  end
+
+  // Session 75: Monitor CLINT timer setup
+  always @(posedge clk) begin
+    if (reset_n) begin
+      // Monitor vPortSetupTimerInterrupt execution (PC 0x1b8e - 0x1bf2)
+      if (pc >= 32'h00001b8e && pc <= 32'h00001bf2) begin
+        // Show stores to MTIMECMP at PC 0x1bd4 and 0x1be2
+        if (pc == 32'h00001bd4 || pc == 32'h00001be2) begin
+          $display("[TIMER-SETUP] Cycle %0d: PC=0x%08h STORE instruction", cycle_count, pc);
+        end
+      end
+
+      // Monitor ALL memory writes during timer setup
+      if (DUT.core.exmem_mem_write && DUT.core.exmem_valid &&
+          DUT.core.exmem_pc >= 32'h00001b8e && DUT.core.exmem_pc <= 32'h00001bf2) begin
+        $display("[TIMER-STORE] Cycle %0d: PC=0x%08h writes 0x%08h to addr 0x%08h",
+                 cycle_count, DUT.core.exmem_pc, DUT.core.exmem_mem_write_data, DUT.core.exmem_alu_result);
+      end
+
+      // Monitor ALL bus requests to CLINT address range
+      if (DUT.bus.master_req_valid &&
+          DUT.bus.master_req_addr >= 32'h02000000 && DUT.bus.master_req_addr <= 32'h0200FFFF) begin
+        $display("[BUS-CLINT] Cycle %0d: Bus request to CLINT addr=0x%08h we=%b sel_clint=%b clint_req_valid=%b clint_req_ready=%b",
+                 cycle_count, DUT.bus.master_req_addr, DUT.bus.master_req_we, DUT.bus.sel_clint,
+                 DUT.clint_req_valid, DUT.clint_req_ready);
+      end
+
+      // Monitor CLINT register accesses (address range 0x0200_0000 - 0x0200_FFFF)
+      if (DUT.clint_req_valid && DUT.clint_req_ready) begin
+        if (DUT.clint_req_we) begin
+          $display("[CLINT-WRITE] Cycle %0d: PC=0x%08h writes 0x%08h to CLINT addr 0x%08h",
+                   cycle_count, DUT.core.exmem_pc, DUT.clint_req_wdata, DUT.clint_req_addr);
+        end else begin
+          $display("[CLINT-READ] Cycle %0d: PC=0x%08h reads from CLINT addr 0x%08h",
+                   cycle_count, DUT.core.exmem_pc, DUT.clint_req_addr);
+        end
+      end
+
+      // Monitor MIE CSR - just show when PC is at the CSRS instruction
+      if (pc == 32'h00001c0c) begin
+        $display("[CSR-MIE] Cycle %0d: PC=0x%08h executing CSRS MIE instruction", cycle_count, pc);
+      end
+
+      // Monitor MTIP (timer interrupt pending signal from CLINT)
+      if (DUT.mtip) begin
+        $display("[MTIP] Cycle %0d: Timer interrupt pending! mtip=%b", cycle_count, DUT.mtip);
+      end
     end
   end
 

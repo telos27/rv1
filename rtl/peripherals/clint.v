@@ -31,7 +31,7 @@ module clint #(
   input  wire [63:0]                req_wdata,
   input  wire                       req_we,
   input  wire [2:0]                 req_size,    // 0=byte, 1=half, 2=word, 3=double
-  output reg                        req_ready,
+  output wire                       req_ready,   // Combinational - always ready
   output reg  [63:0]                req_rdata,
 
   // Interrupt outputs (one per hart)
@@ -93,8 +93,8 @@ module clint #(
   // Prescaler for mtime - increment every N cycles
   // Real systems: mtime runs at fixed freq (1-10 MHz), not CPU freq
   // For 50 MHz CPU with 1 MHz mtime: prescaler = 50
-  // Using 10 for faster simulation while still allowing atomic reads
-  localparam MTIME_PRESCALER = 10;
+  // FreeRTOS expects mtime freq = CPU freq, so prescaler = 1
+  localparam MTIME_PRESCALER = 1;
   reg [7:0] mtime_prescaler_count;
 
   always @(posedge clk or negedge reset_n) begin
@@ -211,13 +211,13 @@ module clint #(
   // Memory Read Logic
   //===========================================================================
 
+  // CLINT is always ready for requests (combinational response)
+  assign req_ready = req_valid;
+
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       req_rdata <= 64'h0;
-      req_ready <= 1'b0;
     end else begin
-      req_ready <= req_valid;  // Single-cycle response
-
       if (req_valid && !req_we) begin
         // Handle reads
         if (is_mtime) begin

@@ -101,6 +101,10 @@ fi
 if [ -n "$DEBUG_JAL" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_JAL=1"
 fi
+# Session 75: Load instruction bug debugging
+if [ -n "$DEBUG_LOAD_BUG" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -D DEBUG_LOAD_BUG=1"
+fi
 
 iverilog -g2012 \
     -o "$SIM_OUT" \
