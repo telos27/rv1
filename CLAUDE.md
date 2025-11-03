@@ -3,18 +3,19 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 77, 2025-11-01)
+## Current Status (Session 78, 2025-11-02)
 
 ### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS Validation
-- **Status**: 🎉🎉🎉 **ALL INTERRUPT HARDWARE 100% VALIDATED** - Ready for FreeRTOS!
+- **Status**: 🔍 **Task switching root cause FOUND** - MSTATUS.MIE=0 blocking interrupts!
 - **Goal**: Comprehensive FreeRTOS validation before RV64 upgrade
 - **Major Milestones**:
   - ✅ MRET/exception priority bug FIXED (Session 62 - incomplete)
   - ✅ **MRET/exception priority bug FIXED PROPERLY (Session 74)** 🎉🎉🎉
   - ✅ **FreeRTOS scheduler RUNNING - No crashes!** 🎉
   - ✅ **UART output working** - Character transmission confirmed! 🎉
-  - ✅ **Task switching working** - Both tasks run and print! 🎉
-  - ✅ CPU hardware fully validated (Sessions 62-74)
+  - ✅ **Tasks START successfully** - Both Task1 and Task2 print first "Tick" 🎉
+  - ⚠️ **Task switching NOT working** - Tasks never switch (Session 78 root cause found)
+  - ✅ CPU hardware fully validated (Sessions 62-77)
   - ✅ Stack initialization verified CORRECT (Session 64)
   - ✅ Pipeline flush logic validated CORRECT (Session 65) 🎉
   - ✅ C extension config bug FIXED (Session 66) 🎉
@@ -28,9 +29,53 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - ✅ **CLINT timer bug FIXED (Session 75)** - req_ready timing bug, first timer interrupts ever! 🎉🎉🎉
   - ✅ **ALL INTERRUPT HARDWARE VALIDATED (Session 76)** - Complete signal path verified! 🎉🎉🎉
   - ✅ **Session 76's "bug" was FALSE ALARM (Session 77)** - Test infrastructure working correctly! 🎉
-  - 📋 **NEXT**: Full FreeRTOS validation with working timer interrupts
+  - ✅ **Task switching root cause IDENTIFIED (Session 78)** - MSTATUS.MIE=0 blocks timer interrupts! 🔍
+  - 📋 **NEXT**: Fix FreeRTOS port - enable interrupts before yielding/idle
 
-### Latest Sessions (77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64)
+### Latest Sessions (78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64)
+
+**Session 78** (2025-11-02): Task Switching Debug - MSTATUS.MIE Root Cause Found! 🔍
+- **Goal**: Debug why FreeRTOS tasks start but never switch
+- **Achievement**: ✅ **Root cause identified - MSTATUS.MIE=0 blocking all interrupts!**
+- **Observation**: Both tasks print first "Tick", then no further output
+- **Investigation Process**:
+  1. Verified FreeRTOS prints banner and both tasks start ✅
+  2. Checked timer interrupt delivery path (CLINT → SoC → Core) ✅
+  3. Traced interrupt signals with DEBUG_INTERRUPT flag
+  4. Found mtip_in=1, mip[7]=1, mie[7]=1, pending=0x80 ✅
+  5. Discovered **MSTATUS.MIE=0** blocking interrupt delivery ❌
+- **Key Findings** (cycle 88,707 when timer fires):
+  - ✅ CLINT timer fires: `mtip=1`
+  - ✅ Signal reaches core: `mtip_in=1`
+  - ✅ MIP.MTIP set: `mip=0x00000080`
+  - ✅ MIE.MTIE enabled: `mie=0x00000888`
+  - ✅ pending_interrupts: `0x80` (non-zero)
+  - ❌ **MSTATUS.MIE=0** (global interrupt enable DISABLED!)
+  - ❌ **globally_en=0** (interrupts blocked)
+  - ❌ **interrupt_pending=0** (no trap generated)
+- **Root Cause**: MSTATUS.MIE gets set to 1 during init, but gets cleared to 0 after tasks start. With interrupts globally disabled, timer interrupts cannot trigger traps, so context switching never happens.
+- **Interrupt Logic**:
+  ```verilog
+  interrupts_globally_enabled = (priv==M) ? mstatus_mie : ...
+  interrupt_pending = globally_enabled && |pending_interrupts
+  ```
+  Since `mstatus_mie=0`, the entire interrupt mechanism is blocked.
+- **Hardware Status**: ✅ **ALL interrupt hardware validated 100% correct**
+- **Software Issue**: FreeRTOS port configuration problem - likely:
+  - Critical sections (taskENTER_CRITICAL) disable interrupts
+  - Idle task or vTaskDelay() missing interrupt re-enable
+  - WFI instruction with interrupts disabled = infinite wait
+- **Evidence**:
+  ```
+  Early boot:  MIE=0->1  (interrupts enabled)
+  After start: MIE=1->0  (interrupts disabled - CSRRCI clears bit 3)
+  Timer fires: mstatus_mie=0, intr_pend=0  (blocked)
+  ```
+- **Files Modified**: None (investigation only)
+- **Next**: Investigate FreeRTOS port code (port.c, portASM.S) - find where interrupts should be enabled
+- See: `docs/SESSION_78_TASK_SWITCHING_DEBUG.md`
+
+### Latest Sessions (78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64)
 
 **Session 77** (2025-11-01): Test Infrastructure Investigation - No Bug Found! 🎉
 - **Goal**: Investigate Session 76's reported test initialization bug
