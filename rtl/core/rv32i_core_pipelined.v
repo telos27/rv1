@@ -1838,6 +1838,13 @@ module rv_core_pipelined #(
                mip, mie, pending_interrupts, mti_pending, mstatus_mie, interrupts_globally_enabled, interrupt_pending);
       $display("[INTR] current_priv=%b exception_gated=%b exception_taken_r=%b trap_flush=%b PC=%h",
                current_priv, exception_gated, exception_taken_r, trap_flush, pc_current);
+      // Show why interrupt might be blocked
+      if (!interrupt_pending) begin
+        $display("[INTR_BLOCKED] globally_en=%b xret_in_pipe=%b xret_completing=%b pending_nonzero=%b",
+                 interrupts_globally_enabled, xret_in_pipeline, xret_completing, |pending_interrupts);
+        $display("[INTR_BLOCKED] current_priv=%b mstatus_mie=%b mstatus_sie=%b",
+                 current_priv, mstatus_mie, mstatus_sie);
+      end
     end
     // Track PC when trap occurs
     if (exception_gated) begin

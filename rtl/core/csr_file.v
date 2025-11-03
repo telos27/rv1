@@ -345,9 +345,10 @@ module csr_file #(
       end
     end
     // Debug MSTATUS.FS on reset
-    if ($time < 100) begin
-      $display("[CSR-INIT] Time=%0t mstatus_r=0x%08x mstatus_fs=%b", $time, mstatus_r, mstatus_fs_w);
-    end
+    // Disabled - causes excessive spam
+    // if ($time < 100) begin
+    //   $display("[CSR-INIT] Time=%0t mstatus_r=0x%08x mstatus_fs=%b", $time, mstatus_r, mstatus_fs_w);
+    // end
     if (sret) begin
       $display("[CSR] Time=%0t SRET: SIE=%b->%b SPIE=%b->1 SPP=%b->0 mstatus_r=0x%08x",
                $time, mstatus_r[MSTATUS_SIE_BIT], mstatus_spie_w, mstatus_r[MSTATUS_SPIE_BIT],

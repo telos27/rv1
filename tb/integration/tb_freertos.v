@@ -750,8 +750,8 @@ module tb_freertos;
       end
 
       // Monitor MTIP (timer interrupt pending signal from CLINT)
-      if (DUT.mtip) begin
-        $display("[MTIP] Cycle %0d: Timer interrupt pending! mtip=%b", cycle_count, DUT.mtip);
+      if (DUT.mtip_vec[0]) begin
+        $display("[MTIP] Cycle %0d: Timer interrupt pending! mtip=%b", cycle_count, DUT.mtip_vec[0]);
       end
     end
   end
@@ -1205,6 +1205,8 @@ module tb_freertos;
   // ========================================
   // Detailed trace of MULHU instruction through all pipeline stages
   // Tracks operand values, forwarding, and latching
+  // DISABLED - causes massive spam, only enable for MUL/DIV debugging
+  `ifdef NEVER_DEFINED
   always @(posedge clk) begin
     if (reset_n) begin
       // Track MULHU in ID stage
@@ -1265,5 +1267,6 @@ module tb_freertos;
       end
     end
   end
+  `endif  // NEVER_DEFINED
 
 endmodule

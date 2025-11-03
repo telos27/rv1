@@ -147,6 +147,7 @@
 
     /* Load mstatus with the interrupt enable bits used by the task. */
     load_x  t0, portMSTATUS_OFFSET * portWORD_SIZE( sp )
+    addi    t0, t0, 0x08                    /* Set MIE bit so task resumes with interrupts enabled. */
     csrw mstatus, t0                        /* Required for MPIE bit. */
 
     load_x  t0, portCRITICAL_NESTING_OFFSET * portWORD_SIZE( sp )    /* Obtain xCriticalNesting value for this task from task's stack. */
