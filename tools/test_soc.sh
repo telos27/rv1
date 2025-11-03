@@ -51,6 +51,9 @@ fi
 if [ ! -z "$DEBUG_BUS" ]; then
     DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_BUS"
 fi
+if [ ! -z "$DEBUG_PC_TRACE" ]; then
+    DEBUG_FLAGS="$DEBUG_FLAGS -DDEBUG_PC_TRACE"
+fi
 
 # SoC test configuration
 # Enable all extensions to match test compilation (rv32imafc)

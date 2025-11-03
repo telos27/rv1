@@ -1848,8 +1848,8 @@ module rv_core_pipelined #(
     end
     // Track PC when trap occurs
     if (exception_gated) begin
-      $display("[TRAP] cycle=%0d exception_gated=1 PC=%h trap_vector=%h mepc=%h",
-               debug_cycle_intr, pc_current, trap_vector, mepc);
+      $display("[TRAP] cycle=%0d exception_gated=1 PC=%h trap_vector=%h mepc=%h exception_pc=%h",
+               debug_cycle_intr, pc_current, trap_vector, mepc, exception_pc);
     end
     // Track PC after trap (next cycle)
     if (exception_taken_r) begin
@@ -2917,6 +2917,28 @@ module rv_core_pipelined #(
       // Show register writes (especially x1/ra)
       if (memwb_reg_write && memwb_valid && memwb_rd_addr == 5'd1) begin
         $display("            WB: x1(ra) <= 0x%08h", wb_data);
+      end
+    end
+  end
+  `endif
+
+  //==========================================================================
+  // Session 77: PC Trace from Cycle 0
+  // Trace PC values starting from reset to understand execution flow
+  //==========================================================================
+  `ifdef DEBUG_PC_TRACE
+  integer pc_trace_cycle;
+  initial pc_trace_cycle = 0;
+
+  always @(posedge clk) begin
+    if (!reset_n) begin
+      pc_trace_cycle = 0;
+      $display("[PC_TRACE] RESET ASSERTED");
+    end else begin
+      pc_trace_cycle = pc_trace_cycle + 1;
+      if (pc_trace_cycle <= 150) begin
+        $display("[PC_TRACE] cycle=%0d PC=0x%08h instr=0x%08h valid=%b stall=%b",
+                 pc_trace_cycle, pc_current, if_instruction, ifid_valid, stall_pc);
       end
     end
   end
