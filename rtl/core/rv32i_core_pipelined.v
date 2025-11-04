@@ -1419,10 +1419,15 @@ module rv_core_pipelined #(
                         ((idex_opcode == 7'b0011011) ||  // OP_IMM_32
                          (idex_opcode == 7'b0111011));   // OP_OP_32
 
-  // For word operations, ZERO-extend lower 32 bits to XLEN before ALU
-  // This ensures shifts and other operations work on 32-bit values
-  // The result will be sign-extended after the operation
-  wire [XLEN-1:0] ex_alu_operand_a_final = is_word_alu_op ?
+  // For word operations, prepare operands based on operation type:
+  // - Arithmetic right shifts (SRAIW/SRAW): SIGN-extend operand A to preserve sign bit
+  // - All other operations: ZERO-extend lower 32 bits
+  // The result will be sign-extended after the operation based on bit 31
+  wire is_arith_shift_word = is_word_alu_op && (idex_funct3 == 3'b101) && idex_funct7[5];
+
+  wire [XLEN-1:0] ex_alu_operand_a_final = is_arith_shift_word ?
+                                            {{32{ex_alu_operand_a_forwarded[31]}}, ex_alu_operand_a_forwarded[31:0]} :
+                                            is_word_alu_op ?
                                             {{32{1'b0}}, ex_alu_operand_a_forwarded[31:0]} :
                                             ex_alu_operand_a_forwarded;
 
@@ -1456,6 +1461,38 @@ module rv_core_pipelined #(
     if (idex_valid && !idex_is_mul_div && !idex_fp_alu_en) begin
       $display("[ALU] @%0t pc=%h result=%h (opcode=%b rd=x%0d)",
                $time, idex_pc, ex_alu_result, idex_opcode, idex_rd_addr);
+    end
+  end
+  `endif
+
+  // Debug: Word operations (RV64I)
+  `ifdef DEBUG_WORD_OPS
+  integer cycle_num = 0;
+
+  always @(posedge clk) begin
+    if (reset_n) cycle_num <= cycle_num + 1;
+    else cycle_num <= 0;
+  end
+
+  always @(posedge clk) begin
+    if (reset_n && ifid_valid) begin
+      $display("[C%04d] IF: PC=%h instr=%h", cycle_num, ifid_pc, ifid_instruction);
+    end
+  end
+
+  always @(posedge clk) begin
+    if (idex_valid && is_word_alu_op) begin
+      $display("[C%04d] WORD_OP_EX: pc=%h opcode=%b funct3=%b rd=x%0d",
+               cycle_num, idex_pc, idex_opcode, idex_funct3, idex_rd_addr);
+      $display("       Operand A: raw=%h zero-ext=%h", ex_alu_operand_a_forwarded, ex_alu_operand_a_final);
+      $display("       Operand B: raw=%h zero-ext=%h", ex_alu_operand_b, ex_alu_operand_b_final);
+      $display("       ALU result: raw=%h sign-ext=%h", ex_alu_result, ex_alu_result_sext);
+    end
+  end
+
+  always @(posedge clk) begin
+    if (int_reg_write_enable && memwb_rd_addr != 0) begin
+      $display("[C%04d] WB: x%0d <= %h", cycle_num, memwb_rd_addr, wb_data);
     end
   end
   `endif

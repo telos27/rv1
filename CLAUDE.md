@@ -7,8 +7,8 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 
 ### 🎯 CURRENT PHASE: Phase 3 - RV64 Upgrade (In Progress)
 - **Previous Phase**: ✅ **Phase 2 COMPLETE** - FreeRTOS fully operational!
-- **Current Focus**: RV64I word operations implemented, configuration system cleaned up
-- **Documentation**: See `docs/SESSION_78_PHASE_3_DAY_2.md` for latest progress
+- **Current Focus**: ✅ RV64I word operations COMPLETE - All 9 instructions validated!
+- **Documentation**: See `docs/SESSION_78_CONTINUED_SRAIW_BUG_FIXED.md` for latest progress
 
 ### 🎉 Phase 2 Achievements (Sessions 62-76, 2 weeks)
 **Milestone**: FreeRTOS v11.1.0 fully operational with multitasking, timer interrupts, and I/O
@@ -43,15 +43,47 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - Identify modules requiring 64-bit modifications
   - Set up RV64 test infrastructure
 
-### Latest Sessions (78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65)
+### Latest Sessions (78-cont, 78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66)
+
+**Session 78 Continued** (2025-11-03): SRAIW Bug Fixed - Word Operations Complete! 🎉🎉🎉
+- **Goal**: Debug comprehensive word operations test failure
+- **Achievement**: ✅ **All 9 RV64I word operations validated and working!**
+- **Bug Found**: SRAIW/SRAW arithmetic shift failing
+  - **Root Cause**: Operand preparation was zero-extending ALL operands
+  - **Problem**: Arithmetic right shifts need sign-extension to preserve sign bit
+  - Example: `SRAIW -1, 1` produced `0x7FFFFFFF` instead of `-1`
+- **The Fix** (`rtl/core/rv32i_core_pipelined.v:1422-1436`):
+  - Added `is_arith_shift_word` detection (funct3=101 && funct7[5])
+  - Sign-extend operand A for SRAIW/SRAW (preserves sign during shift)
+  - Zero-extend operand A for all other word operations (correct behavior)
+- **Debug Infrastructure**:
+  - Added cycle-by-cycle execution tracing
+  - Shows IF/EX/WB stages with full operand/result visibility
+  - Critical for identifying exact failure point (Test 7: SRAIW)
+- **Verification Results**:
+  - ✅ `test_rv64i_addiw_simple` - PASSES (16 cycles)
+  - ✅ `test_addiw_minimal` - PASSES (17 cycles)
+  - ✅ `test_rv64i_word_ops` - **PASSES (61 cycles, a0=1)** 🎉
+- **All 9 Word Operations Validated**:
+  1. ✅ ADDIW - Add immediate word
+  2. ✅ ADDW - Add word
+  3. ✅ SUBW - Subtract word
+  4. ✅ SLLIW - Shift left logical immediate word
+  5. ✅ SRLIW - Shift right logical immediate word
+  6. ✅ SRAIW - Shift right arithmetic immediate word (FIXED!)
+  7. ✅ SLLW - Shift left logical word
+  8. ✅ SRLW - Shift right logical word
+  9. ✅ SRAW - Shift right arithmetic word
+- **Impact**: RV64I word operations complete, ready for official compliance tests
+- See: `docs/SESSION_78_CONTINUED_SRAIW_BUG_FIXED.md`
 
 **Session 78** (2025-11-03): Phase 3 Day 2 - RV64I Word Operations & Configuration Cleanup ✅
 - **Goal**: Implement RV64I word operations, clean up RV32/RV64 configuration system
 - **Achievement**: ✅ **Word operations implemented, configuration cleaned up!**
 - **RV64I Word Operations** (`rtl/core/rv32i_core_pipelined.v:1415-1450`):
   - Implemented ADDIW, ADDW, SUBW, SLLIW, SRLIW, SRAIW, SLLW, SRLW, SRAW
-  - **Key insight**: Zero-extend operands (not sign-extend), sign-extend results
-  - Operands: Lower 32 bits zero-extended to 64 bits before ALU
+  - **Key insight**: Arithmetic shifts need sign-extension, others use zero-extension
+  - Operands: Lower 32 bits extended (sign for arith shifts, zero for others)
   - Results: Bit 31 sign-extended to bits 63:32 after ALU
   - Forwarding: Updated to use sign-extended results
 - **Configuration System Cleanup**:
@@ -61,13 +93,8 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - **Single source of truth**: XLEN environment variable
 - **Test Infrastructure**:
   - Created `test_rv64i_addiw_simple.s` - ✅ **PASSES** (16 cycles)
-  - Created `test_rv64i_word_ops.s` - Comprehensive test (partial success)
+  - Created `test_rv64i_word_ops.s` - Comprehensive test (debugged in continuation)
   - Fixed RV64 testbench reset vector: 0x0 → 0x80000000
-- **Verification Results**:
-  - ✅ Basic ADDIW working correctly (5 + 10 = 15)
-  - ✅ SRLIW working correctly (logical shift + sign-extend)
-  - ✅ Configuration system clean and consistent
-  - ⚠️ Full test suite has some failures (debugging needed)
 - **Impact**: Foundation for RV64 support complete, ready for compliance testing
 - See: `docs/SESSION_78_PHASE_3_DAY_2.md`
 
