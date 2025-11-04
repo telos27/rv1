@@ -230,6 +230,17 @@ module tb_core_pipelined;
       end
       `endif
 
+      // PC trace for debugging instruction execution flow
+      `ifdef DEBUG_PC_TRACE
+      if (DUT.exmem_valid) begin
+        $display("[%0d] PC=%08h instr=%08h | gp=x3=%d a4=x14=%08h a0=x10=%08h",
+                 cycle_count, DUT.exmem_pc, DUT.exmem_instruction,
+                 DUT.regfile.registers[3],   // gp (test number)
+                 DUT.regfile.registers[14],  // a4 (test results)
+                 DUT.regfile.registers[10]); // a0 (address used in tests)
+      end
+      `endif
+
       // Check for EBREAK in ID stage (before trap)
       // EBREAK can be either:
       //   - Compressed: 0x9002 (C.EBREAK) - 16-bit encoding

@@ -53,6 +53,15 @@ usage() {
 }
 
 # Convert extension shorthand to full name
+# FIXME (Session 84): This function hardcodes rv32 and ignores XLEN environment variable!
+# When XLEN=64 is set, this still returns rv32* prefixes, causing RV64 tests to never run.
+# This bug caused false positive "RV64 98% passing" reports in Sessions 82-83.
+# TODO: Check XLEN and return rv64* when XLEN=64, e.g.:
+#   if [ "${XLEN:-32}" = "64" ]; then
+#     echo "rv64ui"  # etc
+#   else
+#     echo "rv32ui"
+#   fi
 get_extension() {
   case "$1" in
     i|ui) echo "rv32ui" ;;

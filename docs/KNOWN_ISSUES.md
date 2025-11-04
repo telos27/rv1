@@ -1,10 +1,86 @@
 # Known Issues
 
-This document tracks known bugs and limitations in the RV32IMAFDC implementation.
+This document tracks known bugs and limitations in the RV32IMAFDC and RV64 implementation.
 
-## Active Issues
+## Critical Active Issues (Blocking RV64)
 
-**None!** ✅ All critical issues resolved as of Session 76 (2025-11-03)
+### 1. Test Script Doesn't Run RV64 Tests 🔴
+**Discovered**: Session 84 (2025-11-04)
+**Severity**: CRITICAL
+**Status**: Documented with FIXME comment, NOT fixed
+
+**Description**:
+The test script `tools/run_official_tests.sh` hardcodes `rv32` prefixes in the `get_extension()` function (lines 66-75). It ignores the `XLEN` environment variable and always runs RV32 tests, even when `XLEN=64` is set.
+
+**Impact**:
+- Sessions 82-83 reported "RV64 98% passing" → **FALSE POSITIVES** (ran RV32 tests)
+- All "RV64" test results in CLAUDE.md were actually RV32 tests
+- True RV64 compliance status is **UNKNOWN**
+
+**Location**: `tools/run_official_tests.sh:66-75` (now has FIXME comment added in Session 84)
+
+**Workaround**:
+Use the correct testbench directly:
+```bash
+env XLEN=64 iverilog -D XLEN=64 ... tb/integration/tb_core_pipelined_rv64.v
+timeout 5s vvp sim/test.vvp
+```
+
+**References**:
+- `docs/SESSION_84_RV64A_DEBUG_ANALYSIS.md` (Section 4: False Positive Discovery)
+- `tools/run_official_tests.sh:56-64` (FIXME comment with TODO)
+
+---
+
+### 2. RV64 Memory/Bus Address Handling Bug 🔴
+**Discovered**: Session 84 (2025-11-04)
+**Severity**: CRITICAL
+**Status**: Under investigation
+
+**Description**:
+The `rv64ua-p-lrsc` test **PASSES in RV32** but **FAILS in RV64** (times out). The LW instruction at 0x800001e0 appears to execute twice in debug traces, suggesting a bus retry or address calculation issue.
+
+**Test Pattern**:
+```asm
+# From rv64ua-p-lrsc test #3 (works in RV32, fails in RV64)
+auipc  a4, 0x2            # a4 = 0x800021dc (64-bit address)
+lw     a4, -468(a4)       # Load from 0x80002008
+                          # Expected: loads 0
+                          # Actual: test times out (infinite loop)
+```
+
+**Comparison**:
+- ✅ RV32: `env XLEN=32 ./tools/run_official_tests.sh ua lrsc` → **PASSES**
+- ❌ RV64: Manual run of `rv64ua-p-lrsc` → **FAILS** (timeout after 10,000 cycles)
+
+**Evidence from Debug Trace**:
+```
+[124] PC=800001dc AUIPC a4, 0x2          | a4=0x000000001  (old value in MEM)
+[125] PC=800001e0 LW a4, -468(a4)        | a4=0x000000001  (wrong!)
+[126] PC=800001e0 LW a4, -468(a4)        | a4=0x800021dc   (correct!)
+```
+Note: LW executes twice - first with wrong a4, then with correct a4
+
+**Analysis**:
+- Forwarding logic is CORRECT - no pipeline design flaw
+- Bug is RV64-specific, not present in RV32
+- Likely causes: Bus adapter 64-bit address handling, sign extension, or width mismatch
+
+**Next Steps (Session 85)**:
+1. Debug `rtl/memory/dmem_bus_adapter.v` address handling in 64-bit mode
+2. Add debug traces for memory address calculations
+3. Verify immediate offset sign-extension (-468) in 64-bit
+4. Check for data path width mismatches
+
+**References**:
+- `docs/SESSION_84_RV64A_DEBUG_ANALYSIS.md` (Complete analysis)
+- `docs/SESSION_83_RV64A_LRSC_INVESTIGATION.md` (Initial investigation)
+
+---
+
+## RV32 Active Issues
+
+**None!** ✅ All RV32 critical issues resolved as of Session 76 (2025-11-03)
 
 FreeRTOS is fully operational with multitasking, timer interrupts, and context switching working correctly.
 
