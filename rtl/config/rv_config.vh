@@ -30,8 +30,9 @@
 // ============================================================================
 
 // XLEN: Integer register and data path width (32 or 64)
+// Phase 3 (2025-11-03): Default changed to 64 for RV64 upgrade
 `ifndef XLEN
-  `define XLEN 32
+  `define XLEN 64
 `endif
 
 // FLEN: Floating-point register width (0=no FPU, 32=F only, 64=F+D)
@@ -136,13 +137,14 @@
 // ============================================================================
 
 // Memory sizes (in bytes)
-// Updated 2025-10-27: Expanded DMEM to 1MB for FreeRTOS (Phase 2)
+// Phase 2 (2025-10-27): Expanded DMEM to 1MB for FreeRTOS
+// Phase 3 (2025-11-03): Expanded to 1MB IMEM, 4MB DMEM for xv6/Linux
 `ifndef IMEM_SIZE
-  `define IMEM_SIZE 65536  // 64KB instruction memory
+  `define IMEM_SIZE 1048576  // 1MB instruction memory (Phase 3: RV64 upgrade)
 `endif
 
 `ifndef DMEM_SIZE
-  `define DMEM_SIZE 1048576  // 1MB data memory (Phase 2: FreeRTOS unified memory)
+  `define DMEM_SIZE 4194304  // 4MB data memory (Phase 3: RV64 upgrade, xv6 preparation)
 `endif
 
 // Address width (derived from memory size)

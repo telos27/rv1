@@ -156,16 +156,16 @@ module csr_file #(
   // =========================================================================
 
   // Vendor ID: 0 = not implemented
-  wire [31:0] mvendorid = 32'h0000_0000;
+  wire [XLEN-1:0] mvendorid = {XLEN{1'b0}};
 
   // Architecture ID: 0 = not implemented
-  wire [31:0] marchid = 32'h0000_0000;
+  wire [XLEN-1:0] marchid = {XLEN{1'b0}};
 
   // Implementation ID: 1 = RV1 implementation
-  wire [31:0] mimpid = 32'h0000_0001;
+  wire [XLEN-1:0] mimpid = {{(XLEN-1){1'b0}}, 1'b1};
 
   // Hardware Thread ID: 0 = single-threaded
-  wire [31:0] mhartid = 32'h0000_0000;
+  wire [XLEN-1:0] mhartid = {XLEN{1'b0}};
 
   // =========================================================================
   // CSR Read Logic
