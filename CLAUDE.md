@@ -3,23 +3,30 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 79, 2025-11-03)
+## Current Status (Session 80, 2025-11-03)
 
 ### 🎯 CURRENT PHASE: Phase 3 - RV64 Upgrade (In Progress)
 - **Previous Phase**: ✅ **Phase 2 COMPLETE** - FreeRTOS fully operational!
-- **Current Focus**: ✅ **RV64I Load/Store COMPLETE** - LD, LWU, SD validated!
-- **Documentation**: See `docs/SESSION_79_RV64I_LOAD_STORE_FIX.md` for latest progress
+- **Current Focus**: 🔄 **RV64I Compliance Testing** - 40/54 tests passing (74%)
+- **Documentation**: See `docs/SESSION_80_RV64I_COMPLIANCE_TESTING.md` for latest progress
 
-### 🎉 Phase 3 Achievements (Sessions 77-79, Day 1-3)
+### 🎉 Phase 3 Achievements (Sessions 77-80, Day 1-4)
 **Milestone**: RV64I instruction set implementation and validation
 
-**Validated Instructions**:
+**Implemented Instructions**:
   - ✅ **Word Operations** (Session 78): All 9 RV64I-W instructions (ADDIW, ADDW, SUBW, SLLIW, SRLIW, SRAIW, SLLW, SRLW, SRAW)
   - ✅ **Load/Store** (Session 79): All 3 RV64I load/store instructions (LD, LWU, SD)
   - ✅ **Configuration** (Session 77-78): XLEN=64 parameter support, memory expansion
 
-**Critical Fix** (Session 79):
-  - **RV64 Testbench Bus Interface** - Added missing dmem_bus_adapter, fixed load instructions
+**Test Infrastructure** (Session 80):
+  - ✅ **RV64 Testbench** - Added ECALL detection for compliance tests
+  - ✅ **Test Runner** - Created `tools/run_rv64_tests.sh` for automated testing
+  - ✅ **Hex Conversion** - Fixed objcopy method to strip addresses
+
+**RV64I Compliance** (Session 80):
+  - **Results**: 40/54 tests passing (74.1%)
+  - **Passing**: Arithmetic, logic, shifts, branches, jumps, aligned loads/stores
+  - **Failing**: Unaligned loads (7), unaligned stores (2), word shift register ops (3), fence_i (1), ma_data (1)
 
 ### 🎉 Phase 2 Achievements (Sessions 62-76, 2 weeks)
 **Milestone**: FreeRTOS v11.1.0 fully operational with multitasking, timer interrupts, and I/O
@@ -54,7 +61,26 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - Identify modules requiring 64-bit modifications
   - Set up RV64 test infrastructure
 
-### Latest Sessions (79, 78-cont, 78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67)
+### Latest Sessions (80, 79, 78-cont, 78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67)
+
+**Session 80** (2025-11-03): RV64I Compliance Testing - Infrastructure & 40/54 Tests Passing! 🎉
+- **Goal**: Set up RV64 compliance test infrastructure and run official test suite
+- **Achievement**: ✅ **Test infrastructure complete, 40/54 RV64UI tests passing (74%)!**
+- **Test Infrastructure Built**:
+  - Fixed RV64 testbench to detect ECALL (compliance test completion signal)
+  - Created `tools/run_rv64_tests.sh` - automated RV64 test runner
+  - Fixed hex conversion: Use `objcopy -O binary` + `hexdump` (strips `@80000000` addresses)
+- **RV64UI Test Results** (54 tests total):
+  - ✅ **40 PASSING**: Arithmetic (add/sub/word), logic (and/or/xor), shifts (immediate), branches, jumps, aligned loads/stores
+  - ❌ **14 FAILING**: Unaligned loads (7), unaligned stores (2), word shift register ops (3), fence_i (1), ma_data (1)
+- **Bugs Identified**:
+  - **Bug #1**: Unaligned load handling - lb/lbu/lh/lhu/lw/lwu/ld all fail at test #5 (byte offset 3)
+  - **Bug #2**: Unaligned store handling - sb/sh fail at test #9
+  - **Bug #3**: Word shift register ops - sllw/sraw/srlw fail at test #35
+  - **Bug #4**: fence_i failure (expected, same as RV32 - self-modifying code)
+- **Key Insight**: Core RV64I arithmetic and control flow work perfectly. Issues are in specific edge cases (unaligned access, register shifts).
+- **Next**: Debug unaligned load/store handling → expect 49/54 (91%) after fix
+- See: `docs/SESSION_80_RV64I_COMPLIANCE_TESTING.md`
 
 **Session 79** (2025-11-03): RV64I Load/Store Instructions - Testbench Bus Interface Fix ✅🎉🎉🎉
 - **Goal**: Validate RV64I load/store instructions (LD, LWU, SD)
