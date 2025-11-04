@@ -240,19 +240,20 @@ module fp_converter #(
 
                 // Bug #20 fix: Check if exponent is too large (overflow)
                 // Bug #25 fix: Corrected unsigned word overflow detection
-                // For 32-bit conversions:
+                // Bug #Session86d fix: Distinguish W vs L conversions for overflow detection
+                // For 32-bit conversions (W/WU, operation_latched[1]==0):
                 //   - Signed word (W): overflow when int_exp > 31, OR int_exp==31 with value != -2^31
                 //   - Unsigned word (WU): overflow when int_exp >= 32 (int_exp > 31)
+                // For 64-bit conversions (L/LU, operation_latched[1]==1):
+                //   - Signed long (L): overflow when int_exp > 63, OR int_exp==63 with value != -2^63
+                //   - Unsigned long (LU): overflow when int_exp >= 64 (int_exp > 63)
 
-                // Check for 32-bit overflow
-                if ((int_exp > 31) ||  // Both signed and unsigned overflow above 2^31
-                    // Signed word special case: int_exp==31 overflows unless exactly -2^31
-                    (int_exp == 31 && operation_latched[1:0] == 2'b00 && (man_fp != 0 || !sign_fp)) ||
-                    // Check for 64-bit overflow (both signed and unsigned long)
-                    // Bug #23b fix: Handle both FCVT.L.S and FCVT.LU.S
-                    (operation_latched[1] == 1'b1 && int_exp > 63) ||
-                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b1) ||  // Unsigned long at 2^63 always overflows
-                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp))) begin  // Signed long: overflow except exactly -2^63
+                // Check for overflow based on W vs L
+                if ((operation_latched[1] == 1'b0 && int_exp > 31) ||  // W/WU: 32-bit overflow
+                    (operation_latched[1] == 1'b0 && int_exp == 31 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp)) ||  // W: special case at 2^31
+                    (operation_latched[1] == 1'b1 && int_exp > 63) ||  // L/LU: 64-bit overflow
+                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b1) ||  // LU: unsigned long at 2^63 always overflows
+                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp))) begin  // L: signed long overflow except exactly -2^63
                   // Overflow: return max/min
                   // Bug #23 fix: Unsigned conversions with negative values should saturate to 0
                   // Bug #24 fix: Use operation_latched not operation
@@ -540,31 +541,50 @@ module fp_converter #(
                 reg g_temp, r_temp, s_temp;
 
                 // Extract sign and absolute value
-                if (operation_latched[0] == 1'b0 && int_operand_latched[XLEN-1]) begin
+                // Bug #Session86b fix: Handle W/WU vs L/LU conversions properly
+                // operation_latched[1]: 0=W/WU (32-bit), 1=L/LU (64-bit)
+                // operation_latched[0]: 0=signed, 1=unsigned
+
+                // Check if this is a signed negative value
+                // For W/WU: check bit 31, for L/LU: check bit XLEN-1
+                if (operation_latched[0] == 1'b0 &&
+                    (operation_latched[1] == 1'b0 ? int_operand_latched[31] : int_operand_latched[XLEN-1])) begin
                   // Signed negative
                   sign_temp = 1'b1;
                   // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
-                  // For RV32: -int_operand_latched gives 32-bit result, must zero-extend to 64 bits
-                  // For RV64: already 64-bit, no extension needed
-                  if (XLEN == 32) begin
-                    int_abs_temp = {32'b0, (-int_operand_latched[31:0])};
+                  // Bug #Session86c fix: For W conversions, shift left by 32 so leading zero
+                  // count is relative to 64-bit position (makes exponent calc consistent)
+                  if (operation_latched[1] == 1'b0) begin
+                    // W conversion: negate lower 32 bits, shift to upper half
+                    int_abs_temp = {(-int_operand_latched[31:0]), 32'b0};
+                  end else if (XLEN == 32) begin
+                    // L conversion on RV32: use full XLEN (already in lower 32 bits)
+                    int_abs_temp = {(-int_operand_latched[31:0]), 32'b0};
                   end else begin
+                    // L conversion on RV64: use full 64 bits (no shift)
                     int_abs_temp = -int_operand_latched;
                   end
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Signed negative: int_abs = 0x%h", int_abs_temp);
+                  $display("[CONVERTER]   Signed negative: int_abs = 0x%h, is_w=%b", int_abs_temp, (operation_latched[1] == 1'b0));
                   `endif
                 end else begin
                   // Positive or unsigned
                   sign_temp = 1'b0;
                   // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
-                  if (XLEN == 32) begin
-                    int_abs_temp = {32'b0, int_operand_latched[31:0]};
+                  // Bug #Session86c fix: For W conversions, shift left by 32 so leading zero
+                  // count is relative to 64-bit position (makes exponent calc consistent)
+                  if (operation_latched[1] == 1'b0) begin
+                    // W conversion: extract lower 32 bits, shift to upper half
+                    int_abs_temp = {int_operand_latched[31:0], 32'b0};
+                  end else if (XLEN == 32) begin
+                    // L conversion on RV32: use full XLEN (already in lower 32 bits)
+                    int_abs_temp = {int_operand_latched[31:0], 32'b0};
                   end else begin
+                    // L conversion on RV64: use full 64 bits (no shift)
                     int_abs_temp = int_operand_latched;
                   end
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Positive/unsigned: int_abs = 0x%h", int_abs_temp);
+                  $display("[CONVERTER]   Positive/unsigned: int_abs = 0x%h, is_w=%b", int_abs_temp, (operation_latched[1] == 1'b0));
                   `endif
                 end
 
@@ -640,10 +660,22 @@ module fp_converter #(
                 endcase
 
                 // Compute exponent (Bug #43 fix: use correct bias based on format)
-                if (fmt_latched)
-                  exp_temp = 11'd1023 + (63 - lz_temp);  // Double-precision
-                else
-                  exp_temp = 11'd127 + (63 - lz_temp);   // Single-precision
+                // Bug #Session86 fix: Adjust exponent for W vs L conversions
+                // For W/WU (32-bit int): bit position = 31 - lz_temp
+                // For L/LU (64-bit int): bit position = 63 - lz_temp
+                if (fmt_latched) begin
+                  // Double-precision bias
+                  if (operation_latched[1])
+                    exp_temp = 11'd1023 + (63 - lz_temp);  // L/LU: 64-bit integer
+                  else
+                    exp_temp = 11'd1023 + (31 - lz_temp);  // W/WU: 32-bit integer
+                end else begin
+                  // Single-precision bias
+                  if (operation_latched[1])
+                    exp_temp = 8'd127 + (63 - lz_temp);    // L/LU: 64-bit integer
+                  else
+                    exp_temp = 8'd127 + (31 - lz_temp);    // W/WU: 32-bit integer
+                end
 
                 // Normalize mantissa (shift to align MSB to bit 63)
                 // Bug #13b fix: Shift by leading_zeros only (not +1)
