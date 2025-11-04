@@ -5,29 +5,43 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 
 ## Current Status (Session 76, 2025-11-03)
 
-### 🎯 CURRENT PHASE: Phase 2 - FreeRTOS COMPLETE ✅
-- **Status**: 🎉🎉🎉 **FREERTOS FULLY OPERATIONAL** - Phase 2 COMPLETE!
-- **Achievement**: Multitasking RTOS validated with timer interrupts, context switching, and task execution
-- **Major Milestones**:
-  - ✅ MRET/exception priority bug FIXED (Session 62 - incomplete)
-  - ✅ **MRET/exception priority bug FIXED PROPERLY (Session 74)** 🎉🎉🎉
-  - ✅ **FreeRTOS scheduler RUNNING - No crashes!** 🎉
-  - ✅ **UART output working** - Character transmission confirmed! 🎉
-  - ✅ **Task switching working** - Both tasks run and print! 🎉
-  - ✅ CPU hardware fully validated (Sessions 62-74)
-  - ✅ Stack initialization verified CORRECT (Session 64)
-  - ✅ Pipeline flush logic validated CORRECT (Session 65) 🎉
-  - ✅ C extension config bug FIXED (Session 66) 🎉
-  - ✅ Testbench false positive FIXED (Session 67) 🎉
-  - ✅ FreeRTOS FPU binary rebuilt (Session 67) 🎉
-  - ✅ JAL→compressed investigation COMPLETE (Session 70) - No bug exists! 🎉
-  - ✅ FreeRTOS verified CORRECT (Session 71) - Uninitialized registers & task return address are per spec! 🎉
-  - ✅ "Infinite loop" was false alarm (Session 72) - Just slow memset() execution! 🎉
-  - ✅ JALR verified CORRECT (Session 73) - test_jalr_ret_simple PASSES! 🎉
-  - ✅ **Register corruption eliminated (Session 74)** - Root cause was MRET+exception bug! 🎉
-  - ✅ **CLINT timer bug FIXED (Session 75)** - req_ready timing bug, first timer interrupts ever! 🎉🎉🎉
-  - ✅ **MSTATUS.MIE bug FIXED (Session 76)** - Interrupts now delivered, FreeRTOS fully working! 🎉🎉🎉
-  - 📋 **NEXT**: Phase 3 - RV64 Upgrade (2-3 weeks)
+### 🎯 CURRENT PHASE: Phase 3 - RV64 Upgrade (Starting)
+- **Previous Phase**: ✅ **Phase 2 COMPLETE** - FreeRTOS fully operational!
+- **Current Focus**: Planning RV64 upgrade (64-bit XLEN, Sv39 MMU)
+- **Documentation**: See `docs/PHASE_2_COMPLETE.md` for Phase 2 summary
+
+### 🎉 Phase 2 Achievements (Sessions 62-76, 2 weeks)
+**Milestone**: FreeRTOS v11.1.0 fully operational with multitasking, timer interrupts, and I/O
+
+**Validated Functionality**:
+  - ✅ **Multitasking**: Multiple tasks running concurrently
+  - ✅ **Timer Interrupts**: CLINT delivering 1ms periodic interrupts
+  - ✅ **Context Switching**: Preemptive (timer) and voluntary (ECALL) working
+  - ✅ **UART I/O**: Task messages transmitted successfully
+  - ✅ **Interrupt Handling**: Complete trap entry/exit, CSR state management
+  - ✅ **Scheduler**: Task queue management, delay services operational
+
+**Critical Bugs Fixed**:
+  1. **MRET/Exception Priority** (Sessions 62, 74) - Eliminated PC/register corruption
+  2. **C Extension Config** (Session 66) - Enabled compressed instructions at 2-byte boundaries
+  3. **CLINT Bus Interface** (Session 75) - Fixed req_ready timing for timer interrupt delivery
+  4. **MSTATUS.MIE Restoration** (Session 76) - Enabled interrupts after context restore
+
+**Git Milestone**: Tagged `phase-2-complete` (commit 712d673)
+
+### 📋 Phase 3 Plan: RV64 Upgrade (2-3 weeks)
+**Scope**:
+  - Extend XLEN from 32 to 64 bits (datapath, registers, CSRs)
+  - Implement Sv39 MMU (3-level page tables vs current Sv32 2-level)
+  - Expand memory subsystem (1MB IMEM, 4MB DMEM)
+  - Run RV64 compliance tests (87 tests: RV64IMAFDC)
+  - Validate FreeRTOS still works on RV64
+
+**Next Steps**:
+  - Review RV64I specification differences
+  - Plan Sv39 MMU architecture changes
+  - Identify modules requiring 64-bit modifications
+  - Set up RV64 test infrastructure
 
 ### Latest Sessions (76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63-corrected)
 
@@ -505,18 +519,18 @@ See `docs/KNOWN_ISSUES.md` for complete tracking and history.
 ## OS Integration Roadmap
 
 **Goal**: Progressive OS validation from embedded RTOS to full Linux (16-24 weeks)
-**Documentation**: `docs/OS_INTEGRATION_PLAN.md`, `docs/MEMORY_MAP.md`
+**Documentation**: `docs/OS_INTEGRATION_PLAN.md`, `docs/PHASE_2_COMPLETE.md`
 
-**Current**: Phase 2 COMPLETE ✅ - Starting Phase 3 (RV64 Upgrade)
+**Current**: Phase 3 STARTING - RV64 Upgrade
 
-| Phase | Status | Duration | Milestone |
-|-------|--------|----------|-----------|
-| 1: RV32 Interrupts | ✅ Complete | 2-3 weeks | CLINT, UART, SoC integration |
-| 2: FreeRTOS | ✅ **Complete** | 1-2 weeks | Multitasking RTOS fully validated! |
-| 3: RV64 Upgrade | **Next** | 2-3 weeks | 64-bit, Sv39 MMU |
-| 4: xv6-riscv | Pending | 3-5 weeks | Unix-like OS, OpenSBI |
-| 5a: Linux nommu | Optional | 3-4 weeks | Embedded Linux |
-| 5b: Linux + MMU | Pending | 4-6 weeks | Full Linux boot |
+| Phase | Status | Duration | Completion | Milestone |
+|-------|--------|----------|------------|-----------|
+| 1: RV32 Interrupts | ✅ Complete | 2-3 weeks | 2025-10-26 | CLINT, UART, SoC integration |
+| 2: FreeRTOS | ✅ **Complete** | 2 weeks | 2025-11-03 | Multitasking RTOS validated! |
+| 3: RV64 Upgrade | 🚧 **Starting** | 2-3 weeks | TBD | 64-bit XLEN, Sv39 MMU |
+| 4: xv6-riscv | Pending | 3-5 weeks | TBD | Unix-like OS, OpenSBI |
+| 5a: Linux nommu | Optional | 3-4 weeks | TBD | Embedded Linux |
+| 5b: Linux + MMU | Pending | 4-6 weeks | TBD | Full Linux boot |
 
 ## Future Enhancements
 
