@@ -69,6 +69,59 @@ echo "Building RV32UC (Compressed Instructions) tests..."
 make rv32uc-p-rvc \
      2>/dev/null || true
 
+# RV64 Tests (Session 85: Added for RV64 compliance testing)
+if [ "${BUILD_RV64:-}" = "1" ] || [ "${XLEN:-32}" = "64" ]; then
+  echo ""
+  echo "Building RV64 tests..."
+
+  echo "Building RV64UI (Base Integer) tests..."
+  make rv64ui-p-add rv64ui-p-addi rv64ui-p-addiw rv64ui-p-addw \
+       rv64ui-p-and rv64ui-p-andi rv64ui-p-auipc rv64ui-p-beq \
+       rv64ui-p-bge rv64ui-p-bgeu rv64ui-p-blt rv64ui-p-bltu \
+       rv64ui-p-bne rv64ui-p-fence_i rv64ui-p-jal rv64ui-p-jalr \
+       rv64ui-p-lb rv64ui-p-lbu rv64ui-p-ld rv64ui-p-lh \
+       rv64ui-p-lhu rv64ui-p-lui rv64ui-p-lw rv64ui-p-lwu \
+       rv64ui-p-or rv64ui-p-ori rv64ui-p-sb rv64ui-p-sd \
+       rv64ui-p-sh rv64ui-p-sll rv64ui-p-slli rv64ui-p-slliw \
+       rv64ui-p-sllw rv64ui-p-slt rv64ui-p-slti rv64ui-p-sltiu \
+       rv64ui-p-sltu rv64ui-p-sra rv64ui-p-srai rv64ui-p-sraiw \
+       rv64ui-p-sraw rv64ui-p-srl rv64ui-p-srli rv64ui-p-srliw \
+       rv64ui-p-srlw rv64ui-p-sub rv64ui-p-subw rv64ui-p-sw \
+       rv64ui-p-xor rv64ui-p-xori \
+       2>/dev/null || true
+
+  echo "Building RV64UM (Multiply/Divide) tests..."
+  make rv64um-p-div rv64um-p-divu rv64um-p-divuw rv64um-p-divw \
+       rv64um-p-mul rv64um-p-mulh rv64um-p-mulhsu rv64um-p-mulhu \
+       rv64um-p-mulw rv64um-p-rem rv64um-p-remu rv64um-p-remuw \
+       rv64um-p-remw \
+       2>/dev/null || true
+
+  echo "Building RV64UA (Atomic) tests..."
+  make rv64ua-p-amoadd_d rv64ua-p-amoadd_w rv64ua-p-amoand_d rv64ua-p-amoand_w \
+       rv64ua-p-amomax_d rv64ua-p-amomax_w rv64ua-p-amomaxu_d rv64ua-p-amomaxu_w \
+       rv64ua-p-amomin_d rv64ua-p-amomin_w rv64ua-p-amominu_d rv64ua-p-amominu_w \
+       rv64ua-p-amoor_d rv64ua-p-amoor_w rv64ua-p-amoswap_d rv64ua-p-amoswap_w \
+       rv64ua-p-amoxor_d rv64ua-p-amoxor_w rv64ua-p-lrsc \
+       2>/dev/null || true
+
+  echo "Building RV64UF (Single-Precision FP) tests..."
+  make rv64uf-p-fadd rv64uf-p-fclass rv64uf-p-fcmp rv64uf-p-fcvt \
+       rv64uf-p-fcvt_w rv64uf-p-fdiv rv64uf-p-fmadd rv64uf-p-fmin \
+       rv64uf-p-ldst rv64uf-p-move rv64uf-p-recoding \
+       2>/dev/null || true
+
+  echo "Building RV64UD (Double-Precision FP) tests..."
+  make rv64ud-p-fadd rv64ud-p-fclass rv64ud-p-fcmp rv64ud-p-fcvt \
+       rv64ud-p-fcvt_w rv64ud-p-fdiv rv64ud-p-fmadd rv64ud-p-fmin \
+       rv64ud-p-ldst rv64ud-p-move rv64ud-p-recoding rv64ud-p-structural \
+       2>/dev/null || true
+
+  echo "Building RV64UC (Compressed Instructions) tests..."
+  make rv64uc-p-rvc \
+       2>/dev/null || true
+fi
+
 echo ""
 echo "=========================================="
 echo "Build Summary"
@@ -78,23 +131,48 @@ count_tests() {
   ls $1 2>/dev/null | grep -v "\.dump$" | wc -l
 }
 
-ui_count=$(count_tests "rv32ui-p-*")
-um_count=$(count_tests "rv32um-p-*")
-ua_count=$(count_tests "rv32ua-p-*")
-uf_count=$(count_tests "rv32uf-p-*")
-ud_count=$(count_tests "rv32ud-p-*")
-uc_count=$(count_tests "rv32uc-p-*")
+ui32_count=$(count_tests "rv32ui-p-*")
+um32_count=$(count_tests "rv32um-p-*")
+ua32_count=$(count_tests "rv32ua-p-*")
+uf32_count=$(count_tests "rv32uf-p-*")
+ud32_count=$(count_tests "rv32ud-p-*")
+uc32_count=$(count_tests "rv32uc-p-*")
 
-echo "RV32UI (Base Integer):     $ui_count tests"
-echo "RV32UM (Multiply/Divide):  $um_count tests"
-echo "RV32UA (Atomic):           $ua_count tests"
-echo "RV32UF (Single-FP):        $uf_count tests"
-echo "RV32UD (Double-FP):        $ud_count tests"
-echo "RV32UC (Compressed):       $uc_count tests"
-echo ""
+echo "RV32UI (Base Integer):     $ui32_count tests"
+echo "RV32UM (Multiply/Divide):  $um32_count tests"
+echo "RV32UA (Atomic):           $ua32_count tests"
+echo "RV32UF (Single-FP):        $uf32_count tests"
+echo "RV32UD (Double-FP):        $ud32_count tests"
+echo "RV32UC (Compressed):       $uc32_count tests"
 
-total=$((ui_count + um_count + ua_count + uf_count + ud_count + uc_count))
-echo "Total: $total test binaries built"
+total32=$((ui32_count + um32_count + ua32_count + uf32_count + ud32_count + uc32_count))
+echo "RV32 Total: $total32 tests"
+
+if [ "${BUILD_RV64:-}" = "1" ] || [ "${XLEN:-32}" = "64" ]; then
+  echo ""
+  ui64_count=$(count_tests "rv64ui-p-*")
+  um64_count=$(count_tests "rv64um-p-*")
+  ua64_count=$(count_tests "rv64ua-p-*")
+  uf64_count=$(count_tests "rv64uf-p-*")
+  ud64_count=$(count_tests "rv64ud-p-*")
+  uc64_count=$(count_tests "rv64uc-p-*")
+
+  echo "RV64UI (Base Integer):     $ui64_count tests"
+  echo "RV64UM (Multiply/Divide):  $um64_count tests"
+  echo "RV64UA (Atomic):           $ua64_count tests"
+  echo "RV64UF (Single-FP):        $uf64_count tests"
+  echo "RV64UD (Double-FP):        $ud64_count tests"
+  echo "RV64UC (Compressed):       $uc64_count tests"
+
+  total64=$((ui64_count + um64_count + ua64_count + uf64_count + ud64_count + uc64_count))
+  echo "RV64 Total: $total64 tests"
+  echo ""
+  total=$((total32 + total64))
+  echo "Grand Total: $total test binaries built"
+else
+  total=$total32
+  echo "Total: $total test binaries built"
+fi
 echo ""
 
 if [ $total -lt 10 ]; then

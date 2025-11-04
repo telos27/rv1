@@ -53,23 +53,16 @@ usage() {
 }
 
 # Convert extension shorthand to full name
-# FIXME (Session 84): This function hardcodes rv32 and ignores XLEN environment variable!
-# When XLEN=64 is set, this still returns rv32* prefixes, causing RV64 tests to never run.
-# This bug caused false positive "RV64 98% passing" reports in Sessions 82-83.
-# TODO: Check XLEN and return rv64* when XLEN=64, e.g.:
-#   if [ "${XLEN:-32}" = "64" ]; then
-#     echo "rv64ui"  # etc
-#   else
-#     echo "rv32ui"
-#   fi
+# FIXED (Session 85): Now respects XLEN environment variable for RV64 testing
 get_extension() {
+  local xlen="${XLEN:-32}"
   case "$1" in
-    i|ui) echo "rv32ui" ;;
-    m|um) echo "rv32um" ;;
-    a|ua) echo "rv32ua" ;;
-    f|uf) echo "rv32uf" ;;
-    d|ud) echo "rv32ud" ;;
-    c|uc) echo "rv32uc" ;;
+    i|ui) echo "rv${xlen}ui" ;;
+    m|um) echo "rv${xlen}um" ;;
+    a|ua) echo "rv${xlen}ua" ;;
+    f|uf) echo "rv${xlen}uf" ;;
+    d|ud) echo "rv${xlen}ud" ;;
+    c|uc) echo "rv${xlen}uc" ;;
     all)  echo "all" ;;
     *)    echo "unknown" ;;
   esac
@@ -209,7 +202,8 @@ echo ""
 
 # Determine which tests to run
 if [ "$EXT" = "all" ]; then
-  EXTENSIONS="rv32ui rv32um rv32ua rv32uf rv32ud rv32uc"
+  xlen="${XLEN:-32}"
+  EXTENSIONS="rv${xlen}ui rv${xlen}um rv${xlen}ua rv${xlen}uf rv${xlen}ud rv${xlen}uc"
 else
   EXTENSIONS="$EXT"
 fi
