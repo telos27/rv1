@@ -260,28 +260,51 @@
   `define ENABLE_F_EXT 1
 `endif
 
+// ============================================================================
+// DEPRECATED: CONFIG_RV64I and CONFIG_RV64GC
+// ============================================================================
+// These configuration shortcuts are deprecated in favor of explicit defines.
+// Use command-line defines instead:
+//   RV64I:  -DXLEN=64
+//   RV64GC: -DXLEN=64 -DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_C_EXT=1
+//
+// The blocks below are kept for backwards compatibility but do NOT override
+// command-line defines (no undef).
+// ============================================================================
+
 `ifdef CONFIG_RV64I
-  `undef XLEN
-  `define XLEN 64
-  `undef ENABLE_M_EXT
-  `define ENABLE_M_EXT 0
-  `undef ENABLE_A_EXT
-  `define ENABLE_A_EXT 0
-  `undef ENABLE_C_EXT
-  `define ENABLE_C_EXT 0
+  `ifndef XLEN
+    `define XLEN 64
+  `endif
+  // Extensions default to OFF for minimal RV64I
+  `ifndef ENABLE_M_EXT
+    `define ENABLE_M_EXT 0
+  `endif
+  `ifndef ENABLE_A_EXT
+    `define ENABLE_A_EXT 0
+  `endif
+  `ifndef ENABLE_C_EXT
+    `define ENABLE_C_EXT 0
+  `endif
 `endif
 
 `ifdef CONFIG_RV64GC
-  `undef XLEN
-  `define XLEN 64
-  `undef ENABLE_M_EXT
-  `define ENABLE_M_EXT 1
-  `undef ENABLE_A_EXT
-  `define ENABLE_A_EXT 1
-  `undef ENABLE_C_EXT
-  `define ENABLE_C_EXT 1
-  `undef ENABLE_ZIFENCEI
-  `define ENABLE_ZIFENCEI 1
+  `ifndef XLEN
+    `define XLEN 64
+  `endif
+  // Extensions default to ON for RV64GC
+  `ifndef ENABLE_M_EXT
+    `define ENABLE_M_EXT 1
+  `endif
+  `ifndef ENABLE_A_EXT
+    `define ENABLE_A_EXT 1
+  `endif
+  `ifndef ENABLE_C_EXT
+    `define ENABLE_C_EXT 1
+  `endif
+  `ifndef ENABLE_ZIFENCEI
+    `define ENABLE_ZIFENCEI 1
+  `endif
 `endif
 
 `endif // RV_CONFIG_VH

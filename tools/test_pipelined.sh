@@ -39,7 +39,9 @@ fi
 # Determine architecture
 # NOTE: We enable all extensions (IMAFDC) to match how tests are compiled
 if [ "$XLEN" = "64" ]; then
-    CONFIG_FLAG="-DCONFIG_RV64I -DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_C_EXT=1"
+    # For RV64, set XLEN=64 directly and enable extensions
+    # Don't use CONFIG_RV64I as it undefs extensions after command-line defines
+    CONFIG_FLAG="-DXLEN=64 -DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_C_EXT=1"
     TESTBENCH="tb/integration/tb_core_pipelined_rv64.v"
     OUTPUT_VCD="${WAVES_DIR}/core_pipelined_rv64.vcd"
     OUTPUT_VVP="${SIM_DIR}/rv64i_pipelined.vvp"
@@ -71,7 +73,7 @@ if [ ! -f "$HEX_FILE" ]; then
     # Hex file missing - try to build it
     if [ -f "$ASM_FILE" ]; then
         echo "Hex file missing, building from source: $ASM_FILE"
-        if ! ./tools/asm_to_hex.sh "$ASM_FILE" 2>&1 | tail -5; then
+        if ! env XLEN=$XLEN ./tools/asm_to_hex.sh "$ASM_FILE" 2>&1 | tail -5; then
             echo ""
             echo "Error: Failed to build $HEX_FILE"
             echo "This test may require extensions not available in your toolchain"
@@ -87,7 +89,7 @@ if [ ! -f "$HEX_FILE" ]; then
 elif [ -f "$ASM_FILE" ] && [ "$ASM_FILE" -nt "$HEX_FILE" ]; then
     # Source is newer than hex - rebuild
     echo "Source modified, rebuilding: $ASM_FILE"
-    if ! ./tools/asm_to_hex.sh "$ASM_FILE" 2>&1 | tail -5; then
+    if ! env XLEN=$XLEN ./tools/asm_to_hex.sh "$ASM_FILE" 2>&1 | tail -5; then
         echo ""
         echo "Error: Failed to rebuild $HEX_FILE"
         echo "This test may require extensions not available in your toolchain"

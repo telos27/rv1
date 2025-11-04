@@ -28,7 +28,7 @@ module tb_core_pipelined_rv64;
   integer cycle_count;
 
   // Reset vector
-  parameter RESET_VEC = 64'h0000000000000000;
+  parameter RESET_VEC = 64'h0000000080000000;
 
   // Instantiate DUT (pipelined core with XLEN=64)
   rv_core_pipelined #(

@@ -980,8 +980,9 @@ module rv_core_pipelined #(
 
   // Forward data from EX stage: use atomic_result for atomic instructions, alu_result otherwise
   // For atomic instructions, always forward atomic_result (even if 0 initially)
+  // For word operations (RV64I), use sign-extended result
   wire [XLEN-1:0] ex_forward_data;
-  assign ex_forward_data = idex_is_atomic ? ex_atomic_result : ex_alu_result;
+  assign ex_forward_data = idex_is_atomic ? ex_atomic_result : ex_alu_result_sext;
 
   assign id_rs1_data = (id_forward_a == 3'b100) ? ex_forward_data :     // Forward from EX stage (atomic or ALU)
                        (id_forward_a == 3'b010) ? exmem_forward_data :  // Forward from MEM stage (atomic or ALU)
@@ -1411,18 +1412,43 @@ module rv_core_pipelined #(
 
   assign ex_alu_operand_b = idex_alu_src ? idex_imm : ex_rs2_data_forwarded;
 
+  // RV64I: Detect word operations (operate on 32 bits, sign-extend result)
+  // OP_IMM_32 (0x1B): ADDIW, SLLIW, SRLIW, SRAIW
+  // OP_OP_32 (0x3B): ADDW, SUBW, SLLW, SRLW, SRAW
+  wire is_word_alu_op = (XLEN == 64) &&
+                        ((idex_opcode == 7'b0011011) ||  // OP_IMM_32
+                         (idex_opcode == 7'b0111011));   // OP_OP_32
+
+  // For word operations, ZERO-extend lower 32 bits to XLEN before ALU
+  // This ensures shifts and other operations work on 32-bit values
+  // The result will be sign-extended after the operation
+  wire [XLEN-1:0] ex_alu_operand_a_final = is_word_alu_op ?
+                                            {{32{1'b0}}, ex_alu_operand_a_forwarded[31:0]} :
+                                            ex_alu_operand_a_forwarded;
+
+  wire [XLEN-1:0] ex_alu_operand_b_final = is_word_alu_op ?
+                                            {{32{1'b0}}, ex_alu_operand_b[31:0]} :
+                                            ex_alu_operand_b;
+
   // ALU
   alu #(
     .XLEN(XLEN)
   ) alu_inst (
-    .operand_a(ex_alu_operand_a_forwarded),
-    .operand_b(ex_alu_operand_b),
+    .operand_a(ex_alu_operand_a_final),
+    .operand_b(ex_alu_operand_b_final),
     .alu_control(idex_alu_control),
     .result(ex_alu_result),
     .zero(ex_alu_zero),
     .less_than(ex_alu_lt),
     .less_than_unsigned(ex_alu_ltu)
   );
+
+  // RV64I: Sign-extend word operation results to 64 bits
+  // The ALU operates on sign-extended 32-bit inputs, producing a 64-bit result
+  // We need to sign-extend the lower 32 bits of the result
+  wire [XLEN-1:0] ex_alu_result_sext = is_word_alu_op ?
+                                       {{32{ex_alu_result[31]}}, ex_alu_result[31:0]} :
+                                       ex_alu_result;
 
   // Debug: ALU output
   `ifdef DEBUG_ALU
@@ -2255,7 +2281,7 @@ module rv_core_pipelined #(
     .clk(clk),
     .reset_n(reset_n),
     .hold(hold_exmem),
-    .alu_result_in(ex_alu_result),
+    .alu_result_in(ex_alu_result_sext),
     .mem_write_data_in(ex_mem_write_data_mux),          // Integer store data
     .fp_mem_write_data_in(ex_fp_mem_write_data_mux),    // FP store data
     .rd_addr_in(idex_rd_addr),

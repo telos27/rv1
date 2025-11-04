@@ -10,26 +10,41 @@
 
 set -e
 
-# Default parameters
-MARCH="rv32imafc"
-MABI="ilp32f"
+# Detect XLEN from environment (default to 32)
+XLEN=${XLEN:-32}
+
+# Default parameters based on XLEN
+if [ "$XLEN" = "64" ]; then
+    MARCH="rv64imafdc"
+    MABI="lp64d"
+else
+    MARCH="rv32imafc"
+    MABI="ilp32f"
+fi
+
 START_ADDR="0x80000000"
 OUTPUT_HEX=""
 
 # Parse arguments
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <input.s> [options]"
+    echo "       env XLEN=64 $0 <input.s> [options]"
+    echo ""
+    echo "Environment:"
+    echo "  XLEN=<32|64>    : Set address width (default: 32)"
+    echo "                    XLEN=32 → rv32imafc/ilp32f/elf32lriscv"
+    echo "                    XLEN=64 → rv64imafdcv/lp64d/elf64lriscv"
     echo ""
     echo "Options:"
-    echo "  -march=<arch>   : RISC-V architecture (default: rv32imafc)"
-    echo "  -mabi=<abi>     : ABI (default: ilp32f)"
+    echo "  -march=<arch>   : RISC-V architecture (default: auto from XLEN)"
+    echo "  -mabi=<abi>     : ABI (default: auto from XLEN)"
     echo "  -o <output.hex> : Output hex file (default: same directory as input)"
     echo "  -addr=<address> : Start address (default: 0x80000000)"
     echo ""
     echo "Examples:"
-    echo "  $0 tests/asm/test.s"
-    echo "  $0 tests/asm/test.s -march=rv32i -mabi=ilp32"
-    echo "  $0 tests/asm/test.s -o my_test.hex -addr=0x80000000"
+    echo "  $0 tests/asm/test.s                          # RV32"
+    echo "  env XLEN=64 $0 tests/asm/test.s              # RV64"
+    echo "  $0 tests/asm/test.s -march=rv32i -mabi=ilp32 # Custom arch"
     exit 1
 fi
 
@@ -91,6 +106,7 @@ fi
 echo "========================================"
 echo "RISC-V Assembly to Hex Converter"
 echo "========================================"
+echo "XLEN:   $XLEN-bit"
 echo "Input:  $INPUT_ASM"
 echo "Output: $OUTPUT_HEX"
 echo "Arch:   $MARCH"
@@ -104,7 +120,11 @@ ${RISCV_PREFIX}as -march=$MARCH -mabi=$MABI "$INPUT_ASM" -o "$OUTPUT_O"
 
 # Step 2: Link
 echo "[2/4] Linking..."
-${RISCV_PREFIX}ld -m elf32lriscv --no-relax -Ttext=$START_ADDR "$OUTPUT_O" -o "$OUTPUT_ELF"
+if [ "$XLEN" = "64" ]; then
+    ${RISCV_PREFIX}ld -m elf64lriscv --no-relax -Ttext=$START_ADDR "$OUTPUT_O" -o "$OUTPUT_ELF"
+else
+    ${RISCV_PREFIX}ld -m elf32lriscv --no-relax -Ttext=$START_ADDR "$OUTPUT_O" -o "$OUTPUT_ELF"
+fi
 
 # Step 3: Convert to binary
 echo "[3/4] Creating binary..."
