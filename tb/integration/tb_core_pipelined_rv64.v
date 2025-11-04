@@ -67,7 +67,8 @@ module tb_core_pipelined_rv64;
   // Data memory bus adapter (handles byte-level access for data memory)
   dmem_bus_adapter #(
     .XLEN(64),
-    .DMEM_SIZE(16384)  // 16KB data memory
+    .DMEM_SIZE(16384),  // 16KB data memory
+    .MEM_FILE(MEM_INIT_FILE)  // Load hex file into data memory
   ) dmem_adapter (
     .clk(clk),
     .reset_n(reset_n),

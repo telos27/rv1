@@ -1431,7 +1431,12 @@ module rv_core_pipelined #(
                                             {{32{1'b0}}, ex_alu_operand_a_forwarded[31:0]} :
                                             ex_alu_operand_a_forwarded;
 
-  wire [XLEN-1:0] ex_alu_operand_b_final = is_word_alu_op ?
+  // For word shift operations (SLLW, SRLW, SRAW), mask shift amount to 5 bits
+  // Shift operations have funct3 = 001 (SLL) or 101 (SRL/SRA)
+  wire is_shift_op = (idex_funct3 == 3'b001) || (idex_funct3 == 3'b101);
+  wire [XLEN-1:0] ex_alu_operand_b_final = (is_word_alu_op && is_shift_op) ?
+                                            {{(XLEN-5){1'b0}}, ex_alu_operand_b[4:0]} :  // Mask to 5 bits for word shifts
+                                            is_word_alu_op ?
                                             {{32{1'b0}}, ex_alu_operand_b[31:0]} :
                                             ex_alu_operand_b;
 
