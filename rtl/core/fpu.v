@@ -521,27 +521,28 @@ module fpu #(
 
       FP_MV_XW: begin
         // Bitcast FP→INT (no conversion, just reinterpret bits)
-        if (FLEN == 32) begin
-          int_result = {{(XLEN-32){operand_a[31]}}, operand_a[31:0]};  // Sign-extend
+        // fmt=0: FMV.X.W (move 32-bit SP, sign-extend to XLEN)
+        // fmt=1: FMV.X.D (move 64-bit DP, only valid for RV64)
+        if (fmt == 0) begin
+          // FMV.X.W: Sign-extend 32-bit value
+          int_result = {{(XLEN-32){operand_a[31]}}, operand_a[31:0]};
         end else begin
-          int_result = operand_a[XLEN-1:0];  // For RV64 with double-precision
+          // FMV.X.D: Copy all 64 bits (only valid for RV64)
+          int_result = operand_a[XLEN-1:0];
         end
         // No exceptions
       end
 
       FP_MV_WX: begin
         // Bitcast INT→FP (no conversion, just reinterpret bits)
-        // For RV32: Always NaN-box (upper 32 bits = 1) since we're moving a 32-bit value
-        // For RV64: If FLEN=64, just copy; if FLEN=32, impossible (D requires RV64)
-        if (XLEN == 32) begin
-          // RV32: int_operand is 32 bits, always NaN-box to FLEN bits
+        // fmt=0: FMV.W.X (move lower 32 bits to FP reg, NaN-box to FLEN)
+        // fmt=1: FMV.D.X (move all 64 bits to FP reg, only valid for RV64)
+        if (fmt == 0) begin
+          // FMV.W.X: Move lower 32 bits, NaN-box to FLEN
           fp_result = {{(FLEN-32){1'b1}}, int_operand[31:0]};
         end else begin
-          // RV64: int_operand is 64 bits
-          if (FLEN == 64)
-            fp_result = int_operand[63:0];
-          else
-            fp_result = {{32{1'b1}}, int_operand[31:0]};  // NaN-box if FLEN=32
+          // FMV.D.X: Copy all 64 bits (only valid for RV64 with FLEN=64)
+          fp_result = int_operand[FLEN-1:0];
         end
         // No exceptions
       end
