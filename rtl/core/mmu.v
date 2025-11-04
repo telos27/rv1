@@ -295,7 +295,9 @@ module mmu #(
         req_paddr <= req_paddr;  // Hold previous value
       end
       req_page_fault <= 0;
-      ptw_req_valid <= 0;
+      // Don't clear ptw_req_valid by default - let state machine control it
+      // Otherwise, PTW handshake breaks when waiting for ptw_resp_valid
+      // ptw_req_valid <= 0;  // BUG: This clears the request before response arrives!
 
       // TLB flush logic
       if (tlb_flush_all) begin
@@ -403,6 +405,9 @@ module mmu #(
                 default: ptw_state <= PTW_FAULT;
               endcase
             end
+          end else begin
+            // Waiting for response - hold request valid
+            ptw_req_valid <= 1;
           end
         end
 
@@ -437,6 +442,7 @@ module mmu #(
             req_paddr <= {ptw_pte_data[53:10], ptw_vaddr_save[PAGE_SHIFT-1:0]};
           end
           req_ready <= 1;
+          ptw_req_valid <= 0;  // Clear PTW request
 
           ptw_state <= PTW_IDLE;
         end
@@ -446,6 +452,7 @@ module mmu #(
           req_page_fault <= 1;
           req_fault_vaddr <= ptw_vaddr_save;
           req_ready <= 1;
+          ptw_req_valid <= 0;  // Clear PTW request
           ptw_state <= PTW_IDLE;
         end
 
