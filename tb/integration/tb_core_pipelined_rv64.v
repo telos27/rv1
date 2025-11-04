@@ -24,6 +24,15 @@ module tb_core_pipelined_rv64;
   wire [63:0] pc;
   wire [31:0] instruction;
 
+  // Bus interface signals (for core with bus master port)
+  wire        bus_req_valid;
+  wire [63:0] bus_req_addr;
+  wire [63:0] bus_req_wdata;
+  wire        bus_req_we;
+  wire [2:0]  bus_req_size;
+  wire        bus_req_ready;
+  wire [63:0] bus_req_rdata;
+
   // Cycle counter
   integer cycle_count;
 
@@ -42,8 +51,33 @@ module tb_core_pipelined_rv64;
     .reset_n(reset_n),
     .mtip_in(1'b0),      // No timer interrupt for basic tests
     .msip_in(1'b0),      // No software interrupt for basic tests
+    .meip_in(1'b0),      // No external interrupt for basic tests
+    .seip_in(1'b0),      // No external interrupt for basic tests
+    .bus_req_valid(bus_req_valid),
+    .bus_req_addr(bus_req_addr),
+    .bus_req_wdata(bus_req_wdata),
+    .bus_req_we(bus_req_we),
+    .bus_req_size(bus_req_size),
+    .bus_req_ready(bus_req_ready),
+    .bus_req_rdata(bus_req_rdata),
     .pc_out(pc),
     .instr_out(instruction)
+  );
+
+  // Data memory bus adapter (handles byte-level access for data memory)
+  dmem_bus_adapter #(
+    .XLEN(64),
+    .DMEM_SIZE(16384)  // 16KB data memory
+  ) dmem_adapter (
+    .clk(clk),
+    .reset_n(reset_n),
+    .req_valid(bus_req_valid),
+    .req_addr(bus_req_addr),
+    .req_wdata(bus_req_wdata),
+    .req_we(bus_req_we),
+    .req_size(bus_req_size),
+    .req_ready(bus_req_ready),
+    .req_rdata(bus_req_rdata)
   );
 
   // Clock generation

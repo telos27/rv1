@@ -50,10 +50,19 @@ module tb_core_pipelined;
   integer branch_flushes;
 
   // RISC-V compliance tests start at 0x80000000
+  // For RV64, use 64-bit reset vector; for RV32, use 32-bit
   `ifdef COMPLIANCE_TEST
-    parameter RESET_VEC = 32'h80000000;
+    `ifdef RV64
+      parameter [63:0] RESET_VEC = 64'h0000000080000000;
+    `else
+      parameter [31:0] RESET_VEC = 32'h80000000;
+    `endif
   `else
-    parameter RESET_VEC = 32'h00000000;
+    `ifdef RV64
+      parameter [63:0] RESET_VEC = 64'h0000000080000000;
+    `else
+      parameter [31:0] RESET_VEC = 32'h00000000;
+    `endif
   `endif
 
   // Instantiate DUT (pipelined core)

@@ -3,12 +3,23 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 78, 2025-11-03)
+## Current Status (Session 79, 2025-11-03)
 
 ### 🎯 CURRENT PHASE: Phase 3 - RV64 Upgrade (In Progress)
 - **Previous Phase**: ✅ **Phase 2 COMPLETE** - FreeRTOS fully operational!
-- **Current Focus**: ✅ RV64I word operations COMPLETE - All 9 instructions validated!
-- **Documentation**: See `docs/SESSION_78_CONTINUED_SRAIW_BUG_FIXED.md` for latest progress
+- **Current Focus**: ✅ **RV64I Load/Store COMPLETE** - LD, LWU, SD validated!
+- **Documentation**: See `docs/SESSION_79_RV64I_LOAD_STORE_FIX.md` for latest progress
+
+### 🎉 Phase 3 Achievements (Sessions 77-79, Day 1-3)
+**Milestone**: RV64I instruction set implementation and validation
+
+**Validated Instructions**:
+  - ✅ **Word Operations** (Session 78): All 9 RV64I-W instructions (ADDIW, ADDW, SUBW, SLLIW, SRLIW, SRAIW, SLLW, SRLW, SRAW)
+  - ✅ **Load/Store** (Session 79): All 3 RV64I load/store instructions (LD, LWU, SD)
+  - ✅ **Configuration** (Session 77-78): XLEN=64 parameter support, memory expansion
+
+**Critical Fix** (Session 79):
+  - **RV64 Testbench Bus Interface** - Added missing dmem_bus_adapter, fixed load instructions
 
 ### 🎉 Phase 2 Achievements (Sessions 62-76, 2 weeks)
 **Milestone**: FreeRTOS v11.1.0 fully operational with multitasking, timer interrupts, and I/O
@@ -43,7 +54,35 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - Identify modules requiring 64-bit modifications
   - Set up RV64 test infrastructure
 
-### Latest Sessions (78-cont, 78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66)
+### Latest Sessions (79, 78-cont, 78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67)
+
+**Session 79** (2025-11-03): RV64I Load/Store Instructions - Testbench Bus Interface Fix ✅🎉🎉🎉
+- **Goal**: Validate RV64I load/store instructions (LD, LWU, SD)
+- **Achievement**: ✅ **All 3 RV64I load/store instructions working!**
+- **Problem Found**: RV64 testbench missing bus interface connections
+  - Core has bus master interface (bus_req_valid, bus_req_addr, etc.)
+  - RV64 testbench didn't connect these ports
+  - Unconnected `bus_req_ready` and `bus_req_rdata` caused undefined behavior
+  - Loads returned 0 because `bus_req_rdata` was undefined
+- **The Fix** (`tb/integration/tb_core_pipelined_rv64.v`):
+  - Added bus interface signal declarations (valid, addr, wdata, we, size, ready, rdata)
+  - Connected all bus interface ports to core
+  - Instantiated `dmem_bus_adapter` module to handle data memory access
+  - Added missing interrupt ports (meip_in, seip_in)
+- **Test Results**:
+  - ✅ **LD** (Load Doubleword): Loads 64-bit values correctly
+  - ✅ **LWU** (Load Word Unsigned): Zero-extends 32-bit to 64-bit (0x00000000fedcba98)
+  - ✅ **SD** (Store Doubleword): Stores 64-bit values correctly
+  - ✅ **64-bit SD+LD**: Full 64-bit value (0x123456789ABCDEF0) verified
+- **Key Insight**: Hardware was already correct!
+  - Data memory module already supported LD/LWU/SD (funct3 handling)
+  - Decoder and control logic already handled RV64I instructions
+  - Only testbench was broken - no RTL changes needed
+- **Additional Fixes**:
+  - Updated `tools/run_test_by_name.sh` to respect XLEN environment variable
+  - Updated `tb/integration/tb_core_pipelined.v` with RV64 reset vector support
+- **Impact**: RV64I load/store complete, ready for compliance testing
+- See: `docs/SESSION_79_RV64I_LOAD_STORE_FIX.md`
 
 **Session 78 Continued** (2025-11-03): SRAIW Bug Fixed - Word Operations Complete! 🎉🎉🎉
 - **Goal**: Debug comprehensive word operations test failure

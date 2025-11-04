@@ -27,7 +27,7 @@ OFFICIAL=false
 DEBUG=false
 WAVES=false
 TIMEOUT=10
-XLEN=32
+XLEN=${XLEN:-32}  # Respect XLEN environment variable, default to 32
 
 # Colors for output
 RED='\033[0;31m'
