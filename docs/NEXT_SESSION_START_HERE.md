@@ -1,144 +1,238 @@
-# 🚀 Next Session: Fix xRET MPP/SPP Bug
+# Next Session: Start Here 🚀
 
-**Priority**: 🔴 CRITICAL
-**Estimated Time**: 15 minutes
-**Status**: Bug identified, fix ready to apply
+**Date**: Session 89 (next session after 2025-11-04)
+**Phase**: Phase 4 Prep - Test Implementation
+**Status**: Ready to begin simplified incremental test development
 
 ---
 
-## Quick Start
+## Quick Context
 
-### 1. Review Bug Report (5 min)
-Read: `docs/BUG_XRET_MPP_SPP_RESET.md`
+### What We Accomplished (Session 88)
+✅ Analyzed test coverage gaps (44 tests needed)
+✅ Created comprehensive test plan (3-4 weeks, all priorities)
+✅ Decided on Option A: implement ALL 44 tests before xv6
+✅ Created 2,397 lines of planning documentation
+✅ Implemented first test (`test_sum_basic.s` - PASSES ✅)
+✅ Tagged v1.0-rv64-complete milestone
+✅ All changes pushed to GitHub
 
-**TL;DR**: MRET sets MPP=11 (M-mode) after execution instead of MPP=00 (U-mode), violating RISC-V spec and preventing U-mode transitions via MRET.
+### Current State
+- **Official Tests**: 187/187 (100% pass) - RV32/RV64 IMAFDC ✅
+- **Custom Tests**: 231 tests, 1/44 new tests working
+- **Git**: Clean, all changes committed and pushed
+- **Next Milestone**: v1.1-xv6-ready (after 44 tests)
 
-### 2. Apply One-Line Fix (1 min)
+---
 
-**File**: `rtl/core/csr_file.v`
-**Line**: 494
+## Next Session Plan: Simplified Incremental Approach
 
-**Change**:
-```verilog
-// BEFORE:
-mstatus_mpp_r  <= 2'b11;            // Set MPP to M-mode
+### Strategy: Build Complexity Gradually
 
-// AFTER:
-mstatus_mpp_r  <= 2'b00;            // Set MPP to U-mode (least privileged)
+**Phase 1: CSR/Bit Tests (Simple, no VM)**
+Start here ← YOU ARE HERE 👈
+
+1. ✅ `test_sum_basic.s` - DONE (toggle SUM bit)
+2. ⏭️ `test_mxr_basic.s` - Toggle MXR bit
+3. ⏭️ `test_sum_mxr_csr.s` - Combined SUM+MXR CSR test
+
+**Phase 2: Simple VM (Identity mapping)**
+4. `test_vm_identity_permissions.s` - R/W/X/U bits with identity mapping
+5. `test_vm_identity_sum.s` - SUM behavior with identity-mapped pages
+
+**Phase 3: Non-Identity VM (Real translations)**
+6. `test_vm_non_identity_simple.s` - VA→PA mapping
+7. `test_sum_with_translation.s` - SUM with real page translation
+
+**Phase 4: Trap Handling**
+8. `test_page_fault_simple.s` - Basic page fault generation
+9. `test_sum_disabled.s` (revised) - S-mode U-page fault
+10. Continue with remaining 34 tests...
+
+---
+
+## Recommended Starting Point
+
+### Test #2: `test_mxr_basic.s`
+
+**Purpose**: Verify MSTATUS.MXR bit (bit 19) can be toggled
+
+**Template** (based on working `test_sum_basic.s`):
+```assembly
+.include "tests/asm/include/priv_test_macros.s"
+.option norvc
+
+.section .text
+.globl _start
+
+_start:
+    TEST_STAGE 1
+
+    # Enable MXR bit
+    li      t0, MSTATUS_MXR         # 0x80000 = bit 19
+    csrrs   zero, mstatus, t0
+
+    TEST_STAGE 2
+
+    # Verify MXR bit is set
+    csrr    t1, mstatus
+    li      t2, MSTATUS_MXR
+    and     t3, t1, t2
+    beqz    t3, test_fail           # Should be set
+
+    TEST_STAGE 3
+
+    # Clear MXR bit
+    li      t0, MSTATUS_MXR
+    csrrc   zero, mstatus, t0
+
+    TEST_STAGE 4
+
+    # Verify MXR bit is clear
+    csrr    t1, mstatus
+    li      t2, MSTATUS_MXR
+    and     t3, t1, t2
+    bnez    t3, test_fail           # Should be clear
+
+    TEST_PASS
+
+test_fail:
+    TEST_FAIL
+
+TRAP_TEST_DATA_AREA
 ```
 
-### 3. Clean Up Debug Code (5 min)
+**Run**:
+```bash
+env XLEN=32 timeout 5s ./tools/run_test_by_name.sh test_mxr_basic
+```
 
-Remove all `DEBUG_XRET_PRIV` conditional blocks from:
-- `rtl/core/exception_unit.v` (lines 12-14, 101-114, 200-204)
-- `rtl/core/rv32i_core_pipelined.v` (lines 1451-1453, 495-509, 1556-1567)
-- `rtl/core/csr_file.v` (lines 504-507)
+**Expected**: Should pass quickly (similar to test_sum_basic)
 
-### 4. Verify Fix (4 min)
+---
+
+## Key Files to Reference
+
+### Planning Documents
+- `docs/PHASE_4_PREP_TEST_PLAN.md` - Complete 44-test plan
+- `docs/PHASE_4_OS_READINESS_ANALYSIS.md` - Gap analysis details
+- `docs/SESSION_88_PHASE4_PREP_START.md` - Session 88 summary
+
+### Working Test Example
+- `tests/asm/test_sum_basic.s` - Template for simple CSR tests
+
+### Test Infrastructure
+- `tests/asm/include/priv_test_macros.s` - Macro library
+- `tools/run_test_by_name.sh` - Test runner script
+- `make test-quick` - Quick regression (14 tests)
+
+---
+
+## Session 89 Goals
+
+### Minimum (Quick Session)
+- [ ] Implement `test_mxr_basic.s` ✅
+- [ ] Verify it passes
+- [ ] Commit and push
+
+### Ideal (Productive Session)
+- [ ] Complete Phase 1: All 3 CSR/bit tests
+  - [ ] `test_mxr_basic.s`
+  - [ ] `test_sum_mxr_csr.s` (combined test)
+- [ ] Start Phase 2: First VM test
+- [ ] 3-4 tests total working
+
+### Stretch (Great Session)
+- [ ] Complete Phase 1 & Phase 2 (5 tests total)
+- [ ] Start Phase 3 (non-identity VM)
+- [ ] 5-7 tests working
+
+---
+
+## Quick Commands Reference
 
 ```bash
-# Quick smoke test
+# Create new test
+vim tests/asm/test_mxr_basic.s
+
+# Run single test
+env XLEN=32 timeout 5s ./tools/run_test_by_name.sh test_mxr_basic
+
+# Quick regression
 make test-quick
 
-# Test the fix
-env XLEN=32 ./tools/test_pipelined.sh test_mret_umode_minimal
-env XLEN=32 ./tools/test_pipelined.sh test_xret_privilege_trap
-
-# Expected: Both tests PASS with t3=0xDEADBEEF
-```
-
-### 5. Full Regression (Optional, 60s)
-
-```bash
+# Full RV32 compliance
 env XLEN=32 ./tools/run_official_tests.sh all
-# Expected: 81/81 tests PASS (maintaining 100% compliance)
-```
 
-### 6. Commit
+# Check git status
+git status
 
-```bash
-git add -A
-git commit -m "Fix: xRET MPP/SPP reset to least-privileged mode
-
-Bug: After MRET, MPP was unconditionally set to 11 (M-mode) instead
-of 00 (U-mode), preventing MRET from being used to enter U-mode.
-This violated RISC-V Privileged Spec v1.12 Section 3.3.1.
-
-Fix: Set MPP to 2'b00 (U-mode) after MRET, matching the spec
-requirement to use the 'least-privileged supported mode'.
-
-Impact:
-- Enables proper M→U→M privilege transitions via MRET
-- Fixes test_xret_privilege_trap.s and test_mret_umode_minimal.s
-- No impact on existing tests (all 81 official tests still pass)
-
-Files changed:
-- rtl/core/csr_file.v (line 494): MPP reset value 11→00
-- docs/BUG_XRET_MPP_SPP_RESET.md: Complete bug analysis
-- tests/asm/test_mret_umode_minimal.s: Minimal repro test
-
-Verification:
-- test_mret_umode_minimal: PASS
-- test_xret_privilege_trap: PASS
-- Official compliance: 81/81 PASS (100%)
-- Quick regression: 14/14 PASS
-
-Resolves: Phase 1 U-Mode privilege testing blocker
-
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+# Commit when ready
+git add tests/asm/test_*.s
+git commit -m "Session 89: <describe tests added>"
+git push origin main
 ```
 
 ---
 
-## Background
+## Debug Tips (If Tests Fail)
 
-### What Happened This Session
+### Test Times Out
+- Check x29 (stage register) to see where it stopped
+- Add more TEST_STAGE markers
+- Verify no infinite loops
+- Check PC value at timeout
 
-1. ✅ Investigated "MRET in U-mode not trapping" issue
-2. ✅ Added comprehensive debug instrumentation
-3. ✅ Identified root cause: MPP reset to wrong value after MRET
-4. ✅ Verified fix approach against RISC-V spec
-5. ✅ Created minimal test case and documentation
+### Test Fails
+- Check x28 value (should be 0xDEADBEEF for pass, 0xDEADDEAD for fail)
+- Add debug output with TEST_STAGE
+- Verify CSR bit positions (SUM=18, MXR=19)
+- Check macro expansions
 
-### Current Status
-
-- **Official Compliance**: 81/81 tests (100%) ✅
-- **Quick Regression**: 14/14 tests ✅
-- **Phase 1 Privilege Tests**: 5/6 passing (1 skipped for MMU)
-- **Blocker**: This xRET bug prevents completing Phase 2 privilege tests
-
-### After This Fix
-
-- Phase 1: 6/6 tests passing (or 5/6 with 1 intentionally skipped)
-- Ready to proceed with Phase 2: Status Register State Machine (5 tests)
-- No regression risk: fix aligns with spec, existing tests don't rely on buggy behavior
+### Compilation Errors
+- Verify .include path is correct
+- Check macro names match library
+- Ensure .option norvc if not using compressed
 
 ---
 
-## Reference Links
+## Progress Tracking
 
-- **Bug Report**: `docs/BUG_XRET_MPP_SPP_RESET.md`
-- **Test Files**:
-  - `tests/asm/test_mret_umode_minimal.s`
-  - `tests/asm/test_xret_privilege_trap.s`
-- **RISC-V Spec**: Privileged Spec v1.12, Section 3.3.1 (mstatus register)
+**Overall**: 1/44 tests working (2.3%)
 
----
+**Week 1 (Priority 1A)**: 1/10 tests
+- ✅ test_sum_basic.s
+- ⏭️ test_mxr_basic.s
+- ⏭️ test_sum_mxr_csr.s
+- ⏭️ 7 more tests (VM, TLB)
 
-## If You Need to Skip This
-
-If you want to work on something else first, this is safe to defer. The bug only affects:
-- New U-mode privilege tests (not yet part of regression)
-- Software using MRET to enter U-mode (no existing code does this)
-
-All 81 official tests and 14 quick regression tests pass with or without this fix.
+**Estimated Time**:
+- Simple CSR tests: 30-60 min each
+- Simple VM tests: 1-2 hours each
+- Complex tests: 2-4 hours each
 
 ---
 
-**Estimated total time**: 15 minutes
-**Confidence**: 🟢 HIGH (one-line fix, thoroughly analyzed)
-**Risk**: 🟢 LOW (spec-compliant, no regression expected)
+## Success Criteria
 
-Let's fix it! 🔧
+### This Test Working
+- ✅ Assembles without errors
+- ✅ Runs to completion (no timeout)
+- ✅ x28 = 0xDEADBEEF (TEST_PASS)
+- ✅ Takes < 1000 cycles
+
+### Session Success
+- ✅ At least 1 new test passing
+- ✅ No regressions (make test-quick still passes)
+- ✅ Changes committed and pushed
+- ✅ Documentation updated
+
+---
+
+## Let's Go! 🚀
+
+**Start with**: `test_mxr_basic.s` (simple CSR toggle, 60 lines, 30 min)
+
+**Remember**: Keep it simple, build incrementally, test often!
+
+Good luck! 💪
