@@ -126,7 +126,7 @@ if [ "$OFFICIAL" = true ]; then
   if [ -z "$HEX_FILE" ] || [ ! -f "$HEX_FILE" ]; then
     echo -e "${RED}Error: Official test not found: $TEST_NAME${NC}"
     echo "Available official tests:"
-    find "$PROJECT_ROOT/tests/official-compliance" -name "*.hex" -exec basename {} \; | head -10
+    find "$PROJECT_ROOT/tests/official-compliance" -name "*.hex" -print0 2>/dev/null | xargs -0 -n1 basename 2>/dev/null | head -10
     exit 1
   fi
 
@@ -151,7 +151,7 @@ else
     echo "  - tests/asm/*.s"
     echo ""
     echo "Available tests (first 10):"
-    find "$PROJECT_ROOT/tests/asm" -name "*.s" -exec basename {} .s \; | head -10
+    find "$PROJECT_ROOT/tests/asm" -name "*.s" -print0 2>/dev/null | xargs -0 -n1 basename 2>/dev/null | sed 's/\.s$//' | head -10
     exit 1
   fi
 

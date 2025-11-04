@@ -273,38 +273,29 @@
 // ============================================================================
 
 `ifdef CONFIG_RV64I
-  `ifndef XLEN
-    `define XLEN 64
-  `endif
-  // Extensions default to OFF for minimal RV64I
-  `ifndef ENABLE_M_EXT
-    `define ENABLE_M_EXT 0
-  `endif
-  `ifndef ENABLE_A_EXT
-    `define ENABLE_A_EXT 0
-  `endif
-  `ifndef ENABLE_C_EXT
-    `define ENABLE_C_EXT 0
-  `endif
+  `undef XLEN
+  `define XLEN 64
+  // Extensions forcibly disabled for minimal RV64I (must use undef/define to override defaults)
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 0
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 0
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 0
 `endif
 
 `ifdef CONFIG_RV64GC
-  `ifndef XLEN
-    `define XLEN 64
-  `endif
-  // Extensions default to ON for RV64GC
-  `ifndef ENABLE_M_EXT
-    `define ENABLE_M_EXT 1
-  `endif
-  `ifndef ENABLE_A_EXT
-    `define ENABLE_A_EXT 1
-  `endif
-  `ifndef ENABLE_C_EXT
-    `define ENABLE_C_EXT 1
-  `endif
-  `ifndef ENABLE_ZIFENCEI
-    `define ENABLE_ZIFENCEI 1
-  `endif
+  `undef XLEN
+  `define XLEN 64
+  // Extensions forcibly enabled for RV64GC (must use undef/define to override defaults)
+  `undef ENABLE_M_EXT
+  `define ENABLE_M_EXT 1
+  `undef ENABLE_A_EXT
+  `define ENABLE_A_EXT 1
+  `undef ENABLE_C_EXT
+  `define ENABLE_C_EXT 1
+  `undef ENABLE_ZIFENCEI
+  `define ENABLE_ZIFENCEI 1
 `endif
 
 `endif // RV_CONFIG_VH
