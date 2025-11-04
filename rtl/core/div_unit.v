@@ -52,8 +52,25 @@ module div_unit #(
   wire negate_dividend = is_signed_op && sign_dividend;
   wire negate_divisor  = is_signed_op && sign_divisor;
 
-  wire [XLEN-1:0] abs_dividend = negate_dividend ? (~dividend + 1'b1) : dividend;
-  wire [XLEN-1:0] abs_divisor  = negate_divisor  ? (~divisor + 1'b1)  : divisor;
+  // For word operations, mask to lower 32 bits
+  // For signed operations (DIV/REM), sign-extend; for unsigned (DIVU/REMU), zero-extend
+  wire [XLEN-1:0] masked_dividend, masked_divisor;
+  generate
+    if (XLEN == 64) begin : gen_mask_64
+      assign masked_dividend = is_word_op ?
+                              (is_signed_op ? {{32{dividend[31]}}, dividend[31:0]} : {{32{1'b0}}, dividend[31:0]}) :
+                              dividend;
+      assign masked_divisor  = is_word_op ?
+                              (is_signed_op ? {{32{divisor[31]}}, divisor[31:0]} : {{32{1'b0}}, divisor[31:0]}) :
+                              divisor;
+    end else begin : gen_mask_32
+      assign masked_dividend = dividend;
+      assign masked_divisor  = divisor;
+    end
+  endgenerate
+
+  wire [XLEN-1:0] abs_dividend = negate_dividend ? (~masked_dividend + 1'b1) : masked_dividend;
+  wire [XLEN-1:0] abs_divisor  = negate_divisor  ? (~masked_divisor + 1'b1)  : masked_divisor;
 
   // Division registers (PicoRV32-style algorithm)
   reg [XLEN-1:0]     dividend_reg;   // Holds remainder during computation
@@ -66,6 +83,9 @@ module div_unit #(
   reg       word_op_reg;
   reg       outsign;               // Output sign for signed operations
   reg       running;
+
+  // Temporary result extraction register
+  reg [XLEN-1:0] extracted_result;
 
   // Busy signal: high when running
   assign busy = running;
@@ -152,17 +172,19 @@ module div_unit #(
         case (op_reg)
           DIV, DIVU: begin
             // Return quotient (negated if outsign is set)
-            result <= outsign ? (~quotient + 1'b1) : quotient;
+            extracted_result = outsign ? (~quotient + 1'b1) : quotient;
           end
           REM, REMU: begin
             // Return remainder (dividend_reg, negated if outsign is set)
-            result <= outsign ? (~dividend_reg + 1'b1) : dividend_reg;
+            extracted_result = outsign ? (~dividend_reg + 1'b1) : dividend_reg;
           end
         endcase
 
         // Sign-extend for RV64W operations
         if (XLEN == 64 && word_op_reg) begin
-          result <= {{32{result[31]}}, result[31:0]};
+          result <= {{32{extracted_result[31]}}, extracted_result[31:0]};
+        end else begin
+          result <= extracted_result;
         end
 
         `ifdef DEBUG_DIV

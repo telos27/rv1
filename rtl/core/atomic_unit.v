@@ -228,11 +228,28 @@ module atomic_unit #(
     end
 
     // AMO computation logic
-    // Sign-extended operands for signed comparisons (declared as wires)
-    wire signed [XLEN-1:0] loaded_signed;
-    wire signed [XLEN-1:0] src_signed;
-    assign loaded_signed = loaded_value;
-    assign src_signed = current_src;
+    // For word operations on RV64, mask operands appropriately:
+    // - Signed operations (MIN/MAX): sign-extend from bit 31
+    // - Unsigned operations (MINU/MAXU): zero-extend
+    wire signed [XLEN-1:0] loaded_signed, src_signed;
+    wire [XLEN-1:0] loaded_unsigned, src_unsigned;
+
+    generate
+        if (XLEN == 64) begin : gen_mask_64
+            // For signed comparisons: sign-extend word operations
+            assign loaded_signed = is_word ? {{32{loaded_value[31]}}, loaded_value[31:0]} : $signed(loaded_value);
+            assign src_signed = is_word ? {{32{current_src[31]}}, current_src[31:0]} : $signed(current_src);
+
+            // For unsigned comparisons: zero-extend word operations
+            assign loaded_unsigned = is_word ? {{32{1'b0}}, loaded_value[31:0]} : loaded_value;
+            assign src_unsigned = is_word ? {{32{1'b0}}, current_src[31:0]} : current_src;
+        end else begin : gen_mask_32
+            assign loaded_signed = $signed(loaded_value);
+            assign src_signed = $signed(current_src);
+            assign loaded_unsigned = loaded_value;
+            assign src_unsigned = current_src;
+        end
+    endgenerate
 
     always @(*) begin
         computed_value = loaded_value;  // Default: no change
@@ -267,11 +284,13 @@ module atomic_unit #(
             end
 
             ATOMIC_MINU: begin
-                computed_value = (loaded_value < current_src) ? loaded_value : current_src;
+                // Use zero-extended values for unsigned comparison (handles RV64 word operations)
+                computed_value = (loaded_unsigned < src_unsigned) ? loaded_value : current_src;
             end
 
             ATOMIC_MAXU: begin
-                computed_value = (loaded_value > current_src) ? loaded_value : current_src;
+                // Use zero-extended values for unsigned comparison (handles RV64 word operations)
+                computed_value = (loaded_unsigned > src_unsigned) ? loaded_value : current_src;
             end
 
             default: begin
@@ -295,7 +314,12 @@ module atomic_unit #(
         end else if (state == STATE_WAIT_READ && mem_ready) begin
             if (is_lr || is_amo) begin
                 // LR and AMO return the loaded value
-                result <= mem_rdata;
+                // For word operations on RV64, sign-extend from bit 31
+                if (XLEN == 64 && is_word) begin
+                    result <= {{32{mem_rdata[31]}}, mem_rdata[31:0]};
+                end else begin
+                    result <= mem_rdata;
+                end
                 `ifdef DEBUG_ATOMIC
                 if (is_lr) $display("[ATOMIC] LR @ 0x%08h -> 0x%08h", current_addr, mem_rdata);
                 if (is_amo) $display("[ATOMIC] AMO @ 0x%08h -> 0x%08h (op=%d)", current_addr, mem_rdata, current_op);

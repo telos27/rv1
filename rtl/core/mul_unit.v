@@ -40,8 +40,8 @@ module mul_unit #(
   reg [1:0] state, state_next;
 
   // Determine effective operand width for RV64W operations
-  wire [5:0] op_width;
-  assign op_width = (XLEN == 64 && is_word_op) ? 6'd32 : XLEN[5:0];
+  wire [6:0] op_width;
+  assign op_width = (XLEN == 64 && is_word_op) ? 7'd32 : XLEN[6:0];
 
   // Sign handling
   wire op_a_signed, op_b_signed;
@@ -65,8 +65,20 @@ module mul_unit #(
   wire negate_a = op_a_signed && sign_a;
   wire negate_b = op_b_signed && sign_b;
 
-  assign abs_a = negate_a ? (~operand_a + 1'b1) : operand_a;
-  assign abs_b = negate_b ? (~operand_b + 1'b1) : operand_b;
+  // For word operations, mask to lower 32 bits and sign-extend
+  wire [XLEN-1:0] masked_a, masked_b;
+  generate
+    if (XLEN == 64) begin : gen_mask_64
+      assign masked_a = is_word_op ? {{32{operand_a[31]}}, operand_a[31:0]} : operand_a;
+      assign masked_b = is_word_op ? {{32{operand_b[31]}}, operand_b[31:0]} : operand_b;
+    end else begin : gen_mask_32
+      assign masked_a = operand_a;
+      assign masked_b = operand_b;
+    end
+  endgenerate
+
+  assign abs_a = negate_a ? (~masked_a + 1'b1) : masked_a;
+  assign abs_b = negate_b ? (~masked_b + 1'b1) : masked_b;
 
   // Double-width accumulator for product
   reg [2*XLEN-1:0] product;
@@ -82,6 +94,9 @@ module mul_unit #(
   // Control signals
   reg [1:0] op_reg;
   reg       word_op_reg;
+
+  // Temporary result extraction register
+  reg [XLEN-1:0] extracted_result;
 
   // State machine
   always @(posedge clk or negedge reset_n) begin
@@ -156,13 +171,14 @@ module mul_unit #(
           ready <= 1'b1;
 
           // Extract result based on operation
+          // Note: For word operations, result will be sign-extended after extraction
           case (op_reg)
             MUL: begin
               // Lower XLEN bits
               if (result_negative) begin
-                result <= ~product[XLEN-1:0] + 1'b1;
+                extracted_result = ~product[XLEN-1:0] + 1'b1;
               end else begin
-                result <= product[XLEN-1:0];
+                extracted_result = product[XLEN-1:0];
               end
             end
 
@@ -172,18 +188,20 @@ module mul_unit #(
                 // Negate 2*XLEN product, then take upper bits
                 reg [2*XLEN-1:0] neg_product;
                 neg_product = ~product + 1'b1;
-                result <= neg_product[2*XLEN-1:XLEN];
+                extracted_result = neg_product[2*XLEN-1:XLEN];
               end else begin
-                result <= product[2*XLEN-1:XLEN];
+                extracted_result = product[2*XLEN-1:XLEN];
               end
             end
 
-            default: result <= product[XLEN-1:0];
+            default: extracted_result = product[XLEN-1:0];
           endcase
 
           // Sign-extend for RV64W operations
           if (XLEN == 64 && word_op_reg) begin
-            result <= {{32{result[31]}}, result[31:0]};
+            result <= {{32{extracted_result[31]}}, extracted_result[31:0]};
+          end else begin
+            result <= extracted_result;
           end
         end
 

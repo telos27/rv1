@@ -3,29 +3,31 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 81, 2025-11-03)
+## Current Status (Session 82, 2025-11-03)
 
 ### 🎯 CURRENT PHASE: Phase 3 - RV64 Upgrade (In Progress)
 - **Previous Phase**: ✅ **Phase 2 COMPLETE** - FreeRTOS fully operational!
-- **Current Focus**: ✅ **RV64I COMPLETE** - 53/54 tests passing (98.1%)!
-- **Documentation**: See `docs/SESSION_81_RV64I_COMPLIANCE_COMPLETE.md` for latest progress
+- **Current Focus**: ✅ **RV64M COMPLETE (100%)**, ⚠️ **RV64A 95% COMPLETE** (1 test failing)
+- **Documentation**: See `docs/SESSION_82_RV64M_RV64A_COMPLETE.md` for latest progress
 
-### 🎉 Phase 3 Achievements (Sessions 77-81, Day 1-5)
-**Milestone**: ✅ **RV64I instruction set COMPLETE - 98.1% compliance!**
+### 🎉 Phase 3 Achievements (Sessions 77-82, Day 1-6)
+**Milestone**: ✅ **RV64IMA nearly complete - 84/86 tests (98%)!**
 
 **Implemented Instructions**:
-  - ✅ **Word Operations** (Session 78): All 9 RV64I-W instructions (ADDIW, ADDW, SUBW, SLLIW, SRLIW, SRAIW, SLLW, SRLW, SRAW)
-  - ✅ **Load/Store** (Session 79): All 3 RV64I load/store instructions (LD, LWU, SD)
-  - ✅ **Configuration** (Session 77-78): XLEN=64 parameter support, memory expansion
+  - ✅ **RV64I** (Sessions 77-81): All base integer instructions, word operations, 64-bit load/store
+  - ✅ **RV64M** (Session 82): All 13 multiply/divide instructions (64-bit + word variants)
+  - ✅ **RV64A** (Session 82): 18/19 atomic operations (AMO.D/W, LR.D/W, SC.D/W)
 
 **Test Infrastructure** (Session 80):
   - ✅ **RV64 Testbench** - Added ECALL detection for compliance tests
   - ✅ **Test Runner** - Created `tools/run_rv64_tests.sh` for automated testing
   - ✅ **Hex Conversion** - Fixed objcopy method to strip addresses
 
-**RV64I Compliance** (Session 81): ✅ **53/54 tests passing (98.1%)**
-  - **Passing**: All arithmetic, logic, shifts, branches, jumps, loads, stores, word operations
-  - **Failing**: fence_i only (expected, same as RV32 - low priority)
+**RV64 Compliance** (Sessions 80-82):
+  - **RV64I**: 53/54 tests (98.1%) - fence_i fails (expected, low priority)
+  - **RV64M**: 13/13 tests (100%) ✅ - All multiply/divide operations passing!
+  - **RV64A**: 18/19 tests (95%) ⚠️ - LR/SC test fails (reservation tracking issue)
+  - **Total RV64IMA**: 84/86 tests (98%)
 
 ### 🎉 Phase 2 Achievements (Sessions 62-76, 2 weeks)
 **Milestone**: FreeRTOS v11.1.0 fully operational with multitasking, timer interrupts, and I/O
@@ -60,7 +62,30 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
   - Identify modules requiring 64-bit modifications
   - Set up RV64 test infrastructure
 
-### Latest Sessions (81, 80, 79, 78-cont, 78, 77, 76, 75, 74, 73, 72, 71, 70, 69, 68)
+### Latest Sessions (82, 81, 80, 79, 78-cont, 78, 77, 76, 75, 74, 73, 72, 71, 70, 69)
+
+**Session 82** (2025-11-03): RV64M Complete (100%), RV64A Mostly Complete (95%)! 🎉🎉🎉
+- **Goal**: Implement and validate RV64M and RV64A extensions
+- **Achievement**: ✅ **RV64M 13/13 (100%)**, ⚠️ **RV64A 18/19 (95%)**
+- **RV64M Results** - All multiply/divide operations passing:
+  - ✅ mul, mulh, mulhsu, mulhu, mulw (all multiply variants)
+  - ✅ div, divu, divw, divuw (all division variants)
+  - ✅ rem, remu, remw, remuw (all remainder variants)
+- **RV64A Results** - Nearly all atomic operations passing:
+  - ✅ All 18 AMO operations (add, and, or, xor, swap, min/max signed/unsigned)
+  - ✅ Both word (.W) and doubleword (.D) variants working
+  - ❌ LR/SC test fails at test #3 (SC without reservation writes to memory)
+- **Bugs Fixed** (7 total):
+  1. Multiply op_width calculation (XLEN[5:0] gave 0 for XLEN=64)
+  2. Result sign-extension race condition (non-blocking assignment conflict)
+  3. Word operation operand masking (used 64-bit instead of 32-bit)
+  4. Unsigned word operations (sign-extend vs zero-extend)
+  5. Signed atomic comparisons (64-bit compare instead of 32-bit for words)
+  6. Unsigned atomic comparisons (sign-extend for unsigned operations)
+  7. Atomic result sign-extension (missing for word operations)
+- **Impact**: RV64IMA 98% complete, only 2 tests failing (fence_i, lrsc)
+- **Next**: Debug LR/SC reservation tracking in Session 83
+- See: `docs/SESSION_82_RV64M_RV64A_COMPLETE.md`
 
 **Session 81** (2025-11-03): RV64I Compliance Testing COMPLETE - 98.1% Success! 🎉🎉🎉
 - **Goal**: Fix remaining RV64I compliance test failures
