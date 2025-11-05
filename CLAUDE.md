@@ -3,14 +3,38 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 92, 2025-11-05)
+## Current Status (Session 93, 2025-11-05)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🎉 **MMU megapage translation FIXED - superpages now work!**
+- **Current Status**: ✅ **MMU V-bit fix complete**, ⚠️ **SUM permission bug discovered**
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_92_MMU_MEGAPAGE_FIX.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+- **Documentation**: `docs/SESSION_93_VM_TESTS_AND_MMU_VBIT_FIX.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+
+### Session 93: VM Multi-Page Test & MMU V-bit Bug Fix (2025-11-05)
+**Achievement**: ✅ **Fixed critical MMU V-bit check bug** + test_vm_identity_multi passes
+**Issue Found**: ⚠️ SUM permission checking not enforcing U-page access restrictions
+
+**Bug Fixed**: MMU PTW wasn't checking PTE valid bit before processing
+- PTW would walk invalid PTEs (V=0), causing infinite loops
+- Security issue: used garbage PPN values from invalid PTEs
+- Fix: Added V-bit check before any PTE processing (rtl/core/mmu.v:420-423)
+
+**Test Fixed**: test_vm_identity_multi PTE values (0x0800CF → 0x200000CF)
+- Wrong: PPN = 0x200 (only 10 bits used)
+- Right: PPN = 0x80000 (full 22 bits for PA 0x80000000)
+- Test now passes: 246 cycles, 5 TLB entries, multi-page identity mapping verified
+
+**Issue Discovered**: SUM bit permission check not working
+- S-mode can access U-pages even with SUM=0 (should fault)
+- CSR read/write works correctly (test_sum_basic_debug passes)
+- Problem is in MMU permission checking or exception generation
+- Blocks 5 Week 1 tests (test_vm_sum_read and variants)
+
+**Progress**: 5/44 tests (11.4%) - Week 1 at 50% (5/10 tests)
+
+**Next Session**: Debug SUM permission issue or proceed with non-SUM VM tests
 
 ### Session 92: Critical MMU Megapage Translation Fix (2025-11-05)
 **Achievement**: 🎉 **Fixed MMU megapage (superpage) address translation - all page sizes now work!**
@@ -151,6 +175,7 @@ ptw_req_valid <= 0;  // BUG: Cleared every cycle, aborting PTW
 
 ### Recent Sessions Summary (Details in docs/SESSION_*.md)
 
+**Session 93** (2025-11-05): ✅ **MMU V-BIT FIX** + test_vm_identity_multi, ⚠️ SUM bug found
 **Session 92** (2025-11-05): 🎉 **MMU MEGAPAGE FIX** - Superpages now work correctly!
 **Session 91** (2025-11-05): 🔧 Fixed testbench reset vector and page table PTE bugs
 **Session 90** (2025-11-04): 🎉 **MMU PTW FIX** - Virtual memory translation now working!
@@ -233,7 +258,11 @@ See `docs/SESSION_*.md` for complete history
 **FPU**: Single/double precision, NaN-boxing
 
 ## Known Issues
-**None!** ✅ Core functionality 100% compliant, all tests passing!
+⚠️ **SUM Permission Check Not Working** (Session 93)
+- S-mode can access U-pages even with SUM=0 (should generate page fault)
+- Blocks 5 Week 1 tests requiring SUM functionality
+- CSR infrastructure works correctly, issue is in MMU permission checking
+- Under investigation - may be function evaluation issue or TLB permission caching
 
 ## OS Integration Roadmap
 | Phase | Status | Milestone | Completion |

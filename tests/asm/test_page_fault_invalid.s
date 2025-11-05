@@ -1,87 +1,85 @@
-# Test: Page Fault - Invalid Page (V=0)
-# Test that accessing a page with V=0 causes a page fault
+# Test: Page fault on invalid PTE
+.include "tests/asm/include/priv_test_macros.s"
+.option norvc
+
+.equ SATP_MODE_SV32, 0x80000000
+.equ CAUSE_LOAD_PAGE_FAULT, 13
 
 .section .data
-.align 12  # Page align (4KB)
-
-# Page table with valid and invalid entries
+.align 12
 page_table:
-    # Entry 0: Valid page (VA 0x00000000-0x003FFFFF)
-    .word 0x000000CF  # PPN=0, V=1, R=1, W=1, X=1, A=1, D=1
+    # Entry 0: INVALID (V=0)
+    .word 0x00000000
+    .fill 511, 4, 0x00000000
 
-    # Entry 1: INVALID page (VA 0x00400000-0x007FFFFF)
-    .word 0x00000000  # V=0 (invalid)
+    # Entry 512: Valid entry for code
+    .word 0x200000CF
+    .fill 511, 4, 0x00000000
 
-    # Fill rest
-    .fill 1022, 4, 0x00000000
+.align 4
+fault_count:
+    .word 0
 
 .section .text
 .globl _start
 
 _start:
-    ###########################################################################
-    # Setup trap handler to catch page faults
-    ###########################################################################
-    la      t0, trap_handler
-    csrw    mtvec, t0
+    TEST_STAGE 1
 
-    ###########################################################################
-    # Enable paging with Sv32
-    ###########################################################################
+    # Enter S-mode
+    SET_STVEC_DIRECT s_trap
+    ENTER_SMODE_M smode_entry
+
+smode_entry:
+    TEST_STAGE 2
+
+    # Enable paging
     la      t0, page_table
     srli    t0, t0, 12
-    li      t1, 0x80000000
+    li      t1, SATP_MODE_SV32
     or      t0, t0, t1
     csrw    satp, t0
     sfence.vma
 
-    ###########################################################################
-    # TEST 1: Access valid page (should work)
-    ###########################################################################
-    li      t1, 0xAAAAAAAA
-    li      t2, 0x00000100      # Address in first page (valid)
-    sw      t1, 0(t2)
-    lw      t3, 0(t2)
-    bne     t1, t3, test_fail
+    TEST_STAGE 3
 
-    ###########################################################################
-    # TEST 2: Access invalid page (should cause page fault)
-    ###########################################################################
-    # This should trigger load page fault (cause = 13)
-    li      s0, 0x00400000      # Address in second page (invalid, V=0)
-    lw      s1, 0(s0)           # This should fault!
+    # Try to access invalid page (should fault)
+    li      t0, 0x00001000  # VA in entry 0's range (invalid PTE)
+    lw      t1, 0(t0)       # This should cause load page fault!
 
-    # Should NOT reach here
+    # If we get here, test failed
     j       test_fail
 
-trap_handler:
-    # Check if we got a page fault
-    csrr    t4, mcause
+smode_after_fault:
+    TEST_STAGE 4
 
-    # Check for load page fault (cause = 13)
-    li      t5, 13
-    bne     t4, t5, test_fail
+    # Verify fault count is 1
+    la      t0, fault_count
+    lw      t1, 0(t0)
+    li      t2, 1
+    bne     t1, t2, test_fail
 
-    # Check mtval contains faulting address
-    csrr    t6, mtval
-    # Note: mtval might be 0 if not implemented
-    # For now, just check we got the right exception cause
-
-    # SUCCESS - We caught the page fault!
-    j       test_pass
-
-test_pass:
-    li      t0, 0xDEADBEEF
-    mv      x28, t0
-    nop
-    nop
-    ebreak
+    TEST_STAGE 5
+    TEST_PASS
 
 test_fail:
-    li      t0, 0xDEADDEAD
-    mv      x28, t0
-    nop
-    nop
-    ebreak
+    TEST_FAIL
 
-.align 4
+s_trap:
+    # Check if it's a load page fault
+    csrr    t0, scause
+    li      t1, CAUSE_LOAD_PAGE_FAULT
+    bne     t0, t1, test_fail
+
+    # Increment fault count
+    la      t2, fault_count
+    lw      t3, 0(t2)
+    addi    t3, t3, 1
+    sw      t3, 0(t2)
+
+    # Return to after the faulting instruction
+    la      t0, smode_after_fault
+    csrw    sepc, t0
+    sret
+
+TRAP_TEST_DATA_AREA

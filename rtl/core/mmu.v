@@ -409,8 +409,12 @@ module mmu #(
             ptw_pte_data <= ptw_resp_data;
             ptw_req_valid <= 0;
 
+            // First check if PTE is valid
+            if (!ptw_resp_data[PTE_V]) begin
+              // Invalid PTE: page fault
+              ptw_state <= PTW_FAULT;
             // Check if this is a leaf PTE
-            if (ptw_resp_data[PTE_R] || ptw_resp_data[PTE_X]) begin
+            end else if (ptw_resp_data[PTE_R] || ptw_resp_data[PTE_X]) begin
               // Leaf PTE found: check permissions
               if (check_permission(ptw_resp_data[7:0], ptw_is_store_save, ptw_is_fetch_save,
                                    privilege_mode, mstatus_sum, mstatus_mxr)) begin

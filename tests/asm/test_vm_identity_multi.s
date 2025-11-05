@@ -62,29 +62,31 @@
 
 page_table_l1:
     # Entry 0: Maps VA 0x00000000-0x003FFFFF (4MB megapage) to PA 0x80000000
-    # This is identity-mapped to our actual code region
-    # PPN[1] = 0x80000000 >> 22 = 0x200
-    # PTE = (0x200 << 10) | 0xCF = 0x80000 | 0xCF = 0x0800CF
-    .word 0x0800CF
+    # For Sv32 megapages: PTE format is [31:10] = PPN (22 bits), [9:0] = flags
+    # Target PA = 0x80000000
+    # PPN = PA[33:12] = 0x80000000 >> 12 = 0x80000 (22 bits)
+    # PTE = (PPN << 10) | flags = (0x80000 << 10) | 0xCF = 0x20000000 | 0xCF = 0x200000CF
+    .word 0x200000CF
 
     # Entry 1: Maps VA 0x00400000-0x007FFFFF → PA 0x80000000 (same as entry 0)
     # This creates multiple VAs mapping to same PA region for TLB testing
-    .word 0x0800CF
+    .word 0x200000CF
 
     # Entry 2: Maps VA 0x00800000-0x00BFFFFF → PA 0x80000000
-    .word 0x0800CF
+    .word 0x200000CF
 
     # Entry 3: Maps VA 0x00C00000-0x00FFFFFF → PA 0x80000000
-    .word 0x0800CF
+    .word 0x200000CF
 
     # Entries 4-511: Invalid
     .fill 508, 4, 0x00000000
 
     # Entry 512: Maps VA 0x80000000-0x803FFFFF (4MB megapage) to PA 0x80000000
     # This is where our code is actually loaded (linker script puts it at 0x80000000)
-    # VPN[1] = 0x200, PPN[1] = 0x80000000 >> 22 = 0x200
-    # PTE = (0x200 << 10) | 0xCF = 0x80000 | 0xCF = 0x0800CF
-    .word 0x0800CF
+    # VPN[1] = VA[31:22] = 0x200 (entry index 512)
+    # Same PPN as entry 0 (both map to PA 0x80000000)
+    # PTE = 0x200000CF
+    .word 0x200000CF
 
     # Entries 513-1023: Invalid
     .fill 511, 4, 0x00000000
