@@ -3,14 +3,47 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 91, 2025-11-05)
+## Current Status (Session 92, 2025-11-05)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🔧 **Critical bugs found in testbench and tests - fixing infrastructure**
+- **Current Status**: 🎉 **MMU megapage translation FIXED - superpages now work!**
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_91_TESTBENCH_FIXES.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+- **Documentation**: `docs/SESSION_92_MMU_MEGAPAGE_FIX.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+
+### Session 92: Critical MMU Megapage Translation Fix (2025-11-05)
+**Achievement**: 🎉 **Fixed MMU megapage (superpage) address translation - all page sizes now work!**
+
+**Bug Discovered**: MMU treated ALL pages as 4KB pages, even megapages!
+- Sv32 4MB megapages (level 1) used wrong page offset: VA[11:0] instead of VA[21:0]
+- Sv39 2MB megapages (level 1) used wrong page offset: VA[11:0] instead of VA[20:0]
+- Sv39 1GB gigapages (level 2) used wrong page offset: VA[11:0] instead of VA[29:0]
+- Result: VA 0x80002000 → PA 0x80000000 instead of PA 0x80002000 (identity mapping broken!)
+
+**Root Cause** (rtl/core/mmu.v:370, 479):
+```verilog
+// BROKEN: Always uses 12-bit offset for all page sizes
+req_paddr <= {ppn, vaddr[11:0]};
+```
+
+**Fix Applied**:
+1. Added `tlb_level_out` to TLB lookup (reads page level from TLB)
+2. Created `construct_pa()` function with proper offset calculation per level:
+   - Sv32: Level 0 = VA[11:0], Level 1 = VA[21:0]
+   - Sv39: Level 0 = VA[11:0], Level 1 = VA[20:0], Level 2 = VA[29:0]
+3. Updated TLB hit path: `req_paddr <= construct_pa(ppn, vaddr, level)`
+4. Updated PTW path: Same construct_pa() call with `ptw_level`
+
+**Verification**:
+- ✅ test_vm_identity_basic.s now PASSES (94 cycles)
+- ✅ Quick regression: 14/14 tests pass
+- ✅ RV32I official: 42/42 tests pass
+- ✅ RV64I official: 50/50 tests pass
+
+**Impact**: Critical for OS support! xv6 and Linux use megapages extensively. Without this fix, MMU was fundamentally broken for superpages.
+
+**Progress**: 4/44 tests working (9.1%) - Week 1 VM tests can now proceed
 
 ### Session 91: Critical Testbench & Test Infrastructure Fixes (2025-11-05)
 **Achievement**: ✅ **Found and fixed critical testbench and page table bugs**
@@ -118,6 +151,8 @@ ptw_req_valid <= 0;  // BUG: Cleared every cycle, aborting PTW
 
 ### Recent Sessions Summary (Details in docs/SESSION_*.md)
 
+**Session 92** (2025-11-05): 🎉 **MMU MEGAPAGE FIX** - Superpages now work correctly!
+**Session 91** (2025-11-05): 🔧 Fixed testbench reset vector and page table PTE bugs
 **Session 90** (2025-11-04): 🎉 **MMU PTW FIX** - Virtual memory translation now working!
 **Session 89** (2025-11-04): ✅ Phase 1 complete - 2 CSR tests added, all passing
 **Session 88** (2025-11-04): 📋 Phase 4 prep - test planning, simplified strategy

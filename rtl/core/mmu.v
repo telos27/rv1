@@ -180,6 +180,7 @@ module mmu #(
   reg [$clog2(TLB_ENTRIES)-1:0] tlb_hit_idx;
   reg [XLEN-1:0] tlb_ppn_out;
   reg [7:0] tlb_pte_out;
+  reg [XLEN-1:0] tlb_level_out;
 
   integer i;
   always @(*) begin
@@ -187,6 +188,7 @@ module mmu #(
     tlb_hit_idx = 0;
     tlb_ppn_out = 0;
     tlb_pte_out = 0;
+    tlb_level_out = 0;
 
     if (translation_enabled && req_valid) begin
       for (i = 0; i < TLB_ENTRIES; i = i + 1) begin
@@ -195,6 +197,7 @@ module mmu #(
           tlb_hit_idx = i[$clog2(TLB_ENTRIES)-1:0];
           tlb_ppn_out = tlb_ppn[i];
           tlb_pte_out = tlb_pte[i];
+          tlb_level_out = tlb_level[i];
         end
       end
     end
@@ -248,6 +251,42 @@ module mmu #(
           // Load: need R or (X and MXR)
           check_permission = pte_flags[PTE_R] || (pte_flags[PTE_X] && mxr);
         end
+      end
+    end
+  endfunction
+
+  // =========================================================================
+  // Physical Address Construction
+  // =========================================================================
+
+  // Construct physical address from PPN and virtual address based on page level
+  // For Sv32:
+  //   - Level 1 (megapage, 4MB): PA = {PPN[1], VA[21:0]}
+  //   - Level 0 (page, 4KB):     PA = {PPN[1], PPN[0], VA[11:0]}
+  // For Sv39:
+  //   - Level 2 (gigapage, 1GB): PA = {PPN[2], VA[29:0]}
+  //   - Level 1 (megapage, 2MB): PA = {PPN[2], PPN[1], VA[20:0]}
+  //   - Level 0 (page, 4KB):     PA = {PPN[2], PPN[1], PPN[0], VA[11:0]}
+  function [XLEN-1:0] construct_pa;
+    input [XLEN-1:0] ppn;    // Full PPN from PTE
+    input [XLEN-1:0] vaddr;  // Virtual address
+    input [XLEN-1:0] level;  // Page table level
+    begin
+      if (XLEN == 32) begin
+        // Sv32
+        case (level)
+          0: construct_pa = {ppn[XLEN-PAGE_SHIFT-1:0], vaddr[PAGE_SHIFT-1:0]};     // 4KB: {PPN, VA[11:0]}
+          1: construct_pa = {ppn[XLEN-PAGE_SHIFT-1:10], vaddr[PAGE_SHIFT+9:0]};    // 4MB: {PPN[1], VA[21:0]}
+          default: construct_pa = {ppn[XLEN-PAGE_SHIFT-1:0], vaddr[PAGE_SHIFT-1:0]};
+        endcase
+      end else begin
+        // Sv39
+        case (level)
+          0: construct_pa = {ppn[XLEN-PAGE_SHIFT-1:0], vaddr[PAGE_SHIFT-1:0]};     // 4KB: {PPN, VA[11:0]}
+          1: construct_pa = {ppn[XLEN-PAGE_SHIFT-1:9], vaddr[PAGE_SHIFT+8:0]};     // 2MB: {PPN[2:1], VA[20:0]}
+          2: construct_pa = {ppn[XLEN-PAGE_SHIFT-1:18], vaddr[PAGE_SHIFT+17:0]};   // 1GB: {PPN[2], VA[29:0]}
+          default: construct_pa = {ppn[XLEN-PAGE_SHIFT-1:0], vaddr[PAGE_SHIFT-1:0]};
+        endcase
       end
     end
   endfunction
@@ -327,8 +366,8 @@ module mmu #(
                 // TLB hit: check permissions
                 if (check_permission(tlb_pte_out, req_is_store, req_is_fetch,
                                      privilege_mode, mstatus_sum, mstatus_mxr)) begin
-                  // Permission granted
-                  req_paddr <= {tlb_ppn_out[XLEN-PAGE_SHIFT-1:0], req_vaddr[PAGE_SHIFT-1:0]};
+                  // Permission granted - construct PA based on page level
+                  req_paddr <= construct_pa(tlb_ppn_out, req_vaddr, tlb_level_out);
                   req_ready <= 1;
                 end else begin
                   // Permission denied
@@ -435,11 +474,11 @@ module mmu #(
           // Update replacement index
           tlb_replace_idx <= tlb_replace_idx + 1;
 
-          // Generate physical address using saved virtual address
+          // Generate physical address using saved virtual address - construct based on page level
           if (XLEN == 32) begin
-            req_paddr <= {ptw_pte_data[31:10], ptw_vaddr_save[PAGE_SHIFT-1:0]};
+            req_paddr <= construct_pa({{10{1'b0}}, ptw_pte_data[31:10]}, ptw_vaddr_save, ptw_level);
           end else begin
-            req_paddr <= {ptw_pte_data[53:10], ptw_vaddr_save[PAGE_SHIFT-1:0]};
+            req_paddr <= construct_pa({{20{1'b0}}, ptw_pte_data[53:10]}, ptw_vaddr_save, ptw_level);
           end
           req_ready <= 1;
           ptw_req_valid <= 0;  // Clear PTW request
