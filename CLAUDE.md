@@ -3,14 +3,45 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 90, 2025-11-04)
+## Current Status (Session 91, 2025-11-05)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🎉 **MMU PTW FIX COMPLETE** - Virtual memory translation now working!
+- **Current Status**: 🔧 **Critical bugs found in testbench and tests - fixing infrastructure**
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_90_MMU_PTW_FIX.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+- **Documentation**: `docs/SESSION_91_TESTBENCH_FIXES.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+
+### Session 91: Critical Testbench & Test Infrastructure Fixes (2025-11-05)
+**Achievement**: ✅ **Found and fixed critical testbench and page table bugs**
+
+**Bugs Discovered**:
+1. **Testbench Reset Vector Bug** (tb/integration/tb_core_pipelined.v)
+   - Reset vector was 0x00000000 for non-compliance tests
+   - All custom tests are linked at 0x80000000 (standard RISC-V reset vector)
+   - CPU executed at PC=0x00000000, causing all PC-relative addresses to be wrong
+   - Result: `auipc` calculated 0x00002000 instead of 0x80002000
+
+2. **Test Page Table Bug** (tests/asm/test_vm_identity_basic.s)
+   - Page table entries had incorrect PPN values (0x0800CF instead of 0x200000CF)
+   - Mapped to PA 0x00200000 instead of PA 0x80000000
+   - Root cause: PTE[31:10] = PPN = PA[33:12], so for PA=0x80000000, PPN=0x80000
+
+**Fixes Applied**:
+- `tb/integration/tb_core_pipelined.v`: Reset vector now always 0x80000000, explicit `.XLEN(32)`
+- `tests/asm/test_vm_identity_basic.s`: Fixed PTEs to 0x200000CF for both entries
+
+**Verification**:
+- ✅ Created test_vm_debug.s - PASSES (proves SATP=0 and M-mode memory work)
+- ✅ MMU TLB updates with correct VPN and PPN
+- ⚠️ test_vm_identity_basic still fails in stage 5, needs further investigation
+
+**Test Created**:
+- test_vm_identity_multi.s - Multi-page VM test (needs PTE fixes)
+
+**Progress**: Infrastructure fixes complete, test debugging ongoing
+
+**Next Phase**: Debug stage 5 failure, apply PTE fixes to test_vm_identity_multi
 
 ### Session 90: MMU PTW Handshake Fix - VM Translation Working! 🎉 (2025-11-04)
 **Achievement**: ✅ **Critical MMU bug fixed - Virtual memory translation operational!**

@@ -29,12 +29,12 @@ module tb_core_pipelined;
   // Testbench signals
   reg         clk;
   reg         reset_n;
-  wire [31:0] pc;
+  wire [31:0] pc;          // Always 32-bit for RV32 tests
   wire [31:0] instruction;
 
   // Bus interface signals (for core with bus master port)
   wire        bus_req_valid;
-  wire [31:0] bus_req_addr;
+  wire [31:0] bus_req_addr;  // RV32 uses 32-bit addresses
   wire [63:0] bus_req_wdata;
   wire        bus_req_we;
   wire [2:0]  bus_req_size;
@@ -49,24 +49,14 @@ module tb_core_pipelined;
   integer load_use_stalls;
   integer branch_flushes;
 
-  // RISC-V compliance tests start at 0x80000000
-  // For RV64, use 64-bit reset vector; for RV32, use 32-bit
-  `ifdef COMPLIANCE_TEST
-    `ifdef RV64
-      parameter [63:0] RESET_VEC = 64'h0000000080000000;
-    `else
-      parameter [31:0] RESET_VEC = 32'h80000000;
-    `endif
-  `else
-    `ifdef RV64
-      parameter [63:0] RESET_VEC = 64'h0000000080000000;
-    `else
-      parameter [31:0] RESET_VEC = 32'h00000000;
-    `endif
-  `endif
+  // RISC-V tests start at 0x80000000 (standard reset vector)
+  // Custom tests also use 0x80000000 as they're linked with the same linker script
+  parameter [31:0] RESET_VEC = 32'h80000000;
 
   // Instantiate DUT (pipelined core)
+  // For RV32 tests, override XLEN to 32 explicitly
   rv_core_pipelined #(
+    .XLEN(32),              // Force RV32 mode
     .RESET_VECTOR(RESET_VEC),
     .IMEM_SIZE(16384),  // 16KB instruction memory
     .DMEM_SIZE(16384),  // 16KB data memory
@@ -92,7 +82,7 @@ module tb_core_pipelined;
   // Simple bus adapter for testbench - connects bus to DMEM
   // All addresses go to DMEM (no peripheral decode in this testbench)
   dmem_bus_adapter #(
-    .XLEN(32),
+    .XLEN(32),              // Match core XLEN
     .FLEN(64),
     .MEM_SIZE(16384),
     .MEM_FILE(MEM_INIT_FILE)

@@ -48,12 +48,12 @@
 .align 12  # 4KB alignment for page table
 
 page_table_l1:
-    # Entry 0: Maps VA 0x00000000-0x003FFFFF (4MB megapage) to PA 0x00000000
-    # For Sv32: This is a megapage entry (R|W|X bits set in L1)
-    # PTE format: [31:10] = PPN[1], [9:0] = flags
-    # PPN[1] = 0 (maps to PA 0x00000000)
-    # Flags: V|R|W|X|A|D = 0xCF
-    .word 0x000000CF
+    # Entry 0: Maps VA 0x00000000-0x003FFFFF (4MB megapage) to PA 0x80000000
+    # For Sv32 megapages: PTE format is [31:10] = PPN (22 bits), [9:0] = flags
+    # Target PA = 0x80000000
+    # PPN = PA[33:12] = 0x80000000 >> 12 = 0x80000 (22 bits)
+    # PTE = (PPN << 10) | flags = (0x80000 << 10) | 0xCF = 0x20000000 | 0xCF = 0x200000CF
+    .word 0x200000CF
 
     # Entries 1-511: Invalid
     .fill 511, 4, 0x00000000
@@ -61,9 +61,9 @@ page_table_l1:
     # Entry 512: Maps VA 0x80000000-0x803FFFFF (4MB megapage) to PA 0x80000000
     # This is where our code is actually loaded (linker script puts it at 0x80000000)
     # VPN[1] = VA[31:22] = 0x200 (entry index 512)
-    # PPN[1] = PA[33:22] = 0x80000000 >> 22 = 0x200
-    # PTE = (PPN[1] << 10) | 0xCF = (0x200 << 10) | 0xCF = 0x80000 | 0xCF = 0x800CF
-    .word 0x0800CF
+    # Same PPN as entry 0 (both map to PA 0x80000000)
+    # PTE = 0x200000CF
+    .word 0x200000CF
 
     # Entries 513-1023: Invalid
     .fill 511, 4, 0x00000000
