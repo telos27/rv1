@@ -265,7 +265,8 @@ module tb_core_pipelined;
         // Check x28 register for test result markers
         // Common success markers: 0xFEEDFACE, 0xDEADBEEF, 0xC0FFEE00, 0x00000001
         // Common failure markers: 0xDEADDEAD, 0xBADC0DE, 0x00000000
-        case (DUT.regfile.registers[28])
+        // Note: Mask to 32 bits to handle sign-extension in RV32 mode
+        case (DUT.regfile.registers[28][31:0])
           32'hFEEDFACE,
           32'hDEADBEEF,
           32'hC0FFEE00,
@@ -274,7 +275,7 @@ module tb_core_pipelined;
             $display("========================================");
             $display("TEST PASSED");
             $display("========================================");
-            $display("  Success marker (x28): 0x%08h", DUT.regfile.registers[28]);
+            $display("  Success marker (x28): 0x%08h", DUT.regfile.registers[28][31:0]);
             $display("  Cycles: %0d", cycle_count);
           end
           32'hDEADDEAD,
@@ -282,14 +283,14 @@ module tb_core_pipelined;
             $display("========================================");
             $display("TEST FAILED");
             $display("========================================");
-            $display("  Failure marker (x28): 0x%08h", DUT.regfile.registers[28]);
+            $display("  Failure marker (x28): 0x%08h", DUT.regfile.registers[28][31:0]);
             $display("  Cycles: %0d", cycle_count);
           end
           default: begin
             $display("========================================");
             $display("TEST PASSED (EBREAK with no marker)");
             $display("========================================");
-            $display("  Note: x28 = 0x%08h (no standard marker)", DUT.regfile.registers[28]);
+            $display("  Note: x28 = 0x%08h (no standard marker)", DUT.regfile.registers[28][31:0]);
             $display("  Cycles: %0d", cycle_count);
           end
         endcase

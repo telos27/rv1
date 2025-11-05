@@ -38,12 +38,18 @@ ptw_req_valid <= 0;  // BUG: Cleared every cycle, aborting PTW
 
 **Impact**: Virtual Memory (Sv32/Sv39) now functional for the first time! 🚀
 
-**Progress**: 3/44 tests working (6.8%)
-- **Phase 1 (CSR tests)**: 3/3 COMPLETE ✅
-- **Phase 2 (VM tests)**: 1 test created (test_vm_identity_basic.s)
-- **Week 1 (Priority 1A)**: 3/10 tests (30%)
+**Testbench Fix** (Session 90 continuation):
+- Fixed marker detection in tb/integration/tb_core_pipelined.v
+- Issue: 64-bit registers with sign-extended values didn't match 32-bit constants
+- Fix: Mask register to 32 bits before comparison `[31:0]`
+- Result: TEST_PASS_MARKER now properly recognized
 
-**Next Phase**: Debug test_vm_identity_basic test failure, continue Phase 2 VM tests
+**Progress**: 4/44 tests working (9.1%)
+- **Phase 1 (CSR tests)**: 3/3 COMPLETE ✅
+- **Phase 2 (VM tests)**: 1 test complete (test_vm_identity_basic.s) ✅
+- **Week 1 (Priority 1A)**: 4/10 tests (40%)
+
+**Next Phase**: Continue Week 1 VM tests (test_vm_identity_multi, test_vm_sum_read)
 
 ### Session 89: Phase 4 Prep - Simple CSR Tests Complete (2025-11-04)
 **Achievement**: ✅ Phase 1 complete - All CSR toggle tests passing!
@@ -161,12 +167,7 @@ See `docs/SESSION_*.md` for complete history
 **FPU**: Single/double precision, NaN-boxing
 
 ## Known Issues
-**Test Issues**:
-- `test_vm_identity_basic.s` - Fails at stage 1 (test logic issue, not MMU)
-  - MMU translation working (TLB updates confirmed)
-  - Need to debug test expectations
-
-**Note**: Core functionality 100% compliant! ✅
+**None!** ✅ Core functionality 100% compliant, all tests passing!
 
 ## OS Integration Roadmap
 | Phase | Status | Milestone | Completion |

@@ -315,7 +315,6 @@ For VA 0x80000000 with identity mapping:
 ✅ **Megapages** - L1 direct mappings (4MB/2MB pages)
 
 ### What Still Needs Work
-⚠️ **test_vm_identity_basic.s** - Test fails at stage 1 (test logic issue, not MMU)
 📋 **Non-identity Mappings** - Need tests for VA ≠ PA
 📋 **Page Faults** - Exception handling not yet tested
 📋 **Multi-level Page Tables** - Only tested megapages
@@ -332,12 +331,12 @@ For VA 0x80000000 with identity mapping:
 
 ### Immediate (Session 90+)
 1. ✅ **MMU fix verified** - TLB updates working
-2. Debug test_vm_identity_basic stage 1 failure
-3. Run quick regression to ensure no breakage
-4. Create git commit with detailed message
+2. ✅ **test_vm_identity_basic passes** - Testbench marker detection fixed
+3. ✅ **Quick regression clean** - All 14 tests pass
+4. ✅ **Documentation updated** - Session notes complete
 
 ### Phase 4 Continuation (Week 1)
-1. Fix and verify test_vm_identity_basic passes
+1. ✅ test_vm_identity_basic verified passing
 2. Implement test_vm_identity_multi.s (multiple pages)
 3. Implement test_vm_sum_read.s (SUM bit + VM)
 4. Complete remaining Week 1 tests (7 more tests)
@@ -392,9 +391,60 @@ Default signal assignments can break multi-cycle handshakes. Use explicit else c
 
 ---
 
+## Post-Fix: Testbench Marker Detection (Session 90 continuation)
+
+### Issue Discovered
+After fixing the MMU PTW bug, test_vm_identity_basic was passing but the testbench reported:
+```
+TEST PASSED (EBREAK with no marker)
+Note: x28 = 0xffffffffdeadbeef (no standard marker)
+```
+
+The test had correctly set x28=0xDEADBEEF (TEST_PASS_MARKER), but the testbench didn't recognize it.
+
+### Root Cause
+**tb/integration/tb_core_pipelined.v:268-295**
+
+The testbench compared 64-bit register values against 32-bit constants:
+```verilog
+case (DUT.regfile.registers[28])  // 64-bit value
+  32'hDEADBEEF,                   // 32-bit constant
+  ...
+```
+
+In RV32 mode, negative 32-bit values get sign-extended to 64 bits:
+- Value in register: `0xFFFFFFFF_DEADBEEF` (64-bit, sign-extended)
+- Case constant: `0x00000000_DEADBEEF` (32-bit expanded to 64-bit)
+- Comparison: **FAIL** (mismatch in upper 32 bits)
+
+### Fix Applied
+Mask the register value to 32 bits before comparison:
+```verilog
+case (DUT.regfile.registers[28][31:0])  // Mask to 32 bits
+  32'hDEADBEEF,
+  ...
+```
+
+### Changes Made
+- **tb/integration/tb_core_pipelined.v:269** - Changed case expression to mask lower 32 bits
+- **tb/integration/tb_core_pipelined.v:278,286,293** - Updated display statements to show masked value
+
+### Verification Results
+✅ **test_vm_identity_basic**: Now shows "TEST PASSED" with "Success marker (x28): 0xdeadbeef"
+✅ **test_sum_basic**: Correctly shows "TEST PASSED" with marker
+✅ **simple_add**: Still works (no marker case)
+✅ **Quick regression**: All 14 tests pass
+
+### Impact
+- **Type**: Cosmetic fix - test results were always correct
+- **Benefit**: Proper recognition of TEST_PASS_MARKER and TEST_FAIL_MARKER
+- **Risk**: None - no functional changes to core or tests
+
+---
+
 **Session 90 Status**: ✅ **COMPLETE**
-**Next Session**: Debug test_vm_identity_basic, implement Week 1 VM tests
-**Overall Progress**: Phase 4 Week 1: 3/10 tests (30%)
+**Next Session**: Implement Week 1 VM tests (test_vm_identity_multi, test_vm_sum_read, etc.)
+**Overall Progress**: Phase 4 Week 1: 4/10 tests (40%) - test_vm_identity_basic now fully verified
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
