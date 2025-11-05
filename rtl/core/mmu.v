@@ -131,6 +131,9 @@ module mmu #(
   reg [XLEN-1:0] ptw_vaddr_save; // Saved full virtual address during walk
   reg ptw_is_store_save;         // Saved access type
   reg ptw_is_fetch_save;         // Saved fetch flag
+  reg [1:0] ptw_priv_save;       // Saved privilege mode
+  reg ptw_sum_save;              // Saved SUM bit
+  reg ptw_mxr_save;              // Saved MXR bit
 
   // =========================================================================
   // VPN Extraction
@@ -181,6 +184,7 @@ module mmu #(
   reg [XLEN-1:0] tlb_ppn_out;
   reg [7:0] tlb_pte_out;
   reg [XLEN-1:0] tlb_level_out;
+  reg perm_check_result;  // Debug: store permission check result
 
   integer i;
   always @(*) begin
@@ -308,6 +312,9 @@ module mmu #(
       ptw_vaddr_save <= 0;
       ptw_is_store_save <= 0;
       ptw_is_fetch_save <= 0;
+      ptw_priv_save <= 0;
+      ptw_sum_save <= 0;
+      ptw_mxr_save <= 0;
       ptw_req_valid <= 0;
       ptw_req_addr <= 0;
       req_ready <= 0;
@@ -364,13 +371,17 @@ module mmu #(
               // $display("MMU: Translation mode, VA=0x%h, TLB hit=%b", req_vaddr, tlb_hit);
               if (tlb_hit) begin
                 // TLB hit: check permissions
-                if (check_permission(tlb_pte_out, req_is_store, req_is_fetch,
-                                     privilege_mode, mstatus_sum, mstatus_mxr)) begin
+                perm_check_result = check_permission(tlb_pte_out, req_is_store, req_is_fetch,
+                                                     privilege_mode, mstatus_sum, mstatus_mxr);
+                // $display("MMU: TLB HIT VA=0x%h PTE=0x%h[U=%b] priv=%b sum=%b result=%b",
+                //          req_vaddr, tlb_pte_out, tlb_pte_out[PTE_U], privilege_mode, mstatus_sum, perm_check_result);
+                if (perm_check_result) begin
                   // Permission granted - construct PA based on page level
                   req_paddr <= construct_pa(tlb_ppn_out, req_vaddr, tlb_level_out);
                   req_ready <= 1;
                 end else begin
                   // Permission denied
+                  $display("MMU: Permission DENIED - PAGE FAULT!");
                   req_page_fault <= 1;
                   req_fault_vaddr <= req_vaddr;
                   req_ready <= 1;
@@ -381,6 +392,9 @@ module mmu #(
                 ptw_vaddr_save <= req_vaddr;
                 ptw_is_store_save <= req_is_store;
                 ptw_is_fetch_save <= req_is_fetch;
+                ptw_priv_save <= privilege_mode;
+                ptw_sum_save <= mstatus_sum;
+                ptw_mxr_save <= mstatus_mxr;
                 ptw_level <= max_levels - 1;  // Start at highest level
 
                 // Calculate first PTE address
@@ -417,7 +431,7 @@ module mmu #(
             end else if (ptw_resp_data[PTE_R] || ptw_resp_data[PTE_X]) begin
               // Leaf PTE found: check permissions
               if (check_permission(ptw_resp_data[7:0], ptw_is_store_save, ptw_is_fetch_save,
-                                   privilege_mode, mstatus_sum, mstatus_mxr)) begin
+                                   ptw_priv_save, ptw_sum_save, ptw_mxr_save)) begin
                 // Permission granted: update TLB
                 ptw_state <= PTW_UPDATE_TLB;
               end else begin
@@ -478,15 +492,30 @@ module mmu #(
           // Update replacement index
           tlb_replace_idx <= tlb_replace_idx + 1;
 
-          // Generate physical address using saved virtual address - construct based on page level
-          if (XLEN == 32) begin
-            req_paddr <= construct_pa({{10{1'b0}}, ptw_pte_data[31:10]}, ptw_vaddr_save, ptw_level);
-          end else begin
-            req_paddr <= construct_pa({{20{1'b0}}, ptw_pte_data[53:10]}, ptw_vaddr_save, ptw_level);
-          end
-          req_ready <= 1;
-          ptw_req_valid <= 0;  // Clear PTW request
+          // Check permissions for the current access (same as TLB hit path)
+          perm_check_result = check_permission(ptw_pte_data[7:0], ptw_is_store_save, ptw_is_fetch_save,
+                                               ptw_priv_save, ptw_sum_save, ptw_mxr_save);
+          // $display("MMU: PTW complete VA=0x%h PTE=0x%h[U=%b] priv=%b sum=%b result=%b",
+          //          ptw_vaddr_save, ptw_pte_data[7:0], ptw_pte_data[PTE_U], ptw_priv_save, ptw_sum_save, perm_check_result);
 
+          if (perm_check_result) begin
+            // Permission granted - generate physical address
+            if (XLEN == 32) begin
+              req_paddr <= construct_pa({{10{1'b0}}, ptw_pte_data[31:10]}, ptw_vaddr_save, ptw_level);
+            end else begin
+              req_paddr <= construct_pa({{20{1'b0}}, ptw_pte_data[53:10]}, ptw_vaddr_save, ptw_level);
+            end
+            req_ready <= 1;
+          end else begin
+            // Permission denied - generate page fault
+            $display("MMU: PTW Permission DENIED - PAGE FAULT! VA=0x%h PTE=0x%h priv=%b sum=%b",
+                     ptw_vaddr_save, ptw_pte_data[7:0], ptw_priv_save, ptw_sum_save);
+            req_page_fault <= 1;
+            req_fault_vaddr <= ptw_vaddr_save;
+            req_ready <= 1;
+          end
+
+          ptw_req_valid <= 0;  // Clear PTW request
           ptw_state <= PTW_IDLE;
         end
 

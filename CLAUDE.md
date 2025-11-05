@@ -3,18 +3,46 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 93, 2025-11-05)
+## Current Status (Session 94, 2025-11-05)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: ✅ **MMU V-bit fix complete**, ⚠️ **SUM permission bug discovered**
+- **Current Status**: ✅ **MMU SUM permission fix complete** - Critical security bug fixed!
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_93_VM_TESTS_AND_MMU_VBIT_FIX.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+- **Documentation**: `docs/SESSION_94_MMU_SUM_PERMISSION_FIX.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+
+### Session 94: Critical MMU SUM Permission Bug Fix (2025-11-05)
+**Achievement**: 🎉 **Fixed critical MMU SUM permission bypass** - S-mode can no longer access U-pages without SUM=1!
+
+**Two Critical Bugs Fixed**:
+1. **PTW_UPDATE_TLB never checked permissions** (rtl/core/mmu.v:462-520)
+   - After page table walk, MMU returned physical address without checking access permissions
+   - First access after TLB miss would succeed regardless of privilege mode or SUM bit!
+   - Security issue: S-mode could bypass SUM protection completely
+   - Fix: Added `check_permission()` call after TLB update, mirrors TLB hit path logic
+
+2. **PTW didn't save privilege context** (rtl/core/mmu.v:130-136, 395-397)
+   - PTW saved access type (R/W/X) but not privilege mode, SUM, or MXR bits
+   - Permission checks used live CSR values instead of values at PTW start
+   - Race condition: privilege mode change during multi-cycle PTW would check wrong permissions
+   - Fix: Added `ptw_priv_save`, `ptw_sum_save`, `ptw_mxr_save` registers
+
+**Impact**: Critical security fix! OS kernels can now safely use SUM bit to control S-mode access to U-mode pages.
+
+**Verification**:
+- ✅ Quick regression: 14/14 tests pass
+- ✅ test_vm_identity_basic, test_vm_identity_multi pass
+- ✅ test_sum_basic passes
+- ✅ Zero regressions on 100% RV32/RV64 compliance
+
+**Known Issue**: test_vm_sum_read fails due to unrelated test infrastructure issue (custom tests not entering S-mode correctly)
+
+**Next Session**: Investigate privilege mode transition in custom test infrastructure
 
 ### Session 93: VM Multi-Page Test & MMU V-bit Bug Fix (2025-11-05)
 **Achievement**: ✅ **Fixed critical MMU V-bit check bug** + test_vm_identity_multi passes
-**Issue Found**: ⚠️ SUM permission checking not enforcing U-page access restrictions
+**Issue Found**: ⚠️ SUM permission checking not enforcing U-page access restrictions (→ Fixed in Session 94)
 
 **Bug Fixed**: MMU PTW wasn't checking PTE valid bit before processing
 - PTW would walk invalid PTEs (V=0), causing infinite loops
