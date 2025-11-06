@@ -63,7 +63,7 @@ module data_memory #(
       `endif
       // DEBUG: Show writes to 0x80003000 range
       // if (addr >= 32'h80003000 && addr < 32'h80003010)
-      //   $display("[DMEM] WRITE @ 0x%08h (masked=0x%04h) = 0x%08h", addr, masked_addr, write_data[31:0]);
+      //   $display("[%0t] [DMEM] WRITE @ 0x%08h (masked=0x%04h) funct3=%b data=0x%016h", $time, addr, masked_addr, funct3, write_data);
       case (funct3)
         3'b000: begin  // SB (store byte)
           mem[masked_addr] <= write_data[7:0];
@@ -97,10 +97,9 @@ module data_memory #(
   always @(*) begin
     if (mem_read) begin
       // DEBUG: Show reads from 0x80003000 range
-      // if (addr >= 32'h80003000 && addr < 32'h80003010)
-      //   $display("[DMEM] READ  @ 0x%08h (masked=0x%04h) = mem[0x%04h]=0x%02h mem[0x%04h]=0x%02h mem[0x%04h]=0x%02h mem[0x%04h]=0x%02h",
-      //            addr, masked_addr, masked_addr, mem[masked_addr], masked_addr+1, mem[masked_addr+1],
-      //            masked_addr+2, mem[masked_addr+2], masked_addr+3, mem[masked_addr+3]);
+      // if (addr[31:16] == 16'h8000 && addr[15:4] == 12'h300)
+      //   $display("[%0t] [DMEM] READ  addr=0x%08h masked=0x%08h funct3=%b word_data=0x%08h",
+      //            $time, addr, masked_addr, funct3, word_data);
       case (funct3)
         3'b000: begin  // LB (load byte, sign-extended)
           read_data = {{56{byte_data[7]}}, byte_data};
