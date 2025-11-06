@@ -40,9 +40,16 @@ assign mmu_busy = (mmu_req_valid && !mmu_req_ready) ||                          
 - Precise exception handling guaranteed
 - Critical prerequisite for OS page fault handlers
 
-**Progress**: 8/44 tests (18.2%) - Week 1 at 80% (8/10 tests)
+**Progress**: 11/44 tests (25%) - Week 1 basics complete!
 
-**Next Session**: Continue Week 1 VM tests (test_vm_sum_write, test_vm_mxr_read)
+**Tests Passing** (11 total):
+- test_vm_identity_basic, test_vm_identity_multi
+- test_vm_sum_simple, test_vm_sum_read (fixed!)
+- test_vm_offset_mapping, test_vm_non_identity_basic
+- test_satp_reset, test_smode_entry_minimal
+- test_sum_basic, test_mxr_basic, test_sum_mxr_csr
+
+**Next Session**: Continue Week 2 tests (page fault recovery, TLB verification)
 
 ### Session 102: Exception Timing Debug - test_vm_sum_read Root Cause (2025-11-06)
 **Focus**: Deep investigation of test_vm_sum_read failure - discovered pipeline exception timing bug
