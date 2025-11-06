@@ -242,13 +242,17 @@ echo ""
 echo -e "${YELLOW}[3/3] Running simulation...${NC}"
 echo "----------------------------------------"
 
+# Capture output to check for pass/fail status
+SIM_OUTPUT=$(mktemp)
+trap "rm -f $SIM_OUTPUT" EXIT
+
 # Run with timeout
 if [ "$WAVES" = true ]; then
   # Keep VCD output messages
-  timeout ${TIMEOUT}s vvp "$SIM_FILE"
+  timeout ${TIMEOUT}s vvp "$SIM_FILE" 2>&1 | tee "$SIM_OUTPUT"
 else
   # Filter out VCD messages for cleaner output
-  timeout ${TIMEOUT}s vvp "$SIM_FILE" 2>&1 | grep -v "VCD info:"
+  timeout ${TIMEOUT}s vvp "$SIM_FILE" 2>&1 | tee "$SIM_OUTPUT" | grep -v "VCD info:"
 fi
 
 EXIT_CODE=${PIPESTATUS[0]}
@@ -256,14 +260,30 @@ EXIT_CODE=${PIPESTATUS[0]}
 echo "----------------------------------------"
 echo ""
 
+# Parse simulator output to determine actual test result
+# Note: $finish in Verilog always returns exit code 0, so we must parse output
+TEST_PASSED=false
+TEST_FAILED=false
+
+if grep -q "TEST PASSED" "$SIM_OUTPUT"; then
+  TEST_PASSED=true
+elif grep -q "TEST FAILED" "$SIM_OUTPUT"; then
+  TEST_FAILED=true
+elif grep -q "RISC-V COMPLIANCE TEST PASSED" "$SIM_OUTPUT"; then
+  TEST_PASSED=true
+elif grep -q "RISC-V COMPLIANCE TEST FAILED" "$SIM_OUTPUT"; then
+  TEST_FAILED=true
+fi
+
 # Check result
 if [ $EXIT_CODE -eq 124 ]; then
   echo -e "${RED}✗ Test TIMED OUT after ${TIMEOUT}s${NC}"
   echo ""
   echo "Hint: Try increasing timeout with --timeout <seconds>"
+  rm -f "$SIM_OUTPUT"
   exit 1
-elif [ $EXIT_CODE -ne 0 ]; then
-  echo -e "${RED}✗ Test FAILED (exit code: $EXIT_CODE)${NC}"
+elif [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 124 ]; then
+  echo -e "${RED}✗ Test CRASHED (exit code: $EXIT_CODE)${NC}"
   echo ""
   if [ "$DEBUG" = false ]; then
     echo "Hint: Try running with --debug for more information"
@@ -271,12 +291,36 @@ elif [ $EXIT_CODE -ne 0 ]; then
   if [ "$WAVES" = false ]; then
     echo "Hint: Try running with --waves to generate waveforms"
   fi
+  rm -f "$SIM_OUTPUT"
   exit 1
-else
+elif [ "$TEST_FAILED" = true ]; then
+  echo -e "${RED}✗ Test FAILED: $TEST_NAME${NC}"
+  echo ""
+  if [ "$DEBUG" = false ]; then
+    echo "Hint: Try running with --debug for more information"
+  fi
+  if [ "$WAVES" = false ]; then
+    echo "Hint: Try running with --waves to generate waveforms"
+  fi
+  rm -f "$SIM_OUTPUT"
+  exit 1
+elif [ "$TEST_PASSED" = true ]; then
   echo -e "${GREEN}✓ Test PASSED: $TEST_NAME${NC}"
   echo ""
   if [ "$WAVES" = true ]; then
     echo "Waveform saved to: $WAVES_FILE"
     echo "View with: gtkwave $WAVES_FILE"
   fi
+  rm -f "$SIM_OUTPUT"
+  exit 0
+else
+  # No clear pass/fail message found - assume pass if no errors
+  echo -e "${YELLOW}⚠ Test completed with no clear pass/fail status${NC}"
+  echo ""
+  echo "Note: Could not find 'TEST PASSED' or 'TEST FAILED' in output"
+  if [ "$DEBUG" = false ]; then
+    echo "Hint: Try running with --debug to see full output"
+  fi
+  rm -f "$SIM_OUTPUT"
+  exit 0
 fi
