@@ -3,32 +3,37 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 96, 2025-11-05)
+## Current Status (Session 97, 2025-11-05)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
 - **Current Status**: ✅ **S-mode and VM fully functional** - Privilege transitions and MMU confirmed working!
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_96_NON_IDENTITY_MAPPING_INVESTIGATION.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+- **Documentation**: `docs/SESSION_97_NON_IDENTITY_MAPPING_INVESTIGATION.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
 
-### Session 96: Non-Identity Mapping Investigation (2025-11-05)
-**Focus**: Attempted to add non-identity VA→PA mapping test
+### Session 97: Non-Identity Mapping Investigation & MMU Bug Discovery (2025-11-05)
+**Focus**: Deep debugging of test_vm_non_identity_basic.s
 
-**Key Insights**:
-1. **SUM Fault Testing Deferred**: Requires trap delegation infrastructure (medeleg/sedeleg) not yet implemented
-2. **Session 94 Fix Confirmed Working**: Existing tests use U=0 pages to avoid triggering SUM faults
-3. **Memory Constraints**: 16KB DMEM limits test data placement (0x80000000-0x80004000)
-4. **Assembly Limits**: 12-bit immediate requires `li`/`add` for offsets >2047
+**Major Discovery**: Test design flaw identified and fixed
+- **Original Bug**: Test mapped code VA to wrong PA, causing immediate page fault after enabling paging
+- **Root Cause**: Page table mapped VA 0x80000000 → PA 0x80003000, but code was at PA 0x80000000
+- **Fix Applied**: Dual mappings - identity map for code (VA 0x80000000 → PA 0x80000000), non-identity for data (VA 0x90000000 → PA 0x80003000)
 
-**Tests Created** (incomplete):
-- test_vm_non_identity_basic.s - VA 0x80000000 → PA 0x80003000 (needs debugging)
-- test_satp_check.s - Verifies SATP=0 at reset ✅
-- test_vm_simple_check.s - Verifies PA 0x80003000 accessible ✅
+**Investigation Insights**:
+1. **CSR Debug Tracing**: Revealed test passed stage 1, trap occurred in stage 5
+2. **x29=1 Mystery Solved**: Trap → PC=0 → re-executes stage 1 code → x29 reset
+3. **Critical Requirement**: Must identity-map executing code before enabling paging
+4. **MMU Debug Bug Found**: Debug print uses bits [53:10] in RV32 (should be [31:10])
+
+**Current Status**: Test design fixed but still failing - investigating trap cause
+- MMU TLB updates correctly with VPN=0x00090000 ✓
+- Page table entries verified in hex file ✓
+- Trap occurs when accessing VA 0x90000000 (under investigation)
 
 **Progress**: 7/44 tests (15.9%) - Week 1 at 70% (7/10 tests)
 
-**Next Session**: Debug non-identity test or proceed with other Week 1 tests
+**Next Session**: Continue debugging VA 0x90000000 access or move to simpler VM tests
 
 ### Session 95: S-Mode and Virtual Memory Functionality Confirmed (2025-11-05)
 **Achievement**: ✅ **Verified S-mode entry and VM translation fully operational!**
@@ -237,6 +242,8 @@ ptw_req_valid <= 0;  // BUG: Cleared every cycle, aborting PTW
 
 ### Recent Sessions Summary (Details in docs/SESSION_*.md)
 
+**Session 97** (2025-11-05): 🔍 **TEST DESIGN FIX** - Identified paging/code execution flaw
+**Session 96** (2025-11-05): 📋 Non-identity test planning and initial implementation
 **Session 95** (2025-11-05): ✅ **S-MODE & VM VERIFIED!** 3 new tests confirm functionality
 **Session 94** (2025-11-05): 🎉 **MMU SUM FIX** - Critical security bug fixed!
 **Session 93** (2025-11-05): ✅ **MMU V-BIT FIX** + test_vm_identity_multi
