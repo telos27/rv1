@@ -430,6 +430,10 @@ module rv_core_pipelined #(
   wire [XLEN-1:0] exmem_rs1_data;
   wire [31:0]     exmem_instruction;  // Instructions always 32-bit
   wire [XLEN-1:0] exmem_pc;
+  wire [XLEN-1:0] exmem_paddr;         // MMU translated physical address
+  wire            exmem_translation_ready;  // MMU translation complete
+  wire            exmem_page_fault;    // MMU page fault detected
+  wire [XLEN-1:0] exmem_fault_vaddr;   // MMU faulting virtual address
 
   //==========================================================================
   // MEM Stage Signals
@@ -2023,9 +2027,9 @@ module rv_core_pipelined #(
     .mem_pc(exmem_pc),
     .mem_instruction(exmem_instruction),
     .mem_valid(exmem_valid),
-    // Page fault inputs (Phase 3 - MMU integration)
-    .mem_page_fault(mmu_req_page_fault),
-    .mem_fault_vaddr(mmu_req_fault_vaddr),
+    // Page fault inputs (Phase 3 - MMU integration, registered from EX stage)
+    .mem_page_fault(exmem_page_fault),
+    .mem_fault_vaddr(exmem_fault_vaddr),
     // Outputs (connect to sync_exception signals, will be merged with interrupts)
     .exception(sync_exception),
     .exception_code(sync_exception_code),
@@ -2353,6 +2357,11 @@ module rv_core_pipelined #(
     .rs1_data_in(ex_rs1_data_forwarded),  // Forwarded rs1 data
     .instruction_in(idex_instruction),
     .pc_in(idex_pc),
+    // MMU translation results from EX stage
+    .mmu_paddr_in(mmu_req_paddr),
+    .mmu_ready_in(mmu_req_ready),
+    .mmu_page_fault_in(mmu_req_page_fault),
+    .mmu_fault_vaddr_in(mmu_req_fault_vaddr),
     // Outputs
     .alu_result_out(exmem_alu_result),
     .mem_write_data_out(exmem_mem_write_data),          // Integer store data
@@ -2406,7 +2415,12 @@ module rv_core_pipelined #(
     .rs2_addr_out(exmem_rs2_addr),
     .rs1_data_out(exmem_rs1_data),
     .instruction_out(exmem_instruction),
-    .pc_out(exmem_pc)
+    .pc_out(exmem_pc),
+    // MMU translation results to MEM stage
+    .mmu_paddr_out(exmem_paddr),
+    .mmu_ready_out(exmem_translation_ready),
+    .mmu_page_fault_out(exmem_page_fault),
+    .mmu_fault_vaddr_out(exmem_fault_vaddr)
   );
 
   // Debug: EX/MEM FP register transfers
@@ -2425,6 +2439,55 @@ module rv_core_pipelined #(
     if (exmem_valid && exmem_reg_write && exmem_rd_addr != 5'b0) begin
       $display("[EXMEM] @%0t pc=%h alu_result=%h rd=x%0d wb_sel=%b",
                $time, exmem_pc, exmem_alu_result, exmem_rd_addr, exmem_wb_sel);
+    end
+  end
+  `endif
+
+  // Debug: MMU→EXMEM→Memory timing trace for Session 100
+  `ifdef DEBUG_MMU_TIMING
+  reg [31:0] debug_cycle_mmu;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      debug_cycle_mmu <= 0;
+    else
+      debug_cycle_mmu <= debug_cycle_mmu + 1;
+  end
+
+  always @(posedge clk) begin
+    // Trace MMU requests in EX stage
+    if (mmu_req_valid && (mmu_req_vaddr[31:28] == 4'h9)) begin
+      $display("[C%0d] [EX_MMU_REQ] VA=0x%08h is_store=%b funct3=%b valid=%b",
+               debug_cycle_mmu, mmu_req_vaddr, mmu_req_is_store, mmu_req_size, idex_valid);
+    end
+
+    // Trace MMU outputs in EX stage (combinational/same cycle)
+    if (mmu_req_valid && (mmu_req_vaddr[31:28] == 4'h9)) begin
+      $display("[C%0d] [EX_MMU_OUT] PA=0x%08h ready=%b fault=%b",
+               debug_cycle_mmu, mmu_req_paddr, mmu_req_ready, mmu_req_page_fault);
+    end
+
+    // Trace what gets latched into EXMEM register
+    if (!hold_exmem && idex_valid && (idex_mem_read || idex_mem_write) && (ex_alu_result[31:28] == 4'h9)) begin
+      $display("[C%0d] [EXMEM_LATCH] Latching MMU output: PA=0x%08h ready=%b fault=%b (from EX)",
+               debug_cycle_mmu, mmu_req_paddr, mmu_req_ready, mmu_req_page_fault);
+    end
+
+    // Trace EXMEM outputs in MEM stage (registered/next cycle)
+    if (exmem_valid && (exmem_mem_read || exmem_mem_write) && (exmem_alu_result[31:28] == 4'h9 || exmem_paddr[31:28] == 4'h8)) begin
+      $display("[C%0d] [MEM_EXMEM_OUT] VA=0x%08h PA=0x%08h ready=%b fault=%b",
+               debug_cycle_mmu, exmem_alu_result, exmem_paddr, exmem_translation_ready, exmem_page_fault);
+    end
+
+    // Trace memory address selection
+    if (exmem_valid && (exmem_mem_read || exmem_mem_write) && (exmem_alu_result[31:28] == 4'h9 || exmem_paddr[31:28] == 4'h8)) begin
+      $display("[C%0d] [MEM_ADDR] dmem_addr=0x%08h translated_addr=0x%08h use_mmu=%b arb_addr=0x%08h",
+               debug_cycle_mmu, dmem_addr, translated_addr, use_mmu_translation, arb_mem_addr);
+    end
+
+    // Trace register writes for x6, x7
+    if (memwb_reg_write && memwb_valid && (memwb_rd_addr == 6 || memwb_rd_addr == 7)) begin
+      $display("[C%0d] [WB_WRITE] x%0d <= 0x%08h (wb_data from MEM stage)",
+               debug_cycle_mmu, memwb_rd_addr, wb_data);
     end
   end
   `endif
@@ -2470,13 +2533,14 @@ module rv_core_pipelined #(
   //--------------------------------------------------------------------------
 
   // MMU translation request signals
-  // For data accesses: translate virtual address from MEM stage
+  // MMU translation happens in EX stage to provide stable address to MEM stage
+  // This breaks the combinational path: MMU → Memory → Register
   // For instruction fetches: translation happens in IF stage (future enhancement)
-  assign mmu_req_valid   = exmem_valid && (exmem_mem_read || exmem_mem_write);
-  assign mmu_req_vaddr   = exmem_alu_result;  // ALU result is the virtual address
-  assign mmu_req_is_store = exmem_mem_write;
+  assign mmu_req_valid   = idex_valid && (idex_mem_read || idex_mem_write);
+  assign mmu_req_vaddr   = ex_alu_result;  // ALU result is the virtual address (not yet registered)
+  assign mmu_req_is_store = idex_mem_write;
   assign mmu_req_is_fetch = 1'b0;  // Data access (instruction fetch MMU in IF stage)
-  assign mmu_req_size    = exmem_funct3;  // funct3 encodes access size
+  assign mmu_req_size    = idex_funct3;  // funct3 encodes access size
 
   // TLB flush control from SFENCE.VMA instruction
   // SFENCE.VMA in MEM stage: rs1 specifies vaddr, rs2 specifies ASID
@@ -2490,6 +2554,7 @@ module rv_core_pipelined #(
   assign tlb_flush_addr = sfence_vaddr;
 
   // MMU busy signal: translation in progress (req_valid && !req_ready)
+  // MMU now runs in EX stage, so this signal stalls IDEX→EXMEM transition (hold_exmem)
   assign mmu_busy = mmu_req_valid && !mmu_req_ready;
 
   // Instantiate MMU
@@ -2537,12 +2602,13 @@ module rv_core_pipelined #(
   wire [63:0]     arb_mem_read_data;   // 64-bit for RV32D/RV64D support
 
   // When PTW is active, it gets priority
-  // When PTW is not active, use translated address from MMU (or bypass if no MMU)
+  // When PTW is not active, use translated address from EXMEM (registered MMU output)
+  // Translation results are registered in EXMEM to break combinational path
   // Check if translation is enabled: satp.MODE != 0
   // RV32: satp[31] (1-bit mode), RV64: satp[63:60] (4-bit mode)
   wire translation_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
-  wire use_mmu_translation = translation_enabled && mmu_req_ready && !mmu_req_page_fault;
-  wire [XLEN-1:0] translated_addr = use_mmu_translation ? mmu_req_paddr : dmem_addr;
+  wire use_mmu_translation = translation_enabled && exmem_translation_ready && !exmem_page_fault;
+  wire [XLEN-1:0] translated_addr = use_mmu_translation ? exmem_paddr : dmem_addr;
 
   assign arb_mem_addr       = mmu_ptw_req_valid ? mmu_ptw_req_addr : translated_addr;
   assign arb_mem_write_data = dmem_write_data;  // PTW never writes

@@ -333,14 +333,16 @@ module mmu #(
       end
     end else begin
       // Default outputs (keep req_ready and req_paddr valid in bare mode)
+      // Use blocking assignment (=) for combinational output in EX stage
       if (!translation_enabled && req_valid) begin
-        req_ready <= 1'b1;
-        req_paddr <= req_vaddr;  // Bare mode: VA == PA
+        req_ready = 1'b1;
+        req_paddr = req_vaddr;  // Bare mode: VA == PA
+        req_page_fault = 0;
       end else begin
-        req_ready <= 1'b0;
-        req_paddr <= req_paddr;  // Hold previous value
+        req_ready = 1'b0;
+        req_page_fault = 0;
+        // Don't update req_paddr here - let TLB hit/miss paths handle it
       end
-      req_page_fault <= 0;
       // Don't clear ptw_req_valid by default - let state machine control it
       // Otherwise, PTW handshake breaks when waiting for ptw_resp_valid
       // ptw_req_valid <= 0;  // BUG: This clears the request before response arrives!
@@ -377,17 +379,19 @@ module mmu #(
                 //          req_vaddr, tlb_pte_out, tlb_pte_out[PTE_U], privilege_mode, mstatus_sum, perm_check_result);
                 if (perm_check_result) begin
                   // Permission granted - construct PA based on page level
-                  req_paddr <= construct_pa(tlb_ppn_out, req_vaddr, tlb_level_out);
-                  req_ready <= 1;
+                  // CRITICAL: Use blocking assignment (=) for TLB hits to provide combinational output
+                  // This allows MMU to run in EX stage without adding pipeline bubbles
+                  req_paddr = construct_pa(tlb_ppn_out, req_vaddr, tlb_level_out);
+                  req_ready = 1;
                   // if (req_vaddr[31:28] == 4'h9)  // Debug VA 0x90000000 range
                   //   $display("[%0t] MMU: TLB HIT - VA=0x%h -> PA=0x%h (PPN=0x%h, level=%0d)",
                   //            $time, req_vaddr, construct_pa(tlb_ppn_out, req_vaddr, tlb_level_out), tlb_ppn_out, tlb_level_out);
                 end else begin
                   // Permission denied
                   $display("MMU: Permission DENIED - PAGE FAULT!");
-                  req_page_fault <= 1;
-                  req_fault_vaddr <= req_vaddr;
-                  req_ready <= 1;
+                  req_page_fault = 1;
+                  req_fault_vaddr = req_vaddr;
+                  req_ready = 1;
                 end
               end else begin
                 // TLB miss: start page table walk

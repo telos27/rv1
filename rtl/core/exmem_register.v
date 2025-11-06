@@ -64,6 +64,12 @@ module exmem_register #(
   input  wire [31:0] instruction_in,
   input  wire [XLEN-1:0] pc_in,           // For exception handling
 
+  // MMU translation results from EX stage
+  input  wire [XLEN-1:0] mmu_paddr_in,         // Translated physical address
+  input  wire            mmu_ready_in,         // Translation complete
+  input  wire            mmu_page_fault_in,    // Page fault detected
+  input  wire [XLEN-1:0] mmu_fault_vaddr_in,   // Faulting virtual address
+
   // Outputs to MEM stage
   output reg  [XLEN-1:0]  alu_result_out,
   output reg  [XLEN-1:0]  mem_write_data_out,      // Integer store data
@@ -113,7 +119,13 @@ module exmem_register #(
   output reg  [4:0]  rs2_addr_out,
   output reg  [XLEN-1:0] rs1_data_out,
   output reg  [31:0] instruction_out,
-  output reg  [XLEN-1:0] pc_out
+  output reg  [XLEN-1:0] pc_out,
+
+  // MMU translation results to MEM stage
+  output reg  [XLEN-1:0] mmu_paddr_out,        // Translated physical address
+  output reg             mmu_ready_out,        // Translation complete
+  output reg             mmu_page_fault_out,   // Page fault detected
+  output reg  [XLEN-1:0] mmu_fault_vaddr_out   // Faulting virtual address
 );
 
   always @(posedge clk or negedge reset_n) begin
@@ -162,6 +174,11 @@ module exmem_register #(
       rs1_data_out       <= {XLEN{1'b0}};
       instruction_out    <= 32'h0;
       pc_out             <= {XLEN{1'b0}};
+
+      mmu_paddr_out      <= {XLEN{1'b0}};
+      mmu_ready_out      <= 1'b0;
+      mmu_page_fault_out <= 1'b0;
+      mmu_fault_vaddr_out <= {XLEN{1'b0}};
     end else if (!hold) begin
       // Only update if not held (M extension may need to hold instruction in EX)
       alu_result_out        <= alu_result_in;
@@ -207,6 +224,11 @@ module exmem_register #(
       rs1_data_out       <= rs1_data_in;
       instruction_out    <= instruction_in;
       pc_out             <= pc_in;
+
+      mmu_paddr_out      <= mmu_paddr_in;
+      mmu_ready_out      <= mmu_ready_in;
+      mmu_page_fault_out <= mmu_page_fault_in;
+      mmu_fault_vaddr_out <= mmu_fault_vaddr_in;
     end
     // If hold is asserted, keep previous values (register holds in place)
   end
