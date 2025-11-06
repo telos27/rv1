@@ -2580,20 +2580,25 @@ module rv_core_pipelined #(
   // MMU busy signal: translation in progress (req_valid && !req_ready)
   // MMU now runs in EX stage, so this signal stalls IDEX→EXMEM transition (hold_exmem)
   // Session 103: CRITICAL FIX - Also hold pipeline when page fault detected!
-  // Without this, subsequent instructions execute before trap taken (1-cycle exception latency)
-  // Track first cycle of page fault to hold pipeline exactly once
-  reg mmu_page_fault_hold;
+  // Session 108: Hold until trap is taken, not just 1 cycle
+  // Without this, subsequent instructions execute before trap taken
+  reg mmu_page_fault_pending;
+  reg trap_taken_r;  // Registered trap_flush for clearing mmu_page_fault_pending
   always @(posedge clk or negedge reset_n) begin
-    if (!reset_n)
-      mmu_page_fault_hold <= 1'b0;
-    else if (mmu_req_ready && mmu_req_page_fault && !mmu_page_fault_hold)
-      mmu_page_fault_hold <= 1'b1;  // Set on first cycle of fault
-    else if (mmu_page_fault_hold)
-      mmu_page_fault_hold <= 1'b0;  // Clear after one cycle
+    if (!reset_n) begin
+      mmu_page_fault_pending <= 1'b0;
+      trap_taken_r <= 1'b0;
+    end else begin
+      trap_taken_r <= trap_flush;  // Latch ONLY trap_flush (not xRET)
+      if (mmu_req_ready && mmu_req_page_fault && !mmu_page_fault_pending)
+        mmu_page_fault_pending <= 1'b1;  // Set when fault detected
+      else if (trap_taken_r)
+        mmu_page_fault_pending <= 1'b0;  // Clear one cycle after trap taken
+    end
   end
 
-  assign mmu_busy = (mmu_req_valid && !mmu_req_ready) ||                          // PTW in progress
-                    (mmu_req_ready && mmu_req_page_fault && !mmu_page_fault_hold); // First cycle of page fault
+  assign mmu_busy = (mmu_req_valid && !mmu_req_ready) ||      // PTW in progress
+                    mmu_page_fault_pending;                    // Page fault pending trap
 
   // Instantiate MMU
   mmu #(
