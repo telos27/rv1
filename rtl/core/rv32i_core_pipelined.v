@@ -2555,7 +2555,21 @@ module rv_core_pipelined #(
 
   // MMU busy signal: translation in progress (req_valid && !req_ready)
   // MMU now runs in EX stage, so this signal stalls IDEX→EXMEM transition (hold_exmem)
-  assign mmu_busy = mmu_req_valid && !mmu_req_ready;
+  // Session 103: CRITICAL FIX - Also hold pipeline when page fault detected!
+  // Without this, subsequent instructions execute before trap taken (1-cycle exception latency)
+  // Track first cycle of page fault to hold pipeline exactly once
+  reg mmu_page_fault_hold;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n)
+      mmu_page_fault_hold <= 1'b0;
+    else if (mmu_req_ready && mmu_req_page_fault && !mmu_page_fault_hold)
+      mmu_page_fault_hold <= 1'b1;  // Set on first cycle of fault
+    else if (mmu_page_fault_hold)
+      mmu_page_fault_hold <= 1'b0;  // Clear after one cycle
+  end
+
+  assign mmu_busy = (mmu_req_valid && !mmu_req_ready) ||                          // PTW in progress
+                    (mmu_req_ready && mmu_req_page_fault && !mmu_page_fault_hold); // First cycle of page fault
 
   // Instantiate MMU
   mmu #(
@@ -2610,15 +2624,6 @@ module rv_core_pipelined #(
   wire use_mmu_translation = translation_enabled && exmem_translation_ready && !exmem_page_fault;
   wire [XLEN-1:0] translated_addr = use_mmu_translation ? exmem_paddr : dmem_addr;
 
-  // Debug: Track page faults
-  always @(posedge clk) begin
-    if (mmu_req_page_fault && mmu_req_ready) begin
-      $display("[CORE] MMU reported page fault: vaddr=0x%h", mmu_req_fault_vaddr);
-    end
-    if (exmem_page_fault && exmem_valid) begin
-      $display("[CORE] EXMEM stage has page fault: vaddr=0x%h, PC=0x%h", exmem_fault_vaddr, exmem_pc);
-    end
-  end
 
   assign arb_mem_addr       = mmu_ptw_req_valid ? mmu_ptw_req_addr : translated_addr;
   assign arb_mem_write_data = dmem_write_data;  // PTW never writes
