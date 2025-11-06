@@ -147,6 +147,11 @@ _start:
     # Set up S-mode trap vector
     SET_STVEC_DIRECT s_trap_handler
 
+    # Delegate load and store page faults to S-mode
+    DELEGATE_EXCEPTION CAUSE_LOAD_PAGE_FAULT
+    li      t0, (1 << 15)  # Bit 15 = store/AMO page fault
+    csrs    medeleg, t0
+
     # Ensure SUM bit is 0 in MSTATUS before entering S-mode
     li      t0, (1 << MSTATUS_SUM_BIT)
     csrc    mstatus, t0

@@ -519,6 +519,14 @@ module rv_core_pipelined #(
   // Also block exceptions when MRET/SRET is in MEM stage to prevent simultaneous flush
   wire exception_gated = exception && !exception_r && !exception_taken_r && !mret_flush && !sret_flush;
 
+  // Debug exception gating
+  always @(posedge clk) begin
+    if (exception && !exception_gated) begin
+      $display("[EXCEPTION_GATED] Exception detected but gated: exception_r=%b exception_taken_r=%b mret=%b sret=%b",
+               exception_r, exception_taken_r, mret_flush, sret_flush);
+    end
+  end
+
   // Compute trap target privilege for the CURRENT exception (not latched)
   // This must use the un-latched exception_code and current_priv to get correct delegation
   function [1:0] compute_trap_target;
@@ -698,6 +706,9 @@ module rv_core_pipelined #(
         // On trap entry, move to target privilege level
         // With 0-cycle trap latency, use current (un-latched) target privilege
         current_priv <= current_trap_target;
+        $display("[TRAP] Taking trap to priv=%b, cause=%0d, PC=0x%h saved to %cEPC, trap_vector=0x%h",
+                 current_trap_target, exception_code, exception_pc,
+                 (current_trap_target == 2'b01) ? "S" : "M", trap_vector);
         `ifdef DEBUG_PRIV
         $display("[PRIV] Time=%0t TRAP: priv %b -> %b (current)", $time, current_priv, current_trap_target);
         `endif
@@ -724,6 +735,19 @@ module rv_core_pipelined #(
                    sret_flush ? sepc :
                    ex_take_branch ? (idex_jump ? ex_jump_target : ex_branch_target) :
                    pc_increment;
+
+  // Debug PC updates
+  always @(posedge clk) begin
+    if (trap_flush) begin
+      $display("[PC_UPDATE] TRAP: pc_current=0x%h -> pc_next=0x%h (trap_vector)", pc_current, trap_vector);
+    end
+    if (sret_flush) begin
+      $display("[PC_UPDATE] SRET: pc_current=0x%h -> pc_next=0x%h (sepc)", pc_current, sepc);
+    end
+    if (mret_flush) begin
+      $display("[PC_UPDATE] MRET: pc_current=0x%h -> pc_next=0x%h (mepc)", pc_current, mepc);
+    end
+  end
 
   // Pipeline flush: trap/xRET flushes all stages, branch flushes IF/ID and ID/EX
   assign flush_ifid = trap_flush | mret_flush | sret_flush | ex_take_branch;

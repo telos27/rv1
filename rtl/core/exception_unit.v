@@ -190,6 +190,7 @@ module exception_unit #(
       exception_code = CAUSE_LOAD_PAGE_FAULT;
       exception_pc = mem_pc;
       exception_val = mem_fault_vaddr;  // Faulting virtual address
+      $display("[EXCEPTION] Load page fault: PC=0x%h, VA=0x%h", mem_pc, mem_fault_vaddr);
 
     end else if (mem_page_fault_store) begin
       // Phase 3: Store/AMO page fault (higher priority than misaligned)
@@ -197,6 +198,7 @@ module exception_unit #(
       exception_code = CAUSE_STORE_PAGE_FAULT;
       exception_pc = mem_pc;
       exception_val = mem_fault_vaddr;  // Faulting virtual address
+      $display("[EXCEPTION] Store page fault: PC=0x%h, VA=0x%h", mem_pc, mem_fault_vaddr);
 
     end else if (mem_load_misaligned) begin
       exception = 1'b1;

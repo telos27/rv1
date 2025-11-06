@@ -3,14 +3,49 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 106, 2025-11-06)
+## Current Status (Session 107, 2025-11-06)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: ✅ **TEST INFRASTRUCTURE FIXED** + Combinational glitch analyzed
+- **Current Status**: ✅ **PAGE FAULT INFINITE LOOP FIXED!** - 500x performance improvement
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_106_*.md` (3 new docs)
+- **Documentation**: `docs/SESSION_107_PAGE_FAULT_TLB_FIX.md`
+
+### Session 107: Page Fault Infinite Loop - TLB Caching Fix (2025-11-06)
+**Achievement**: 🎉 **MAJOR BREAKTHROUGH!** - Fixed infinite PTW loop by caching faulting translations
+
+**Bug Fixed**: MMU never cached faulting translations in TLB
+- **Root Cause**: `PTW_FAULT` state signaled fault but never updated TLB
+- **Impact**: Every retry triggered full 3-cycle page table walk → infinite loop
+- **Fix**: Modified `PTW_FAULT` to cache valid PTEs even when permission denied
+- **Result**: Tests complete in ~100 cycles (vs 50,000+ timeout) - **500x improvement!**
+
+**How It Works**:
+1. First access: TLB miss → PTW (3 cycles) → Permission fault → **TLB entry created**
+2. Retry: TLB hit → Permission check (0 cycles) → Fast fault
+3. After SFENCE.VMA: TLB flushed → New PTW with updated permissions
+
+**Additional Fix**: Exception delegation
+- Added `DELEGATE_EXCEPTION` setup to test_vm_sum_read
+- Traps now correctly go to S-mode (priv=01) instead of M-mode
+
+**Verification**:
+- ✅ Quick regression: 14/14 tests pass (zero regressions)
+- ✅ test_vm_sum_read: 100 cycles (was 50K+ timeout)
+- ✅ test_mxr_read_execute: 108 cycles (was 50K+ timeout)
+- ⚠️ Tests still fail but for different reasons (trap handler execution issues)
+
+**Files Modified**:
+- `rtl/core/mmu.v`: Lines 550-584 (TLB caching in PTW_FAULT state)
+- `tests/asm/test_vm_sum_read.s`: Lines 150-153 (exception delegation)
+- Debug output added (temporary): exception_unit.v, rv32i_core_pipelined.v
+
+**Next Session**: Debug trap handler execution issues, fix remaining 3 page fault tests
+
+**Progress**: 9/44 tests (20%) - Infrastructure bug eliminated, can now debug actual test logic
+
+---
 
 ### Session 106: Test Infrastructure Fix + Combinational Glitch Analysis (2025-11-06)
 **Achievement**: ✅ **CRITICAL TESTBENCH BUG FIXED** + Root cause analysis of data corruption

@@ -375,7 +375,8 @@ module mmu #(
               // Note: req_paddr and req_ready are set in the default case above
             end else begin
               // Check TLB
-              $display("MMU: Translation mode, VA=0x%h, TLB hit=%b, ptw_state=%0d", req_vaddr, tlb_hit, ptw_state);
+              $display("MMU: Translation mode, VA=0x%h (fetch=%b store=%b), TLB hit=%b, ptw_state=%0d",
+                       req_vaddr, req_is_fetch, req_is_store, tlb_hit, ptw_state);
               if (tlb_hit) begin
                 // TLB hit: check permissions
                 perm_check_result = check_permission(tlb_pte_out, req_is_store, req_is_fetch,
@@ -547,7 +548,39 @@ module mmu #(
         end
 
         PTW_FAULT: begin
-          // Page fault
+          // Page fault - but still update TLB to cache the translation!
+          // This prevents infinite PTW loops on faulting addresses
+          // The TLB will cache the PTE with its permission bits, so future
+          // accesses can fail fast without doing a full page table walk
+
+          // Only update TLB if we have valid PTE data (permission faults, not invalid PTEs)
+          if (ptw_pte_data[PTE_V]) begin
+            tlb_valid[tlb_replace_idx] <= 1;
+            tlb_vpn[tlb_replace_idx] <= ptw_vpn_save;
+
+            // Extract PPN from PTE
+            if (XLEN == 32) begin
+              tlb_ppn[tlb_replace_idx] <= {{10{1'b0}}, ptw_pte_data[31:10]};
+            end else begin
+              tlb_ppn[tlb_replace_idx] <= {{20{1'b0}}, ptw_pte_data[53:10]};
+            end
+
+            tlb_pte[tlb_replace_idx] <= ptw_pte_data[7:0];
+            tlb_level[tlb_replace_idx] <= ptw_level;
+
+            if (XLEN == 32) begin
+              $display("MMU: TLB[%0d] updated (FAULT): VPN=0x%h, PPN=0x%h, PTE=0x%h",
+                       tlb_replace_idx, ptw_vpn_save, ptw_pte_data[31:10], ptw_pte_data[7:0]);
+            end else begin
+              $display("MMU: TLB[%0d] updated (FAULT): VPN=0x%h, PPN=0x%h, PTE=0x%h",
+                       tlb_replace_idx, ptw_vpn_save, ptw_pte_data[53:10], ptw_pte_data[7:0]);
+            end
+
+            // Update replacement index
+            tlb_replace_idx <= tlb_replace_idx + 1;
+          end
+
+          // Signal page fault
           req_page_fault <= 1;
           req_fault_vaddr <= ptw_vaddr_save;
           req_ready <= 1;
