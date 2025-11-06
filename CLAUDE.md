@@ -3,14 +3,53 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 101, 2025-11-06)
+## Current Status (Session 102, 2025-11-06)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: ✅ **MMU architectural fix complete** - Moved to EX stage, combinational glitch eliminated
+- **Current Status**: 🔍 **Pipeline Exception Timing Issue** - MMU works correctly, but exceptions detected too late
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
-- **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_100_MMU_TO_EX_STAGE.md`, `docs/SESSION_101_TEST_DEBUGGING.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+- **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented + exception timing fix)
+- **Documentation**: `docs/SESSION_102_EXCEPTION_TIMING_DEBUG.md`, `docs/PHASE_4_PREP_TEST_PLAN.md`
+
+### Session 102: Exception Timing Debug - test_vm_sum_read Root Cause (2025-11-06)
+**Focus**: Deep investigation of test_vm_sum_read failure - discovered pipeline exception timing bug
+
+**Root Cause Identified**: ✅ **MMU works perfectly!** The issue is a **pipeline timing bug** in exception handling.
+
+**What Actually Happens**:
+1. ✅ S-mode load from U-page (VA 0x00002000) with SUM=0
+2. ✅ MMU correctly performs PTW, finds PTE with U=1 (user page)
+3. ✅ MMU permission check correctly DENIES access (S-mode, SUM=0, U-page)
+4. ✅ MMU reports page fault: `req_ready=1, req_page_fault=1`
+5. ✅ Core receives page fault signal in EXMEM stage
+6. ❌ **BUG**: Jump instruction after load executes before exception taken!
+7. ❌ PC advances to test_fail before trap handler runs
+
+**The Bug**: When memory operation causes page fault, there's a 1-2 cycle latency between:
+- Instruction completes with fault (EX→MEM)
+- Exception detected in MEM stage
+- Trap taken and pipeline flushed
+
+During this latency, subsequent instructions continue executing. The test expects immediate trap to S-mode handler, but instead the unconditional jump to test_fail executes first.
+
+**Key Evidence**:
+```
+[DBG] PTW FAULT: Permission denied
+[CORE] MMU reported page fault: vaddr=0x00002000
+[CORE] EXMEM stage has page fault: vaddr=0x00002000, PC=0x80000248
+```
+PC=0x80000248 is INSIDE test_fail (faulting load was at PC 0x800000f4).
+
+**Impact**: Affects ALL memory exceptions (load/store page faults, access faults). Not specific to MMU - general pipeline exception timing issue.
+
+**Next Session**: Implement exception timing fix (extend mmu_busy or detect exceptions earlier)
+
+**Progress**: 7/44 tests (15.9%) - Week 1 at 70% (7/10 tests)
+
+**Files Modified** (debug only - REMOVE before production):
+- `rtl/core/mmu.v`: Added PTW state tracking and permission check debug
+- `rtl/core/rv32i_core_pipelined.v`: Added page fault tracking debug
 
 ### Session 101: Test Infrastructure Debugging (2025-11-06)
 **Focus**: Debugging broken tests after DMEM increase, investigating test failures

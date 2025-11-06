@@ -303,6 +303,11 @@ module mmu #(
   wire [XLEN-1:0] pte_size = (XLEN == 32) ? 4 : 8;  // PTE is 4 bytes (RV32) or 8 bytes (RV64)
 
   always @(posedge clk or negedge reset_n) begin
+    // Debug: Track state at start of cycle
+    if (reset_n && req_valid && req_vaddr[31:16] == 16'h0000) begin
+      $display("[DBG] Cycle start: ptw_state=%0d, req_valid=%b, req_vaddr=0x%h", ptw_state, req_valid, req_vaddr);
+    end
+
     if (!reset_n) begin
       ptw_state <= PTW_IDLE;
       ptw_level <= 0;
@@ -370,13 +375,13 @@ module mmu #(
               // Note: req_paddr and req_ready are set in the default case above
             end else begin
               // Check TLB
-              // $display("MMU: Translation mode, VA=0x%h, TLB hit=%b", req_vaddr, tlb_hit);
+              $display("MMU: Translation mode, VA=0x%h, TLB hit=%b, ptw_state=%0d", req_vaddr, tlb_hit, ptw_state);
               if (tlb_hit) begin
                 // TLB hit: check permissions
                 perm_check_result = check_permission(tlb_pte_out, req_is_store, req_is_fetch,
                                                      privilege_mode, mstatus_sum, mstatus_mxr);
-                // $display("MMU: TLB HIT VA=0x%h PTE=0x%h[U=%b] priv=%b sum=%b result=%b",
-                //          req_vaddr, tlb_pte_out, tlb_pte_out[PTE_U], privilege_mode, mstatus_sum, perm_check_result);
+                $display("MMU: TLB HIT VA=0x%h PTE=0x%h[U=%b] priv=%b sum=%b result=%b",
+                         req_vaddr, tlb_pte_out, tlb_pte_out[PTE_U], privilege_mode, mstatus_sum, perm_check_result);
                 if (perm_check_result) begin
                   // Permission granted - construct PA based on page level
                   // CRITICAL: Use blocking assignment (=) for TLB hits to provide combinational output
@@ -395,6 +400,7 @@ module mmu #(
                 end
               end else begin
                 // TLB miss: start page table walk
+                $display("MMU: TLB MISS VA=0x%h, starting PTW", req_vaddr);
                 ptw_vpn_save <= get_full_vpn(req_vaddr);
                 ptw_vaddr_save <= req_vaddr;
                 ptw_is_store_save <= req_is_store;
@@ -415,6 +421,7 @@ module mmu #(
                 end
 
                 ptw_state <= PTW_LEVEL_0;
+                $display("[DBG] PTW_IDLE: Transitioning to PTW_LEVEL_0");
               end
             end
           end
@@ -423,16 +430,21 @@ module mmu #(
         PTW_LEVEL_0, PTW_LEVEL_1, PTW_LEVEL_2: begin
           // Issue memory request for PTE
           if (!ptw_req_valid) begin
+            $display("MMU: PTW level %0d - issuing memory request addr=0x%h", ptw_level, ptw_pte_addr);
             ptw_req_valid <= 1;
             ptw_req_addr <= ptw_pte_addr;
           end else if (ptw_req_ready && ptw_resp_valid) begin
             // Got PTE response
+            $display("[DBG] PTW got response: data=0x%h, V=%b, R=%b, W=%b, X=%b, U=%b",
+                     ptw_resp_data, ptw_resp_data[PTE_V], ptw_resp_data[PTE_R],
+                     ptw_resp_data[PTE_W], ptw_resp_data[PTE_X], ptw_resp_data[PTE_U]);
             ptw_pte_data <= ptw_resp_data;
             ptw_req_valid <= 0;
 
             // First check if PTE is valid
             if (!ptw_resp_data[PTE_V]) begin
               // Invalid PTE: page fault
+              $display("[DBG] PTW FAULT: Invalid PTE (V=0)");
               ptw_state <= PTW_FAULT;
             // Check if this is a leaf PTE
             end else if (ptw_resp_data[PTE_R] || ptw_resp_data[PTE_X]) begin
@@ -443,6 +455,7 @@ module mmu #(
                 ptw_state <= PTW_UPDATE_TLB;
               end else begin
                 // Permission denied
+                $display("[DBG] PTW FAULT: Permission denied");
                 ptw_state <= PTW_FAULT;
               end
             end else if (ptw_level == 0) begin

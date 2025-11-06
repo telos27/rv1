@@ -2610,6 +2610,16 @@ module rv_core_pipelined #(
   wire use_mmu_translation = translation_enabled && exmem_translation_ready && !exmem_page_fault;
   wire [XLEN-1:0] translated_addr = use_mmu_translation ? exmem_paddr : dmem_addr;
 
+  // Debug: Track page faults
+  always @(posedge clk) begin
+    if (mmu_req_page_fault && mmu_req_ready) begin
+      $display("[CORE] MMU reported page fault: vaddr=0x%h", mmu_req_fault_vaddr);
+    end
+    if (exmem_page_fault && exmem_valid) begin
+      $display("[CORE] EXMEM stage has page fault: vaddr=0x%h, PC=0x%h", exmem_fault_vaddr, exmem_pc);
+    end
+  end
+
   assign arb_mem_addr       = mmu_ptw_req_valid ? mmu_ptw_req_addr : translated_addr;
   assign arb_mem_write_data = dmem_write_data;  // PTW never writes
   assign arb_mem_read       = mmu_ptw_req_valid ? 1'b1 : dmem_mem_read;
