@@ -39,9 +39,8 @@
 # Combined flags (supervisor-accessible, no U bit)
 .equ PTE_SUPERVISOR_RWX,  (PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D)  # 0xCF
 
-# Physical addresses
-.equ PA_DATA,   0x80003000  # Physical address where data is stored (after page table)
-.equ VA_DATA,   0x90000000  # Virtual address that maps to PA_DATA (non-identity)
+# Virtual address for non-identity mapping
+.equ VA_DATA,   0x90000000  # Virtual address that maps to test_data_area (non-identity)
 
 _start:
     # =========================================================================
@@ -53,50 +52,69 @@ _start:
     csrr    t0, satp
     bnez    t0, test_fail
 
-    # Write test pattern to physical address 0x80003000
+    # Write test pattern to test_data_area physical address
     # Since paging is off, we can access physical addresses directly
-    li      t0, PA_DATA
+    la      t0, test_data_area
     li      t1, 0xCAFEBABE      # Test pattern 1
     sw      t1, 0(t0)
     li      t1, 0xDEADC0DE      # Test pattern 2
     sw      t1, 4(t0)
 
     # Verify the writes succeeded (sanity check)
-    li      t0, PA_DATA
+    la      t0, test_data_area
     lw      t2, 0(t0)
     li      t3, 0xCAFEBABE
     bne     t2, t3, test_fail
 
+    # Save the physical address for later use
+    la      s1, test_data_area  # s1 = PA of test_data_area
+
     # =========================================================================
-    # Stage 2: Set up page table with TWO mappings
-    # Entry 512: VA 0x80000000 → PA 0x80000000 (identity map for code)
-    # Entry 576: VA 0x90000000 → PA 0x80003000 (non-identity map for data)
+    # Stage 2: Set up 2-level page table for fine-grained mapping
+    # L1 Entry 512: VA 0x80000000 → PA 0x80000000 (identity megapage for code)
+    # L1 Entry 576: Pointer to L2 table (for VA 0x90000000)
+    # L2 Entry 0:   VA 0x90000000 → PA 0x80003000 (non-identity 4KB page)
     # =========================================================================
     li      x29, 2
 
-    # Calculate page table address
+    # Calculate page table addresses
     la      t0, page_table_l1
+    la      t3, page_table_l2
 
-    # Entry 512: VA 0x80000000 → PA 0x80000000 (identity mapping for code)
+    # L1 Entry 512: VA 0x80000000 → PA 0x80000000 (identity megapage for code)
+    # This is a LEAF entry (R|W|X set) = megapage
     # VPN[1] = 0x80000000 >> 22 = 0x200 = 512
-    # PPN = PA >> 12 = 0x80000000 >> 12 = 0x80000
-    # PTE = (PPN << 10) | flags = (0x80000 << 10) | 0xCF = 0x20000000 | 0xCF
+    # PPN = 0x80000000 >> 12 = 0x80000
+    # PTE = (0x80000 << 10) | 0xCF = 0x200000CF
     li      t1, 0x200000CF
     li      t2, 2048            # Offset to entry 512 (512*4 = 2048)
-    add     t2, t0, t2          # Calculate address of entry 512
-    sw      t1, 0(t2)           # Store PTE at entry 512
+    add     t2, t0, t2
+    sw      t1, 0(t2)           # Store L1 PTE at entry 512
 
-    # Entry 576: VA 0x90000000 → PA 0x80003000 (non-identity mapping for data)
+    # L1 Entry 576: Pointer to L2 page table (for VA 0x90000000-0x903FFFFF)
+    # This is a NON-LEAF entry (only V bit set, R|W|X clear) = pointer
     # VPN[1] = 0x90000000 >> 22 = 0x240 = 576
-    # PPN = PA >> 12 = 0x80003000 >> 12 = 0x80003
-    # PTE = (PPN << 10) | flags = (0x80003 << 10) | 0xCF = 0x20000C00 | 0xCF
-    li      t1, 0x20000CCF
+    # PPN = page_table_l2 >> 12
+    # PTE = (PPN << 10) | 0x01 (only V bit)
+    srli    t4, t3, 12          # PPN of L2 table
+    slli    t1, t4, 10          # Shift to PTE position
+    ori     t1, t1, 0x01        # Set only V bit (non-leaf)
     li      t2, 2304            # Offset to entry 576 (576*4 = 2304)
-    add     t2, t0, t2          # Calculate address of entry 576
-    sw      t1, 0(t2)           # Store PTE at entry 576
+    add     t2, t0, t2
+    sw      t1, 0(t2)           # Store L1 PTE at entry 576
+
+    # L2 Entry 0: VA 0x90000000 → PA test_data_area (4KB leaf page)
+    # This is a LEAF entry (R|W|X set)
+    # VPN[0] = (0x90000000 >> 12) & 0x3FF = 0x000 = 0
+    # PPN = test_data_area >> 12 (calculated from s1)
+    # PTE = (PPN << 10) | 0xCF
+    srli    t4, s1, 12          # PPN of test_data_area
+    slli    t1, t4, 10          # Shift to PTE position
+    ori     t1, t1, 0xCF        # Add RWX flags
+    sw      t1, 0(t3)           # Store L2 PTE at entry 0
 
     # Calculate SATP value
-    # PPN = page_table_addr >> 12
+    # PPN = page_table_l1 >> 12
     srli    t1, t0, 12
     # SATP = MODE | PPN = 0x80000000 | PPN
     li      t2, SATP_MODE_SV32
@@ -186,9 +204,9 @@ smode_entry:
     csrw    satp, zero
     sfence.vma
 
-    # Now read directly from physical address 0x80003000
+    # Now read directly from physical address (test_data_area)
     # This should show the values we wrote through the virtual address
-    li      t0, PA_DATA
+    la      t0, test_data_area
     lw      t1, 0(t0)
     li      t2, 0x12345678
     bne     t1, t2, test_fail
@@ -216,18 +234,26 @@ test_fail:
     ebreak
 
 # ==============================================================================
-# Data Section - Page Table
+# Data Section - Page Tables
 # ==============================================================================
 
 .section .data
-.align 12  # 4KB alignment for page table
+.align 12  # 4KB alignment for L1 page table
 
 page_table_l1:
-    # Entry 512: Maps VA 0x80000000-0x803FFFFF (4MB megapage) to PA 0x80000000
-    # PPN = 0x80000 (for PA 0x80000000)
-    # PTE = (0x80000 << 10) | PTE_SUPERVISOR_RWX = 0x20000000 | 0xCF = 0x200000CF
-    .skip 512 * 4               # Entries 0-511 (invalid)
-    .word 0x200000CF            # Entry 512: Identity mapping for code
-    .skip 63 * 4                # Entries 513-575 (invalid)
-    .word 0x20000CCF            # Entry 576: Non-identity mapping for data (VA 0x90000000 → PA 0x80003000)
-    .fill 447, 4, 0x00000000    # Entries 577-1023 (invalid)
+    # L1 table will be populated dynamically by the test
+    # Entry 512: Identity megapage for code (0x200000CF)
+    # Entry 576: Pointer to L2 table (calculated at runtime)
+    .fill 1024, 4, 0x00000000   # 1024 entries, all initially invalid
+
+# L2 page table - NO 4KB alignment needed (can be anywhere in physical memory)
+page_table_l2:
+    # L2 table - only need a few entries for this test
+    # Entry 0: VA 0x90000000 → PA test_data_area
+    .fill 16, 4, 0x00000000   # 16 entries (64 bytes) - minimal but enough
+
+# Test data area - this will be mapped to VA 0x90000000
+.align 12  # 4KB alignment for clean page mapping
+test_data_area:
+    .word 0x00000000          # Will be written with test data
+    .word 0x00000000

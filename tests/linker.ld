@@ -7,8 +7,8 @@ MEMORY {
     /* Instruction Memory: 4KB starting at 0x0000_0000 */
     IMEM (rx)  : ORIGIN = 0x00000000, LENGTH = 4K
 
-    /* Data Memory: 4KB starting at 0x0000_1000 */
-    DMEM (rw)  : ORIGIN = 0x00001000, LENGTH = 4K
+    /* Data Memory: 12KB starting at 0x0000_1000 (increased for VM tests with page tables) */
+    DMEM (rw)  : ORIGIN = 0x00001000, LENGTH = 12K
 }
 
 SECTIONS {

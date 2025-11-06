@@ -379,6 +379,8 @@ module mmu #(
                   // Permission granted - construct PA based on page level
                   req_paddr <= construct_pa(tlb_ppn_out, req_vaddr, tlb_level_out);
                   req_ready <= 1;
+                  // $display("MMU: TLB HIT - VA=0x%h -> PA=0x%h (PPN=0x%h, level=%0d)",
+                  //          req_vaddr, construct_pa(tlb_ppn_out, req_vaddr, tlb_level_out), tlb_ppn_out, tlb_level_out);
                 end else begin
                   // Permission denied
                   $display("MMU: Permission DENIED - PAGE FAULT!");
