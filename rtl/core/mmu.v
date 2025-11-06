@@ -420,8 +420,15 @@ module mmu #(
                                   (extract_vpn(req_vaddr, max_levels - 1) << 3);
                 end
 
-                ptw_state <= PTW_LEVEL_0;
-                $display("[DBG] PTW_IDLE: Transitioning to PTW_LEVEL_0");
+                // Start at the correct PTW state based on level
+                // For Sv32: max_levels=2, start at level 1, state=PTW_LEVEL_1
+                // For Sv39: max_levels=3, start at level 2, state=PTW_LEVEL_2
+                case (max_levels - 1)
+                  2: ptw_state <= PTW_LEVEL_2;
+                  1: ptw_state <= PTW_LEVEL_1;
+                  default: ptw_state <= PTW_LEVEL_0;
+                endcase
+                $display("[DBG] PTW_IDLE: Starting PTW at level %0d", max_levels - 1);
               end
             end
           end

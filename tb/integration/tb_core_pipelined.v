@@ -59,7 +59,7 @@ module tb_core_pipelined;
     .XLEN(32),              // Force RV32 mode
     .RESET_VECTOR(RESET_VEC),
     .IMEM_SIZE(16384),  // 16KB instruction memory
-    .DMEM_SIZE(16384),  // 16KB data memory
+    .DMEM_SIZE(32768),  // 32KB data memory (increased for complex VM tests)
     .MEM_FILE(MEM_INIT_FILE)
   ) DUT (
     .clk(clk),
