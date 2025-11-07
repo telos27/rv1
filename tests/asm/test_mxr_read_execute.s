@@ -6,7 +6,7 @@
 # execute-only pages (pages with X=1, R=0).
 #
 # Test Sequence:
-# 1. Setup page table with X=1, R=0 page (execute-only, not readable)
+# 1. Setup page table with X=1, R=0 megapage at VA 0x80400000 (execute-only, not readable)
 # 2. Write data to that page from M-mode (M-mode ignores permission bits)
 # 3. Enter S-mode with MXR=0 (disabled)
 # 4. Try to read from X-only page (should trigger load page fault, code 13)
@@ -14,6 +14,10 @@
 # 6. Set MXR=1 (enabled)
 # 7. Try to read from X-only page (should succeed with MXR=1)
 # 8. Test passes if both behaviors are correct
+#
+# Page Table Strategy: Uses 1-level Sv32 with megapages only
+#   L1[512]: VA 0x80000000-0x803FFFFF → PA 0x80000000 (R/W/X, for code/data)
+#   L1[513]: VA 0x80400000-0x807FFFFF → PA 0x80005000 (X-only, for test)
 #
 # IMPORTANT: This feature allows OS kernels to read instruction pages
 # (e.g., for instruction emulation, debugging, or code inspection).
@@ -34,30 +38,35 @@ _start:
     # Setup page table with X=1, R=0 (execute-only) page
     ###########################################################################
 
-    # Create a 2-level page table (Sv32)
-    # Level 1 (root): Points to level 0 page table
-    # Level 0: Contains entry for test page at VA 0x00010000
+    # Create a simple 1-level page table (Sv32) using only megapages
+    # Strategy: Use identity mapping for entire 0x80000000+ region
+    #   - L1[512]: Code/data with full R/W/X permissions (for running code)
+    #   - L1[513]: Execute-only page (X=1, R=0) for MXR testing
 
-    # L1 entry 0: Points to L0 page table for VA range 0x00000000-0x003FFFFF
-    # PTE format: [31:10] = PPN[1:0], [7:0] = flags
-    # Flags: V=1, no leaf (points to next level)
-    la      t0, page_table_l0
-    srli    t0, t0, 12              # Get PPN
-    slli    t0, t0, 10              # Shift to PPN field position
-    ori     t0, t0, 0x01            # V=1 (valid, non-leaf)
+    # L1 entry 512: Identity megapage for code/data at VA 0x80000000-0x803FFFFF
+    # Flags: V=1, R=1, W=1, X=1, A=1, D=1 (full permissions for kernel code/data)
+    # Permission: V|R|W|X|A|D = 0x01|0x02|0x04|0x08|0x40|0x80 = 0xCF
+    li      t0, 0x80000000          # PA = 0x80000000
+    srli    t0, t0, 12              # Get PPN = 0x80000
+    slli    t0, t0, 10              # Shift to PPN field
+    ori     t0, t0, 0xCF            # V|R|W|X|A|D (full permissions, leaf PTE)
     la      t1, page_table_l1
-    sw      t0, 0(t1)               # L1[0] = L0 page table address
+    li      t2, 2048                # Offset for L1[512] (512*4 = 2048)
+    add     t2, t1, t2              # Calculate address of L1[512]
+    sw      t0, 0(t2)               # L1[512] for VA 0x80000000
 
-    # L0 entry for VA 0x00010000 (VPN[0] = 0x10):
-    # Map to physical page containing exec_only_data
+    # L1 entry 513: Execute-only megapage at VA 0x80400000-0x807FFFFF
+    # Map exec_only_data page with X=1, R=0 (execute-only)
     # Flags: V=1, R=0, W=0, X=1, U=0 (supervisor), A=1, D=1
     # Permission: V|X|A|D = 0x01|0x08|0x40|0x80 = 0xC9
-    la      t0, exec_only_data
+    la      t0, exec_only_data      # Get PA of exec_only_data
     srli    t0, t0, 12              # Get PPN
     slli    t0, t0, 10              # Shift to PPN field
     ori     t0, t0, 0xC9            # V|X|A|D (no R, no W, yes X)
-    la      t1, page_table_l0
-    sw      t0, (0x10 * 4)(t1)      # L0[0x10] for VA 0x00010000
+    la      t1, page_table_l1
+    li      t2, 2052                # Offset for L1[513] (513*4 = 2052)
+    add     t2, t1, t2              # Calculate address of L1[513]
+    sw      t0, 0(t2)               # L1[513] for VA 0x80400000
 
     # Enable paging with SATP
     # SATP format: MODE[31]=1 (Sv32), ASID[30:22]=0, PPN[21:0]=root_ppn
@@ -75,7 +84,7 @@ _start:
     ###########################################################################
 
     li      t0, 0x45584543          # Test value (0x45584543 = "EXEC" in ASCII)
-    li      t1, 0x00010000          # VA of execute-only page
+    li      t1, 0x80400000          # VA of execute-only page (L1[513] megapage)
     sw      t0, 0(t1)               # Should work in M-mode
     lw      t2, 0(t1)               # Read back
     bne     t0, t2, test_fail       # Verify write succeeded
@@ -120,7 +129,7 @@ smode_code:
     ###########################################################################
 
 try_load_mxr0:
-    li      t1, 0x00010000          # VA of execute-only page
+    li      t1, 0x80400000          # VA of execute-only page (L1[513])
     lw      t2, 0(t1)               # This should trigger load page fault!
 
     # If we get here, something is wrong - should have faulted
@@ -149,11 +158,11 @@ after_load_fault_mxr0:
     beqz    t3, test_fail           # MXR should be set
 
 try_load_mxr1:
-    li      t1, 0x00010000          # VA of execute-only page
+    li      t1, 0x80400000          # VA of execute-only page (L1[513])
     lw      t2, 0(t1)               # This should SUCCEED with MXR=1
 
     # Verify we got the correct data
-    li      t0, 0x45584543          # 0xEXEC0123
+    li      t0, 0x45584543          # 0x45584543 = "EXEC"
     bne     t2, t0, test_fail       # Data should match
 
     TEST_STAGE 7

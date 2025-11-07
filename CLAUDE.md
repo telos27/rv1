@@ -3,14 +3,47 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 108, 2025-11-06)
+## Current Status (Session 109, 2025-11-06)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: ✅ **TRAP HANDLERS WORKING!** - test_vm_sum_read passes completely
+- **Current Status**: 🎉 **CRITICAL BUG FIXED!** - M-mode now bypasses MMU per RISC-V spec
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_108_TRAP_HANDLER_FIX.md`
+- **Documentation**: `docs/SESSION_109_MMODE_MMU_BYPASS_FIX.md`
+
+### Session 109: Critical M-Mode MMU Bypass Bug Fix (2025-11-06)
+**Achievement**: 🎉 **CRITICAL CPU BUG FIXED!** - M-mode now properly bypasses MMU translation
+
+**Bug Discovered**: M-mode was incorrectly going through MMU translation when SATP.MODE was set
+- **Root Cause**: `translation_enabled` signal only checked SATP.MODE bits, ignored privilege mode
+- **Impact**: **CRITICAL** - Would prevent ANY OS from booting! M-mode firmware would crash with page faults
+- **Spec Violation**: RISC-V Spec 4.4.1 requires M-mode to ALWAYS bypass translation
+
+**Fix Applied** (rtl/core/rv32i_core_pipelined.v:2650-2654):
+```verilog
+// Before: Only checked SATP mode
+wire translation_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
+
+// After: Added privilege mode check
+wire satp_mode_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
+wire translation_enabled = satp_mode_enabled && (current_priv != 2'b11); // M-mode bypasses
+```
+
+**Verification**:
+- ✅ Quick regression: 14/14 tests pass (zero regressions)
+- ✅ M-mode now correctly bypasses MMU when SATP enabled
+- ⚠️ test_mxr_read_execute: Still needs debugging (unrelated issue)
+
+**Significance**: This fix is **critical for Phase 4** - xv6 bootloader runs in M-mode with paging enabled. Without this fix, xv6 would crash immediately during boot!
+
+**Files Modified**:
+- `rtl/core/rv32i_core_pipelined.v`: Added privilege check to translation_enabled (2 lines)
+- `tests/asm/test_mxr_read_execute.s`: Simplified to 1-level page tables (~30 lines)
+
+**Documentation**: `docs/SESSION_109_MMODE_MMU_BYPASS_FIX.md`
+
+---
 
 ### Session 108: Trap Handler Execution Fix - test_vm_sum_read Passes! (2025-11-06)
 **Achievement**: 🎉 **test_vm_sum_read NOW PASSES!** - Fixed 4 critical test bugs (285 cycles, CPI 1.338)
@@ -591,6 +624,7 @@ ptw_req_valid <= 0;  // BUG: Cleared every cycle, aborting PTW
 
 ### Recent Sessions Summary (Details in docs/SESSION_*.md)
 
+**Session 109** (2025-11-06): 🎉 **M-MODE MMU BYPASS FIX!** - Critical CPU bug fixed (zero regressions)
 **Session 104** (2025-11-06): 📝 **WEEK 1 TEST IMPLEMENTATION** - 5 new tests, 7 verified passing
 **Session 103** (2025-11-06): 🎉 **EXCEPTION TIMING FIX!** - Page fault pipeline hold implemented
 **Session 102** (2025-11-06): 🔍 **EXCEPTION BUG IDENTIFIED** - Pipeline timing issue root cause

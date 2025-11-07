@@ -2647,9 +2647,11 @@ module rv_core_pipelined #(
   // When PTW is active, it gets priority
   // When PTW is not active, use translated address from EXMEM (registered MMU output)
   // Translation results are registered in EXMEM to break combinational path
-  // Check if translation is enabled: satp.MODE != 0
+  // Check if translation is enabled: satp.MODE != 0 AND not in M-mode
   // RV32: satp[31] (1-bit mode), RV64: satp[63:60] (4-bit mode)
-  wire translation_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
+  // M-mode always bypasses translation (RISC-V spec 4.4.1)
+  wire satp_mode_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
+  wire translation_enabled = satp_mode_enabled && (current_priv != 2'b11);
   wire use_mmu_translation = translation_enabled && exmem_translation_ready && !exmem_page_fault;
   wire [XLEN-1:0] translated_addr = use_mmu_translation ? exmem_paddr : dmem_addr;
 
