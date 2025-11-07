@@ -2022,6 +2022,13 @@ module rv_core_pipelined #(
   //==========================================================================
   // Exception Unit (monitors all stages)
   //==========================================================================
+
+  // Check if translation is enabled: satp.MODE != 0 AND not in M-mode
+  // M-mode always bypasses translation (RISC-V spec 4.4.1)
+  // RV32: satp[31] (1-bit mode), RV64: satp[63:60] (4-bit mode)
+  wire satp_mode_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
+  wire translation_enabled = satp_mode_enabled && (current_priv != 2'b11);
+
   exception_unit #(
     .XLEN(XLEN)
   ) exception_unit_inst (
@@ -2053,7 +2060,9 @@ module rv_core_pipelined #(
     .mem_valid(exmem_valid),
     // Page fault inputs (Phase 3 - MMU integration, registered from EX stage)
     // Mask page fault if trap was just taken (EXMEM flush has 1-cycle latency)
-    .mem_page_fault(exmem_page_fault && !trap_flush_r),
+    // Session 113: CRITICAL FIX - Only raise page faults when translation is enabled!
+    // M-mode bypasses translation, so page faults should not occur in M-mode
+    .mem_page_fault(exmem_page_fault && !trap_flush_r && translation_enabled),
     .mem_fault_vaddr(exmem_fault_vaddr),
     // Outputs (connect to sync_exception signals, will be merged with interrupts)
     .exception(sync_exception),
@@ -2665,11 +2674,8 @@ module rv_core_pipelined #(
   // When PTW is active, it gets priority
   // When PTW is not active, use translated address from EXMEM (registered MMU output)
   // Translation results are registered in EXMEM to break combinational path
-  // Check if translation is enabled: satp.MODE != 0 AND not in M-mode
-  // RV32: satp[31] (1-bit mode), RV64: satp[63:60] (4-bit mode)
-  // M-mode always bypasses translation (RISC-V spec 4.4.1)
-  wire satp_mode_enabled = (XLEN == 32) ? csr_satp[31] : (csr_satp[63:60] != 4'b0000);
-  wire translation_enabled = satp_mode_enabled && (current_priv != 2'b11);
+  // satp_mode_enabled and translation_enabled are now defined earlier (before exception_unit)
+  // for use in gating page faults (Session 113 fix)
   wire use_mmu_translation = translation_enabled && exmem_translation_ready && !exmem_page_fault;
   wire [XLEN-1:0] translated_addr = use_mmu_translation ? exmem_paddr : dmem_addr;
 

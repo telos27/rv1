@@ -3,14 +3,34 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 112, 2025-11-06)
+## Current Status (Session 113, 2025-11-06)
 
-### 🎯 CURRENT PHASE: Phase 4 Prep - Memory Subsystem FPGA/ASIC Hardening
+### 🎯 CURRENT PHASE: Phase 4 Prep - OS Readiness & MMU Hardening
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🎉 **REGISTERED MEMORY COMPLETE!** - Critical output register bug fixed, 100% compliance restored
+- **Current Status**: 🔧 **M-MODE MMU BYPASS FIX COMPLETE!** - Critical privilege mode bug fixed
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
-- **Next Milestone**: `v1.1-xv6-ready` (begin Phase 4 OS features)
-- **Progress**: Phase 3 fully validated, ready for Phase 4
+- **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
+- **Progress**: Week 1 tests need registered memory timing fixes
+
+### Session 113: M-Mode MMU Bypass Fix (2025-11-06)
+**Achievement**: ✅ Fixed critical bug where M-mode incorrectly raised page faults when translation disabled!
+
+**The Bug**:
+- Page faults were raised in M-mode even when `translation_enabled = 0`
+- Violated RISC-V spec: "M-mode ignores all page-based virtual-memory schemes"
+- Caused Phase 4 Week 1 tests (SUM/MXR/VM tests) to fail
+
+**The Fix**:
+- Gated `mem_page_fault` signal with `translation_enabled` (line 2065)
+- Moved wire definitions earlier to exception handler (lines 2026-2030)
+- M-mode now correctly bypasses both translation AND page faults
+
+**Validation**:
+- ✅ Quick regression: 14/14 tests pass (100%)
+- ✅ No regressions in existing functionality
+- ⚠️ Week 1 tests still failing (different issue - registered memory timing)
+
+**Documentation**: `docs/SESSION_113_MMODE_MMU_BYPASS_FIX.md`
 
 ### Session 112: Registered Memory Output Register Fix (2025-11-06)
 **Achievement**: ✅ Fixed critical bug in Session 111's registered memory - output register now holds values correctly!

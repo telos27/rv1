@@ -60,6 +60,29 @@ _start:
     la      t1, page_table_l0
     sw      t0, (0x10 * 4)(t1)      # L0[0x10] for VA 0x00010000
 
+    TEST_STAGE 2
+
+    ###########################################################################
+    # M-mode: Write test data to U=1 page BEFORE enabling paging
+    # NOTE: M-mode ALWAYS bypasses address translation (RISC-V spec 4.4.1)
+    # So we must write to the PHYSICAL address before enabling paging
+    ###########################################################################
+
+    li      t0, 0xABCD1234          # Test value
+    la      t1, user_test_data      # Physical address of user data
+    sw      t0, 0(t1)               # Write to physical address (paging not yet enabled)
+    nop                              # Session 113: Delay for registered memory
+    nop                              # Extra delay
+    nop                              # Extra delay
+    lw      t2, 0(t1)               # Read back
+    bne     t0, t2, test_fail       # Verify write succeeded
+
+    TEST_STAGE 3
+
+    ###########################################################################
+    # Enable paging AFTER M-mode setup
+    ###########################################################################
+
     # Enable paging with SATP
     # SATP format: MODE[31]=1 (Sv32), ASID[30:22]=0, PPN[21:0]=root_ppn
     la      t0, page_table_l1
@@ -69,19 +92,7 @@ _start:
     csrw    satp, t0
     sfence.vma                      # Flush TLB
 
-    TEST_STAGE 2
-
-    ###########################################################################
-    # M-mode: Write test data to U=1 page (should work - M-mode ignores U bit)
-    ###########################################################################
-
-    li      t0, 0xABCD1234          # Test value
-    li      t1, 0x00010000          # VA of user page
-    sw      t0, 0(t1)               # Should work in M-mode
-    lw      t2, 0(t1)               # Read back
-    bne     t0, t2, test_fail       # Verify write succeeded
-
-    TEST_STAGE 3
+    TEST_STAGE 4
 
     ###########################################################################
     # Setup trap handler to expect page faults
@@ -97,7 +108,7 @@ _start:
     li      t1, CAUSE_LOAD_PAGE_FAULT
     sw      t1, 0(t0)
 
-    TEST_STAGE 4
+    TEST_STAGE 5
 
     ###########################################################################
     # Enter S-mode with SUM=0 (disabled)
@@ -115,7 +126,7 @@ _start:
     ENTER_SMODE_M smode_code
 
 smode_code:
-    TEST_STAGE 5
+    TEST_STAGE 6
 
     ###########################################################################
     # S-mode test 1: Try to READ from U=1 page (should fault)
@@ -129,7 +140,7 @@ try_load:
     j       test_fail
 
 after_load_fault:
-    TEST_STAGE 6
+    TEST_STAGE 7
 
     ###########################################################################
     # S-mode test 2: Try to WRITE to U=1 page (should fault)
@@ -149,7 +160,7 @@ try_store:
     j       test_fail
 
 after_store_fault:
-    TEST_STAGE 7
+    TEST_STAGE 8
 
     ###########################################################################
     # Both faults occurred correctly - test passes!

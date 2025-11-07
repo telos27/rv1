@@ -61,10 +61,6 @@ module data_memory #(
       if (addr >= 32'h80002000 && addr < 32'h80002010)
         $display("[DMEM] WRITE @ 0x%08h = 0x%08h (funct3=%b)", addr, write_data, funct3);
       `endif
-      // DEBUG: Show writes to test_data_area (0x80003000-0x80003FFF)
-      // DISABLED: Creates confusing output due to combinational glitches in simulation
-      // if (addr[31:12] == 20'h80003)
-      //   $display("[%0t] [DMEM] WRITE @ 0x%08h (masked=0x%05h) data[31:0]=0x%08h", $time, addr, masked_addr, write_data[31:0]);
       case (funct3)
         3'b000: begin  // SB (store byte)
           mem[masked_addr] <= write_data[7:0];
@@ -110,10 +106,6 @@ module data_memory #(
   // - Allows pipelined reads without holding mem_read high
   always @(posedge clk) begin
     if (mem_read) begin
-      // DEBUG: Show reads from test_data_area (0x80003000-0x80003FFF)
-      // if (addr[31:12] == 20'h80003)
-      //   $display("[%0t] [DMEM] READ  addr=0x%08h masked=0x%05h word_data=0x%08h",
-      //            $time, addr, masked_addr, word_data);
       case (funct3)
         3'b000: begin  // LB (load byte, sign-extended)
           read_data <= {{56{byte_data[7]}}, byte_data};
