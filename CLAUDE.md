@@ -3,14 +3,60 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 109, 2025-11-06)
+## Current Status (Session 110, 2025-11-06)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - Test Development for xv6 Readiness
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🎉 **CRITICAL BUG FIXED!** - M-mode now bypasses MMU per RISC-V spec
+- **Current Status**: 🎉 **CRITICAL PIPELINE BUG FIXED!** - EXMEM flush eliminates infinite exception loops
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (after 44 new tests implemented)
-- **Documentation**: `docs/SESSION_109_MMODE_MMU_BYPASS_FIX.md`
+- **Documentation**: `docs/SESSION_110_EXMEM_FLUSH_FIX.md`
+
+### Session 110: Critical EXMEM Flush Bug Fix - Exception Loop Eliminated (2025-11-06)
+**Achievement**: 🎉 **CRITICAL CPU BUG FIXED!** - EXMEM pipeline now flushes on traps, infinite exception loops eliminated!
+
+**Bug Discovered**: EXMEM pipeline register had no flush mechanism, causing infinite exception loops
+- **Root Cause**: IFID/IDEX had flush inputs, but EXMEM only had hold (architectural asymmetry)
+- **Impact**: **CRITICAL** - Page faults caused infinite loops, would prevent ANY OS from booting!
+- **Symptom**: test_mxr_read_execute timed out with same exception retriggering every cycle
+
+**Three Bugs Fixed**:
+
+1. **EXMEM Register Missing Flush** (rtl/core/exmem_register.v)
+   - Added `flush` input to EXMEM register module
+   - Implemented flush logic to clear control signals and page fault state
+   - Prevents stale exception signals from persisting after trap
+
+2. **EXMEM Flush Timing - 1-Cycle Latency** (rtl/core/rv32i_core_pipelined.v:2056)
+   - EXMEM flush happens synchronously (cycle N+1) but exception detected combinationally (cycle N)
+   - Masked `exmem_page_fault` with `!trap_flush_r` to hide stale faults during flush propagation
+   - Prevents spurious double trap during 1-cycle flush window
+
+3. **Test Trap Handler Return Address** (tests/asm/test_mxr_read_execute.s:207)
+   - Changed from `sepc += 4` (relative) to `la t0, label; csrw sepc, t0` (absolute)
+   - Generic PC+4 landed on `j test_fail` instruction after faulting load
+   - Now uses explicit return address like test_vm_sum_read pattern
+
+**Verification**:
+- ✅ test_mxr_read_execute: **PASSES** (159 cycles, was timing out at 50K+ cycles!)
+- ✅ Quick regression: 14/14 tests pass (zero regressions)
+- ✅ 318x performance improvement (50,000+ cycles → 159 cycles)
+
+**Significance**: This fix is **critical for Phase 4** - page faults are essential for OS operation:
+- xv6: Demand paging, ELF loading, fork (copy-on-write)
+- Linux: Memory management, swap, mmap
+- Without fix: First page fault causes infinite loop, system hangs
+
+**Files Modified**:
+- `rtl/core/exmem_register.v`: Added flush input and logic (~67 lines)
+- `rtl/core/rv32i_core_pipelined.v`: Connected trap_flush, masked page fault (2 lines)
+- `tests/asm/test_mxr_read_execute.s`: Fixed trap handler return address (4 lines)
+
+**Progress**: Week 1 tests 90% complete (9/10 tests passing)
+
+**Documentation**: `docs/SESSION_110_EXMEM_FLUSH_FIX.md`
+
+---
 
 ### Session 109: Critical M-Mode MMU Bypass Bug Fix (2025-11-06)
 **Achievement**: 🎉 **CRITICAL CPU BUG FIXED!** - M-mode now properly bypasses MMU translation
@@ -101,7 +147,7 @@ Solution: Clear separation - t4=marker only, t5=data, t6=addresses, a0=compariso
 **Files Modified**:
 - `tests/asm/test_vm_sum_read.s`: 4 bug fixes (~15 lines changed)
 
-**Next Session**: Fix test_mxr_read_execute page table setup, continue Week 1 VM tests
+**Next Session**: Fix test_mxr_read_execute (completed in Session 110)
 
 ---
 
@@ -624,6 +670,7 @@ ptw_req_valid <= 0;  // BUG: Cleared every cycle, aborting PTW
 
 ### Recent Sessions Summary (Details in docs/SESSION_*.md)
 
+**Session 110** (2025-11-06): 🎉 **EXMEM FLUSH FIX!** - Infinite exception loops eliminated, test_mxr_read_execute passes!
 **Session 109** (2025-11-06): 🎉 **M-MODE MMU BYPASS FIX!** - Critical CPU bug fixed (zero regressions)
 **Session 104** (2025-11-06): 📝 **WEEK 1 TEST IMPLEMENTATION** - 5 new tests, 7 verified passing
 **Session 103** (2025-11-06): 🎉 **EXCEPTION TIMING FIX!** - Page fault pipeline hold implemented

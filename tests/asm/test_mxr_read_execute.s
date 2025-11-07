@@ -202,10 +202,9 @@ s_trap_handler:
     j       test_fail
 
 handle_load_fault:
-    # Return to code after the faulting load
-    # We need to skip the load instruction (4 bytes)
-    csrr    t0, sepc
-    addi    t0, t0, 4               # Skip faulting instruction
+    # Return to after_load_fault_mxr0 label (not just PC+4!)
+    # Note: Can't use simple PC+4 because there's a jump to test_fail after the load
+    la      t0, after_load_fault_mxr0
     csrw    sepc, t0
 
     # Return to after_load_fault_mxr0

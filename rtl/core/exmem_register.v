@@ -12,6 +12,7 @@ module exmem_register #(
   input  wire             clk,
   input  wire             reset_n,
   input  wire             hold,           // Hold register (don't update)
+  input  wire             flush,          // Clear to NOP (for exceptions/traps)
 
   // Inputs from EX stage
   input  wire [XLEN-1:0]  alu_result_in,
@@ -178,6 +179,59 @@ module exmem_register #(
       mmu_paddr_out      <= {XLEN{1'b0}};
       mmu_ready_out      <= 1'b0;
       mmu_page_fault_out <= 1'b0;
+      mmu_fault_vaddr_out <= {XLEN{1'b0}};
+    end else if (flush && !hold) begin
+      // Flush: insert NOP bubble (clear control signals, keep data)
+      // Critical fix: Clear page fault signals to prevent exception re-triggering!
+      // Note: hold takes priority over flush
+      alu_result_out        <= alu_result_in;  // Keep for debugging
+      mem_write_data_out    <= mem_write_data_in;
+      fp_mem_write_data_out <= fp_mem_write_data_in;
+      rd_addr_out           <= 5'h0;           // Clear destination
+      pc_plus_4_out         <= pc_plus_4_in;
+      funct3_out            <= 3'h0;
+
+      mem_read_out       <= 1'b0;              // Clear control signals
+      mem_write_out      <= 1'b0;
+      reg_write_out      <= 1'b0;
+      wb_sel_out         <= 3'b0;
+      valid_out          <= 1'b0;              // Mark as invalid
+
+      mul_div_result_out <= {XLEN{1'b0}};
+
+      atomic_result_out  <= {XLEN{1'b0}};
+      is_atomic_out      <= 1'b0;
+
+      fp_result_out      <= {FLEN{1'b0}};
+      int_result_fp_out  <= {XLEN{1'b0}};
+      fp_rd_addr_out     <= 5'h0;
+      fp_reg_write_out   <= 1'b0;
+      int_reg_write_fp_out <= 1'b0;
+      fp_mem_op_out      <= 1'b0;
+      fp_flag_nv_out     <= 1'b0;
+      fp_flag_dz_out     <= 1'b0;
+      fp_flag_of_out     <= 1'b0;
+      fp_flag_uf_out     <= 1'b0;
+      fp_flag_nx_out     <= 1'b0;
+      fp_fmt_out         <= 1'b0;
+
+      csr_addr_out       <= 12'h0;
+      csr_we_out         <= 1'b0;
+      csr_rdata_out      <= {XLEN{1'b0}};
+
+      is_mret_out        <= 1'b0;
+      is_sret_out        <= 1'b0;
+      is_sfence_vma_out  <= 1'b0;
+      rs1_addr_out       <= 5'h0;
+      rs2_addr_out       <= 5'h0;
+      rs1_data_out       <= {XLEN{1'b0}};
+      instruction_out    <= 32'h0;
+      pc_out             <= pc_in;             // Keep PC for debugging
+
+      // CRITICAL: Clear page fault signals to prevent exception loop!
+      mmu_paddr_out      <= {XLEN{1'b0}};
+      mmu_ready_out      <= 1'b0;
+      mmu_page_fault_out <= 1'b0;              // This is the key fix!
       mmu_fault_vaddr_out <= {XLEN{1'b0}};
     end else if (!hold) begin
       // Only update if not held (M extension may need to hold instruction in EX)

@@ -2052,7 +2052,8 @@ module rv_core_pipelined #(
     .mem_instruction(exmem_instruction),
     .mem_valid(exmem_valid),
     // Page fault inputs (Phase 3 - MMU integration, registered from EX stage)
-    .mem_page_fault(exmem_page_fault),
+    // Mask page fault if trap was just taken (EXMEM flush has 1-cycle latency)
+    .mem_page_fault(exmem_page_fault && !trap_flush_r),
     .mem_fault_vaddr(exmem_fault_vaddr),
     // Outputs (connect to sync_exception signals, will be merged with interrupts)
     .exception(sync_exception),
@@ -2351,6 +2352,7 @@ module rv_core_pipelined #(
     .clk(clk),
     .reset_n(reset_n),
     .hold(hold_exmem),
+    .flush(trap_flush),  // Flush on exceptions to prevent re-triggering
     .alu_result_in(ex_alu_result_sext),
     .mem_write_data_in(ex_mem_write_data_mux),          // Integer store data
     .fp_mem_write_data_in(ex_fp_mem_write_data_mux),    // FP store data
