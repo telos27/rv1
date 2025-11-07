@@ -104,6 +104,10 @@ module data_memory #(
   // - Matches synthesized hardware behavior (BRAM/SRAM always have output registers)
   // - Improves timing closure (breaks long combinational path)
   // - Reduces power (no glitching on data bus)
+  //
+  // IMPORTANT: Output register holds its value when mem_read is low
+  // - This matches FPGA BRAM behavior (output stays valid until next read)
+  // - Allows pipelined reads without holding mem_read high
   always @(posedge clk) begin
     if (mem_read) begin
       // DEBUG: Show reads from test_data_area (0x80003000-0x80003FFF)
@@ -138,16 +142,18 @@ module data_memory #(
           read_data <= 64'h0;
         end
       endcase
-    end else begin
-      read_data <= 64'h0;
     end
+    // Note: No 'else' clause - output register holds value when mem_read is low
   end
 
   // Initialize memory
   initial begin
     integer i;
 
-    // Initialize to zero
+    // Initialize output register to zero
+    read_data = 64'h0;
+
+    // Initialize memory array to zero
     for (i = 0; i < MEM_SIZE; i = i + 1) begin
       mem[i] = 8'h0;
     end
