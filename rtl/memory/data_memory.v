@@ -94,44 +94,52 @@ module data_memory #(
     end
   end
 
-  // Read operation
-  always @(*) begin
+  // Read operation (SYNCHRONOUS with output register)
+  // This matches FPGA BRAM and ASIC compiled SRAM behavior:
+  // - Address registered on input
+  // - Data registered on output
+  // - Total: 1-cycle read latency
+  // Benefits:
+  // - Eliminates combinational glitches in simulation
+  // - Matches synthesized hardware behavior (BRAM/SRAM always have output registers)
+  // - Improves timing closure (breaks long combinational path)
+  // - Reduces power (no glitching on data bus)
+  always @(posedge clk) begin
     if (mem_read) begin
       // DEBUG: Show reads from test_data_area (0x80003000-0x80003FFF)
-      // DISABLED: Creates confusing output due to combinational glitches in simulation
       // if (addr[31:12] == 20'h80003)
       //   $display("[%0t] [DMEM] READ  addr=0x%08h masked=0x%05h word_data=0x%08h",
       //            $time, addr, masked_addr, word_data);
       case (funct3)
         3'b000: begin  // LB (load byte, sign-extended)
-          read_data = {{56{byte_data[7]}}, byte_data};
+          read_data <= {{56{byte_data[7]}}, byte_data};
         end
         3'b001: begin  // LH (load halfword, sign-extended)
-          read_data = {{48{halfword_data[15]}}, halfword_data};
+          read_data <= {{48{halfword_data[15]}}, halfword_data};
         end
         3'b010: begin  // LW (load word, sign-extended for RV64, zero-extended for FLW)
           // Sign-extend for RV64 LD, but upper bits will be ignored for FLW
-          read_data = {{32{word_data[31]}}, word_data};
+          read_data <= {{32{word_data[31]}}, word_data};
         end
         3'b011: begin  // LD/FLD (load doubleword) - supports RV64 and RV32D
           // Return full 64 bits - works for both RV64 LD and RV32D FLD
-          read_data = dword_data;
+          read_data <= dword_data;
         end
         3'b100: begin  // LBU (load byte unsigned)
-          read_data = {56'h0, byte_data};
+          read_data <= {56'h0, byte_data};
         end
         3'b101: begin  // LHU (load halfword unsigned)
-          read_data = {48'h0, halfword_data};
+          read_data <= {48'h0, halfword_data};
         end
         3'b110: begin  // LWU (load word unsigned - RV64 only)
-          read_data = {32'h0, word_data};
+          read_data <= {32'h0, word_data};
         end
         default: begin
-          read_data = 64'h0;
+          read_data <= 64'h0;
         end
       endcase
     end else begin
-      read_data = 64'h0;
+      read_data <= 64'h0;
     end
   end
 

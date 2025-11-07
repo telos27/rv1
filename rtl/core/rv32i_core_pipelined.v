@@ -2551,8 +2551,24 @@ module rv_core_pipelined #(
   assign dmem_mem_write  = ex_atomic_busy ? ex_atomic_mem_req && ex_atomic_mem_we : mem_write_gated;
   assign dmem_funct3     = ex_atomic_busy ? ex_atomic_mem_size : exmem_funct3;
 
-  // Atomic unit sees memory as always ready (synchronous memory, 1-cycle latency)
-  assign ex_atomic_mem_ready = 1'b1;
+  // Atomic unit memory ready signal - handle registered memory reads
+  // READS: Memory has output registers (matches FPGA BRAM and ASIC SRAM), takes 1 cycle
+  //   Cycle N: mem_req=1, mem_we=0 (read address presented)
+  //   Cycle N+1: read data available, mem_ready=1
+  // WRITES: Write data latched immediately into memory array, takes 0 cycles
+  //   Cycle N: mem_req=1, mem_we=1 (write happens)
+  //   Cycle N: mem_ready=1 (write completes immediately)
+  reg ex_atomic_mem_read_r;
+  always @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      ex_atomic_mem_read_r <= 1'b0;
+    end else begin
+      // Track read requests (mem_req && !mem_we)
+      ex_atomic_mem_read_r <= ex_atomic_mem_req && !ex_atomic_mem_we;
+    end
+  end
+  // Ready immediately for writes, delayed by 1 cycle for reads
+  assign ex_atomic_mem_ready = ex_atomic_mem_we ? 1'b1 : ex_atomic_mem_read_r;
 
   //--------------------------------------------------------------------------
   // MMU: Virtual Memory Translation
