@@ -2686,17 +2686,28 @@ module rv_core_pipelined #(
   assign arb_mem_write      = mmu_ptw_req_valid ? 1'b0 : dmem_mem_write;
   assign arb_mem_funct3     = mmu_ptw_req_valid ? 3'b010 : dmem_funct3;  // PTW uses word access
 
-  // PTW ready when memory is not busy (synchronous memory, always ready)
-  assign mmu_ptw_req_ready = 1'b1;
-  // PTW response valid one cycle after request (synchronous memory)
-  reg ptw_req_valid_r;
+  // PTW ready protocol for registered memory (Session 115: PTW fix)
+  // - Read latency: 1 cycle (same as dmem_bus_adapter)
+  // - First cycle: req_ready=0 (memory reading)
+  // - Second cycle: req_ready=1, resp_valid=1 (data ready)
+  reg ptw_read_in_progress_r;
   always @(posedge clk or negedge reset_n) begin
-    if (!reset_n)
-      ptw_req_valid_r <= 1'b0;
-    else
-      ptw_req_valid_r <= mmu_ptw_req_valid;
+    if (!reset_n) begin
+      ptw_read_in_progress_r <= 1'b0;
+    end else begin
+      // Set when PTW issues a request, clear after 1 cycle
+      if (mmu_ptw_req_valid && !ptw_read_in_progress_r) begin
+        ptw_read_in_progress_r <= 1'b1;
+      end else if (ptw_read_in_progress_r) begin
+        ptw_read_in_progress_r <= 1'b0;
+      end
+    end
   end
-  assign mmu_ptw_resp_valid = ptw_req_valid_r;
+
+  // PTW ready signal: NOT ready on first cycle, ready on second cycle
+  assign mmu_ptw_req_ready = ptw_read_in_progress_r;
+  // PTW response valid when data is ready (second cycle)
+  assign mmu_ptw_resp_valid = ptw_read_in_progress_r;
   assign mmu_ptw_resp_data = arb_mem_read_data;
 
   //--------------------------------------------------------------------------

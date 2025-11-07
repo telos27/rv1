@@ -48,6 +48,7 @@ _start:
     ori     t0, t0, 0x01            # V=1 (valid, non-leaf)
     la      t1, page_table_l1
     sw      t0, 0(t1)               # L1[0] = L0 page table address
+    # Note: L1[512] megapage entry for 0x80000000 is pre-populated in .data section
 
     # L0 entry for VA 0x00010000 (VPN[0] = 0x10):
     # Map to physical page containing user_test_data
@@ -250,7 +251,15 @@ test_fail:
 
 # Level 1 page table (root)
 page_table_l1:
-    .skip 4096  # 1024 entries x 4 bytes
+    # Entry 0: Points to L0 page table (will be filled at runtime)
+    .word 0x00000000
+    # Entries 1-511: Reserved
+    .fill 511, 4, 0x00000000
+    # Entry 512 (0x200): Megapage for VA 0x80000000-0x803FFFFF (identity mapped)
+    # PPN = 0x80000, flags = V|R|W|X|A|D = 0xCF
+    .word 0x200000CF
+    # Entries 513-1023: Invalid
+    .fill 511, 4, 0x00000000
 
 # Level 0 page table
 page_table_l0:
