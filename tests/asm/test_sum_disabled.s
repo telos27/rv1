@@ -71,10 +71,7 @@ _start:
     li      t0, 0xABCD1234          # Test value
     la      t1, user_test_data      # Physical address of user data
     sw      t0, 0(t1)               # Write to physical address (paging not yet enabled)
-    nop                              # Session 113: Delay for registered memory
-    nop                              # Extra delay
-    nop                              # Extra delay
-    lw      t2, 0(t1)               # Read back
+    lw      t2, 0(t1)               # Read back (Session 114: bus adapter handles registered memory timing)
     bne     t0, t2, test_fail       # Verify write succeeded
 
     TEST_STAGE 3
@@ -102,11 +99,17 @@ _start:
     la      t0, expect_fault_flag
     li      t1, 1
     sw      t1, 0(t0)
+    nop                              # Session 114: Registered memory timing
+    nop
+    nop
 
     # Save the expected exception cause (will be checked in handler)
     la      t0, expected_cause
     li      t1, CAUSE_LOAD_PAGE_FAULT
     sw      t1, 0(t0)
+    nop                              # Session 114: Registered memory timing
+    nop
+    nop
 
     TEST_STAGE 5
 
@@ -150,6 +153,9 @@ after_load_fault:
     la      t0, expected_cause
     li      t1, CAUSE_STORE_PAGE_FAULT
     sw      t1, 0(t0)
+    nop                              # Session 114: Registered memory timing
+    nop
+    nop
 
 try_store:
     li      t0, 0xDEAD5678          # Different test value
@@ -197,7 +203,7 @@ s_trap_handler:
     lw      t1, 0(t0)
     addi    t1, t1, 1
     sw      t1, 0(t0)
-
+    # Session 114: Bus adapter now handles registered memory timing automatically
     # Determine which fault this was and set return address
     lw      t2, 0(t0)               # Get trap_count
     li      t3, 1

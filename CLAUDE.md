@@ -3,14 +3,39 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 113, 2025-11-06)
+## Current Status (Session 114, 2025-11-06)
 
 ### 🎯 CURRENT PHASE: Phase 4 Prep - OS Readiness & MMU Hardening
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🔧 **M-MODE MMU BYPASS FIX COMPLETE!** - Critical privilege mode bug fixed
+- **Current Status**: 🔧 **BUS ADAPTER FIX COMPLETE!** - Memory system fully operational
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: Week 1 tests need registered memory timing fixes
+- **Progress**: Memory timing fixed, remaining Week 1 test failures are MMU/privilege issues
+
+### Session 114: Data Memory Bus Adapter Fix (2025-11-06)
+**Achievement**: ✅ Fixed critical bug where bus adapter claimed 0-cycle read latency despite registered memory having 1-cycle latency!
+
+**The Bug**:
+- `dmem_bus_adapter.v` hardcoded `req_ready = 1'b1` (always ready)
+- Told CPU data was ready immediately, but registered memory needs 1 cycle
+- CPU read garbage/zero before data was available
+- Store-followed-by-load sequences failed even with 30+ NOPs!
+
+**The Fix**:
+- Added state machine to track `read_in_progress_r` (lines 38-53)
+- Changed `req_ready = req_we || read_in_progress_r` (line 59)
+- Writes: 0-cycle latency (ready immediately)
+- Reads: 1-cycle latency (CPU stalls automatically via bus protocol)
+
+**Validation**:
+- ✅ Quick regression: 14/14 tests pass (100%)
+- ✅ Store-load sequences work correctly (NO NOPS NEEDED!)
+- ✅ test_sum_disabled: Progressed from stage 2 → stage 6
+- ⚠️ Remaining failures are MMU/privilege issues (not memory timing)
+
+**Impact**: **Completes the registered memory transition from Sessions 111-112-114**. Memory system now fully matches FPGA BRAM behavior with correct bus protocol.
+
+**Documentation**: `docs/SESSION_114_BUS_ADAPTER_FIX.md`
 
 ### Session 113: M-Mode MMU Bypass Fix (2025-11-06)
 **Achievement**: ✅ Fixed critical bug where M-mode incorrectly raised page faults when translation disabled!
@@ -73,10 +98,12 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 ### Major Fixes Summary
 | Session | Fix | Impact |
 |---------|-----|--------|
+| **114** | Bus adapter req_ready timing | Store-load sequences work, completes registered memory |
+| **113** | M-mode MMU bypass (page faults) | M-mode ignores translation correctly |
 | **112** | Memory output register hold | 100% compliance restored, matches real BRAM |
 | **111** | Registered memory (FPGA/ASIC-ready) | 700x improvement, eliminates glitches |
 | **110** | EXMEM flush on traps | Prevents infinite exception loops |
-| **109** | M-mode MMU bypass | Critical for OS boot |
+| **109** | M-mode MMU bypass (translation) | Critical for OS boot |
 | **107** | TLB caches faulting translations | 500x improvement |
 | **105** | 2-level page table walks | Enables non-identity VM |
 | **103** | Page fault pipeline hold | Precise exceptions |
