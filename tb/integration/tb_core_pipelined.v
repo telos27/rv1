@@ -49,6 +49,10 @@ module tb_core_pipelined;
   integer load_use_stalls;
   integer branch_flushes;
 
+  // Test marker detection
+  reg [31:0] marker_addr_captured;
+  reg [31:0] marker_value_captured;
+
   // RISC-V tests start at 0x80000000 (standard reset vector)
   // Custom tests also use 0x80000000 as they're linked with the same linker script
   parameter [31:0] RESET_VEC = 32'h80000000;
@@ -230,6 +234,45 @@ module tb_core_pipelined;
                  DUT.regfile.registers[10]); // a0 (address used in tests)
       end
       `endif
+
+      // Check for test completion via memory write to test marker address
+      // Phase 4 VM tests use pattern: write result to 0x80002100, then infinite loop
+      // This is detected by monitoring bus writes to the marker address
+      // Note: We need to capture the write data BEFORE waiting, as bus signals may change
+      if (bus_req_valid && bus_req_we && bus_req_ready &&
+          bus_req_addr == 32'h80002100) begin
+        // Capture the transaction data before waiting (bus signals may change!)
+        marker_addr_captured = bus_req_addr;
+        marker_value_captured = bus_req_wdata[31:0];
+
+        // Wait for write to complete and pipeline to stabilize (5 cycles)
+        repeat(5) @(posedge clk);
+        cycle_count = cycle_count + 5;
+
+        $display("[%0d] TEST MARKER WRITE DETECTED at address 0x%08h", cycle_count, marker_addr_captured);
+        $display("Value written: 0x%08h (gp register)", marker_value_captured);
+        $display("");
+
+        // Check the written value (also available in gp register)
+        // Convention: gp=1 means PASS, gp=0 means FAIL
+        if (marker_value_captured == 32'h00000001) begin
+          $display("========================================");
+          $display("TEST PASSED");
+          $display("========================================");
+          $display("  Test completed successfully (marker value = %0d)", marker_value_captured);
+          $display("  Cycles: %0d", cycle_count);
+          print_results();
+          $finish;
+        end else begin
+          $display("========================================");
+          $display("TEST FAILED");
+          $display("========================================");
+          $display("  Test failed (marker value = %0d, expected 1)", marker_value_captured);
+          $display("  Cycles: %0d", cycle_count);
+          print_results();
+          $finish;
+        end
+      end
 
       // Check for EBREAK in ID stage (before trap)
       // EBREAK can be either:

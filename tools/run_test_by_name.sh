@@ -193,23 +193,21 @@ fi
 echo ""
 echo -e "${YELLOW}[2/3] Compiling simulation...${NC}"
 
-CONFIG_FLAG="-DCONFIG_RV32I"
-TESTBENCH="$PROJECT_ROOT/tb/integration/tb_core_pipelined.v"
+# Always enable C extension since RV1 supports it and many tests use compressed instructions
+# Use XLEN parameter + extension flags to match actual CPU capabilities
+if [ "$XLEN" = "64" ]; then
+  CONFIG_FLAGS="-DXLEN=64 -DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_F_EXT=1 -DENABLE_D_EXT=1 -DENABLE_C_EXT=1"
+  TESTBENCH="$PROJECT_ROOT/tb/integration/tb_core_pipelined_rv64.v"
+else
+  CONFIG_FLAGS="-DXLEN=32 -DENABLE_M_EXT=1 -DENABLE_A_EXT=1 -DENABLE_F_EXT=1 -DENABLE_D_EXT=1 -DENABLE_C_EXT=1"
+  TESTBENCH="$PROJECT_ROOT/tb/integration/tb_core_pipelined.v"
+fi
+
 SIM_FILE="$PROJECT_ROOT/sim/${TEST_NAME}.vvp"
 WAVES_FILE="$PROJECT_ROOT/sim/waves/${TEST_NAME}.vcd"
 
-if [ "$XLEN" = "64" ]; then
-  CONFIG_FLAG="-DCONFIG_RV64I"
-  TESTBENCH="$PROJECT_ROOT/tb/integration/tb_core_pipelined_rv64.v"
-fi
-
-# Check if test needs C extension configuration
-if [[ "$TEST_NAME" == *"rvc"* ]] || [[ "$TEST_NAME" == *"rv32uc"* ]]; then
-  CONFIG_FLAG="-DCONFIG_RV32IMC"
-fi
-
 # Build iverilog flags
-IVERILOG_FLAGS="-g2012 -I$PROJECT_ROOT/rtl $CONFIG_FLAG -DMEM_FILE=\"$HEX_FILE\""
+IVERILOG_FLAGS="-g2012 -I$PROJECT_ROOT/rtl $CONFIG_FLAGS -DMEM_FILE=\"$HEX_FILE\""
 
 if [ "$OFFICIAL" = true ]; then
   IVERILOG_FLAGS="$IVERILOG_FLAGS -DCOMPLIANCE_TEST"
