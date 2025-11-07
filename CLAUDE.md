@@ -3,14 +3,49 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 115, 2025-11-06)
+## Current Status (Session 116, 2025-11-07)
 
-### 🎯 CURRENT PHASE: Phase 4 Prep - OS Readiness & MMU Hardening
+### 🎯 CURRENT PHASE: Phase 4 Prep - Instruction Fetch MMU Implementation
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🔧 **PTW FIX COMPLETE!** - MMU page table walks now work correctly
+- **Current Status**: 🔴 **CRITICAL BLOCKER FOUND** - Instruction fetch bypasses MMU completely
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
-- **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: Registered memory transition complete (Sessions 111-115), SUM bit logic confirmed correct
+- **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features - BLOCKED until IMMU implemented)
+- **Progress**: Discovered missing instruction fetch MMU (Session 116), implementation plan ready for Session 117
+
+### Session 116: Critical Discovery - Instruction Fetch MMU Missing (2025-11-07)
+**Discovery**: 🔴 **CRITICAL BLOCKER** - Instruction fetch bypasses MMU, blocking ALL Phase 4 tests with virtual memory!
+
+**Root Cause**:
+- `rv32i_core_pipelined.v:2593`: `assign mmu_req_is_fetch = 1'b0;` (hardcoded to data-only)
+- Instruction memory fetched directly from PC without translation
+- MMU only translates data accesses, NOT instruction fetches
+- This was intentionally deferred in Session 100 as "future improvement"
+
+**Impact**:
+- ❌ All Week 1 Phase 4 tests fail (11 tests: SUM/MXR, VM, TLB)
+- ❌ Trap handlers at virtual addresses cannot execute
+- ❌ Instruction page faults (exception code 12) impossible
+- ❌ Execute permission checking doesn't work
+- ❌ Violates RISC-V specification requirements
+
+**Why Tests Passed in Session 108**:
+- Tests used identity-mapped megapages (VA == PA for code)
+- Trap handler at VA 0x80000184 accidentally mapped to same PA
+- Worked by coincidence, not by design
+- Recent registered memory changes (Sessions 111-115) exposed the issue
+
+**Solution Plan**:
+- Session 117: Implement instruction fetch MMU translation
+- Unified TLB approach (16 entries shared between I-fetch and data)
+- IF stage: Combinational TLB lookup for instruction fetch
+- Add instruction page fault handling (exception code 12)
+- Estimated: 1-2 sessions (4-8 hours)
+
+**Documentation**:
+- `docs/SESSION_116_INSTRUCTION_FETCH_MMU_DISCOVERY.md` (detailed analysis)
+- `docs/INSTRUCTION_FETCH_MMU_IMPLEMENTATION_PLAN.md` (implementation guide)
+
+**Next Session**: Implement instruction fetch MMU to unblock Phase 4
 
 ### Session 115: PTW Memory Ready Protocol Fix (2025-11-06)
 **Achievement**: ✅ Fixed critical bug where PTW claimed 0-cycle read latency (identical to Session 114 bus adapter bug)!
@@ -185,13 +220,27 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 **Current Status**:
 - ✅ All compliance tests passing (165/165)
 - ✅ Registered memory implementation complete and validated
-- ✅ Phase 3 complete - ready for Phase 4
+- ✅ Phase 3 complete
+- 🔴 **BLOCKER**: Instruction fetch bypasses MMU (discovered Session 116)
 
-**Next Session Tasks**:
-1. Begin Phase 4 OS features (SUM/MXR permission bits)
-2. Implement missing MMU features for xv6
-3. Work through Phase 4 Week 1 test plan (11 tests)
-4. Target v1.1-xv6-ready milestone
+**Critical Issue**:
+- **Instruction fetch MMU missing** - instruction memory access doesn't go through MMU
+- Location: `rtl/core/rv32i_core_pipelined.v:2593` hardcoded to data-only
+- Impact: All Phase 4 VM tests fail (11/11 Week 1 tests blocked)
+- Required: RISC-V spec mandates instruction fetch translation
+
+**Next Session Tasks (Session 117)**:
+1. **PRIORITY**: Implement instruction fetch MMU translation
+   - Add IF stage MMU arbiter (unified 16-entry TLB)
+   - Update instruction memory to use translated addresses
+   - Add instruction page fault handling (exception code 12)
+   - Add pipeline stall logic for instruction TLB miss
+   - Estimated: 4-8 hours (1-2 sessions)
+2. Validate: All 11 Week 1 Phase 4 tests should pass
+3. Continue: Week 2 Phase 4 tests (page fault recovery, syscalls)
+4. Target: v1.1-xv6-ready milestone
+
+**See**: `docs/INSTRUCTION_FETCH_MMU_IMPLEMENTATION_PLAN.md` for detailed plan
 
 ---
 
