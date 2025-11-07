@@ -93,6 +93,11 @@ fault_expected:
 fault_occurred:
     .word 0x00000000
 
+# Counter to track which fault this is (1=first, 2=second)
+.align 4
+fault_count:
+    .word 0x00000000
+
 # ==============================================================================
 # Text Section - Test Code
 # ==============================================================================
@@ -211,9 +216,9 @@ smode_entry:
     # - SUM bit is 0
     la      t2, test_data_user
     li      t3, 0x003FFFFF
-    and     t4, t2, t3          # Get offset within megapage
+    and     t6, t2, t3          # Get offset within megapage (use t6, not t4!)
     # Read from VA range 0 (user-accessible page)
-    lw      t5, 0(t4)           # This should fault!
+    lw      t5, 0(t6)           # This should fault!
 
     # If we get here, the fault didn't occur - that's wrong!
     j       test_fail
@@ -267,12 +272,12 @@ smode_after_first_fault:
     # Now read should succeed
     la      t2, test_data_user
     li      t3, 0x003FFFFF
-    and     t4, t2, t3          # Get offset within megapage
-    lw      t5, 0(t4)           # This should succeed now!
+    and     t6, t2, t3          # Get offset within megapage (use t6, not t4!)
+    lw      t5, 0(t6)           # This should succeed now!
 
     # Verify we read the correct data
-    li      t6, 0xDEADBEEF
-    bne     t5, t6, test_fail
+    li      a0, 0xDEADBEEF      # Use a0 for comparison since t6 is address
+    bne     t5, a0, test_fail
 
     TEST_STAGE 9
 
@@ -282,10 +287,10 @@ smode_after_first_fault:
 
     # Write new value
     li      t0, 0x12345678
-    sw      t0, 0(t4)
+    sw      t0, 0(t6)           # Use t6 (still has the address)
 
     # Read back and verify
-    lw      t1, 0(t4)
+    lw      t1, 0(t6)
     bne     t0, t1, test_fail
 
     TEST_STAGE 10
@@ -319,8 +324,8 @@ smode_after_first_fault:
     # Try to read again (should fault)
     la      t2, test_data_user
     li      t3, 0x003FFFFF
-    and     t4, t2, t3
-    lw      t5, 0(t4)           # This should fault!
+    and     t6, t2, t3          # Use t6, not t4!
+    lw      t5, 0(t6)           # This should fault!
 
     # If we get here, test failed
     j       test_fail
@@ -359,8 +364,8 @@ smode_after_second_fault:
     # Write via supervisor VA
     li      t3, 0xAABBCCDD
     sw      t3, 0(t0)
-    lw      t4, 0(t0)
-    bne     t3, t4, test_fail
+    lw      t5, 0(t0)
+    bne     t3, t5, test_fail
 
     TEST_STAGE 13
 
@@ -378,40 +383,44 @@ test_fail:
 
 .align 4
 s_trap_handler:
+    # Use s registers to avoid corrupting test state (especially t4 = stage marker!)
     # Check if this is an expected page fault
-    la      t0, fault_expected
-    lw      t1, 0(t0)
-    beqz    t1, unexpected_trap
+    la      s0, fault_expected
+    lw      s1, 0(s0)
+    beqz    s1, unexpected_trap
 
     # Check if it's a load page fault
-    csrr    t2, scause
-    li      t3, CAUSE_LOAD_PAGE_FAULT
-    bne     t2, t3, unexpected_trap
+    csrr    s2, scause
+    li      s3, CAUSE_LOAD_PAGE_FAULT
+    bne     s2, s3, unexpected_trap
 
     # Set fault_occurred flag
-    li      t4, 1
-    la      t5, fault_occurred
-    sw      t4, 0(t5)
+    li      s4, 1
+    la      s5, fault_occurred
+    sw      s4, 0(s5)
 
-    # Determine which fault this is by checking SEPC
-    csrr    t0, sepc
-    la      t1, smode_entry
-    la      t2, smode_after_first_fault
-    # If SEPC is before first return point, this is first fault
-    bltu    t0, t2, first_fault_handler
+    # Increment and check fault_count to determine which fault this is
+    la      s0, fault_count
+    lw      s1, 0(s0)
+    addi    s1, s1, 1
+    sw      s1, 0(s0)
+
+    # If fault_count == 1, this is first fault
+    li      s2, 1
+    beq     s1, s2, first_fault_handler
     # Otherwise it's the second fault
     j       second_fault_handler
 
 first_fault_handler:
     # Return to smode_after_first_fault
-    la      t0, smode_after_first_fault
-    csrw    sepc, t0
+    la      s0, smode_after_first_fault
+    csrw    sepc, s0
     sret
 
 second_fault_handler:
     # Return to smode_after_second_fault
-    la      t0, smode_after_second_fault
-    csrw    sepc, t0
+    la      s0, smode_after_second_fault
+    csrw    sepc, s0
     sret
 
 unexpected_trap:
