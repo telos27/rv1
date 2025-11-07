@@ -17,6 +17,10 @@ module exception_unit #(
   input  wire [XLEN-1:0] if_pc,
   input  wire            if_valid,
 
+  // Instruction page fault (IF stage - Session 117)
+  input  wire            if_page_fault,
+  input  wire [XLEN-1:0] if_fault_vaddr,
+
   // Illegal instruction (ID stage)
   input  wire            id_illegal_inst,
   input  wire            id_ecall,
@@ -74,6 +78,9 @@ module exception_unit #(
   // Without C extension: bits [1:0] must be 00 (4-byte aligned)
   wire if_inst_misaligned = `ENABLE_C_EXT ? (if_valid && if_pc[0]) :
                                              (if_valid && (if_pc[1:0] != 2'b00));
+
+  // IF stage: Instruction page fault (Session 117)
+  wire if_inst_page_fault = if_valid && if_page_fault;
 
   // ID stage: Illegal instruction
   wire id_illegal = id_valid && id_illegal_inst;
@@ -133,12 +140,13 @@ module exception_unit #(
   // =========================================================================
   // Priority (highest to lowest):
   // 1. Instruction address misaligned (IF)
-  // 2. EBREAK (ID)
-  // 3. ECALL (ID)
-  // 4. Illegal instruction (ID) - includes MRET/SRET privilege violations
-  // 5. Load/Store page fault (MEM) - Phase 3
-  // 6. Load address misaligned (MEM)
-  // 7. Store address misaligned (MEM)
+  // 2. Instruction page fault (IF) - Session 117
+  // 3. EBREAK (ID)
+  // 4. ECALL (ID)
+  // 5. Illegal instruction (ID) - includes MRET/SRET privilege violations
+  // 6. Load/Store page fault (MEM) - Phase 3
+  // 7. Load address misaligned (MEM)
+  // 8. Store address misaligned (MEM)
 
   always @(*) begin
     // Default: no exception
@@ -155,6 +163,17 @@ module exception_unit #(
       exception_val = if_pc;
       `ifdef DEBUG_PRIV
       $display("[EXC] Time=%0t INST_MISALIGNED: PC=0x%08x", $time, if_pc);
+      `endif
+
+    end else if (if_inst_page_fault) begin
+      // Session 117: Instruction page fault
+      exception = 1'b1;
+      exception_code = CAUSE_INST_PAGE_FAULT;
+      exception_pc = if_pc;
+      exception_val = if_fault_vaddr;
+      $display("[EXCEPTION] Instruction page fault: PC=0x%h, VA=0x%h", if_pc, if_fault_vaddr);
+      `ifdef DEBUG_PRIV
+      $display("[EXC] Time=%0t INST_PAGE_FAULT: PC=0x%08x VA=0x%08x", $time, if_pc, if_fault_vaddr);
       `endif
 
     end else if (id_ebreak_exc) begin

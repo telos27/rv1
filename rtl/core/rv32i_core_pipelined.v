@@ -87,6 +87,8 @@ module rv_core_pipelined #(
   wire [31:0]     ifid_instruction;  // Instructions always 32-bit
   wire            ifid_valid;
   wire            ifid_is_compressed; // Was the instruction originally compressed?
+  wire            ifid_page_fault;    // Session 117: Instruction page fault
+  wire [XLEN-1:0] ifid_fault_vaddr;   // Session 117: Faulting virtual address
 
   //==========================================================================
   // ID Stage Signals
@@ -444,7 +446,24 @@ module rv_core_pipelined #(
   //==========================================================================
   // MMU Signals (Phase 3)
   //==========================================================================
-  // MMU translation request
+  // Instruction fetch MMU signals (Session 117)
+  wire            if_mmu_req_valid;
+  wire [XLEN-1:0] if_mmu_req_vaddr;
+  wire            if_mmu_req_ready;
+  wire [XLEN-1:0] if_mmu_req_paddr;
+  wire            if_mmu_req_page_fault;
+  wire [XLEN-1:0] if_mmu_req_fault_vaddr;
+
+  // Data access MMU signals (Session 117: renamed for clarity)
+  wire            ex_mmu_req_valid;
+  wire [XLEN-1:0] ex_mmu_req_vaddr;
+  wire            ex_mmu_req_is_store;
+  wire            ex_mmu_req_ready;
+  wire [XLEN-1:0] ex_mmu_req_paddr;
+  wire            ex_mmu_req_page_fault;
+  wire [XLEN-1:0] ex_mmu_req_fault_vaddr;
+
+  // Shared MMU signals (to MMU module)
   wire            mmu_req_valid;
   wire [XLEN-1:0] mmu_req_vaddr;
   wire            mmu_req_is_store;
@@ -776,13 +795,20 @@ module rv_core_pipelined #(
   wire imem_write_enable = exmem_mem_write && exmem_valid && !exception &&
                            (exmem_alu_result < IMEM_SIZE);
 
+  // Session 117: Use translated address for instruction fetch when paging enabled
+  // When translation needed AND MMU ready: use translated address
+  // Otherwise: use PC directly (bare mode, M-mode, or TLB miss pending)
+  wire [XLEN-1:0] if_fetch_addr = (if_needs_translation && if_mmu_req_ready) ?
+                                   if_mmu_req_paddr :
+                                   pc_current;
+
   instruction_memory #(
     .XLEN(XLEN),
     .MEM_SIZE(IMEM_SIZE),
     .MEM_FILE(MEM_FILE)
   ) imem (
     .clk(clk),
-    .addr(pc_current),
+    .addr(if_fetch_addr),  // Use translated address!
     .instruction(if_instruction_raw),
     // Write interface for self-modifying code (FENCE.I)
     .mem_write(imem_write_enable),
@@ -837,10 +863,14 @@ module rv_core_pipelined #(
     .pc_in(pc_current),
     .instruction_in(if_instruction),    // Already decompressed if it was compressed
     .is_compressed_in(if_is_compressed),
+    .page_fault_in(if_mmu_req_page_fault),   // Session 117
+    .fault_vaddr_in(if_mmu_req_fault_vaddr), // Session 117
     .pc_out(ifid_pc),
     .instruction_out(ifid_instruction),
     .valid_out(ifid_valid),
-    .is_compressed_out(ifid_is_compressed)
+    .is_compressed_out(ifid_is_compressed),
+    .page_fault_out(ifid_page_fault),        // Session 117
+    .fault_vaddr_out(ifid_fault_vaddr)       // Session 117
   );
 
   //==========================================================================
@@ -2040,6 +2070,8 @@ module rv_core_pipelined #(
     // Note: IF exceptions are checked when instruction is in IFID register
     .if_pc(ifid_pc),
     .if_valid(ifid_valid),          // Use registered valid from IFID
+    .if_page_fault(ifid_page_fault),        // Session 117
+    .if_fault_vaddr(ifid_fault_vaddr),      // Session 117
     // ID stage - decode stage exceptions (in EX pipeline stage)
     // Note: Only consider illegal_csr if it's actually a CSR instruction
     .id_illegal_inst((idex_illegal_inst | (ex_illegal_csr && idex_is_csr)) && idex_valid),
@@ -2580,18 +2612,45 @@ module rv_core_pipelined #(
   assign ex_atomic_mem_ready = ex_atomic_mem_we ? 1'b1 : ex_atomic_mem_read_r;
 
   //--------------------------------------------------------------------------
-  // MMU: Virtual Memory Translation
+  // MMU: Virtual Memory Translation (Session 117: Add IF stage translation)
   //--------------------------------------------------------------------------
 
-  // MMU translation request signals
-  // MMU translation happens in EX stage to provide stable address to MEM stage
-  // This breaks the combinational path: MMU → Memory → Register
-  // For instruction fetches: translation happens in IF stage (future enhancement)
-  assign mmu_req_valid   = idex_valid && (idex_mem_read || idex_mem_write);
-  assign mmu_req_vaddr   = ex_alu_result;  // ALU result is the virtual address (not yet registered)
-  assign mmu_req_is_store = idex_mem_write;
-  assign mmu_req_is_fetch = 1'b0;  // Data access (instruction fetch MMU in IF stage)
-  assign mmu_req_size    = idex_funct3;  // funct3 encodes access size
+  // Determine when translation is needed for each stage
+  // Translation enabled: SATP mode enabled AND not in M-mode
+  // (translation_enabled wire defined earlier at line 2030)
+  wire if_needs_translation = satp_mode_enabled && (current_priv != 2'b11);
+  wire ex_needs_translation = satp_mode_enabled && (current_priv != 2'b11) &&
+                              (idex_mem_read || idex_mem_write);
+
+  // IF stage MMU request (instruction fetch translation)
+  // Note: Don't gate with stall_pc to avoid circular dependency (stall depends on MMU ready)
+  assign if_mmu_req_valid = if_needs_translation;
+  assign if_mmu_req_vaddr = pc_current;
+
+  // EX stage MMU request (data access translation)
+  // Only request if IF is not requesting (IF has priority)
+  assign ex_mmu_req_valid = ex_needs_translation && !if_mmu_req_valid && idex_valid;
+  assign ex_mmu_req_vaddr = ex_alu_result;  // ALU result is the virtual address
+  assign ex_mmu_req_is_store = idex_mem_write;
+
+  // MMU Arbiter: Multiplex IF and EX requests (IF has priority)
+  // IF gets priority to minimize instruction fetch stalls
+  assign mmu_req_valid    = if_mmu_req_valid || ex_mmu_req_valid;
+  assign mmu_req_vaddr    = if_mmu_req_valid ? if_mmu_req_vaddr : ex_mmu_req_vaddr;
+  assign mmu_req_is_store = if_mmu_req_valid ? 1'b0 : ex_mmu_req_is_store;
+  assign mmu_req_is_fetch = if_mmu_req_valid;
+  assign mmu_req_size     = if_mmu_req_valid ? 3'b010 : idex_funct3;  // IF: word (4 bytes), EX: funct3
+
+  // Demultiplex MMU response to IF and EX
+  assign if_mmu_req_ready      = if_mmu_req_valid && mmu_req_ready;
+  assign if_mmu_req_paddr      = mmu_req_paddr;
+  assign if_mmu_req_page_fault = if_mmu_req_valid && mmu_req_page_fault;
+  assign if_mmu_req_fault_vaddr = mmu_req_fault_vaddr;
+
+  assign ex_mmu_req_ready      = ex_mmu_req_valid && mmu_req_ready;
+  assign ex_mmu_req_paddr      = mmu_req_paddr;
+  assign ex_mmu_req_page_fault = ex_mmu_req_valid && mmu_req_page_fault;
+  assign ex_mmu_req_fault_vaddr = mmu_req_fault_vaddr;
 
   // TLB flush control from SFENCE.VMA instruction
   // SFENCE.VMA in MEM stage: rs1 specifies vaddr, rs2 specifies ASID
