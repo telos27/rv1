@@ -3,14 +3,47 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 122, 2025-11-07)
+## Current Status (Session 123, 2025-11-08)
 
 ### 🎯 CURRENT PHASE: Phase 4 Week 2 IN PROGRESS
 - **Previous Phase**: ✅ Phase 4 Week 1 COMPLETE - All 9 tests passing (Session 119)
 - **Current Status**: 🔄 **PHASE 4 WEEK 2** - Implementing OS readiness tests
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: **5/11 Phase 4 Week 2 tests complete (45%)**
+- **Progress**: **5/11 Phase 4 Week 2 tests complete (45%)** + 1 pending build fix
+
+### Session 123: SUM Bit Test Implementation (2025-11-08)
+**Achievement**: ✅ Implemented test_syscall_user_memory_access - validates S-mode accessing user memory with SUM bit
+
+**Test Purpose**: Validates SUM (Supervisor User Memory) functionality - critical for OS syscalls where kernel needs to access user buffers.
+
+**Test Design** (simplified approach):
+- Stays in S-mode throughout (avoids U-mode code execution complexity)
+- U=0 megapage for kernel code (S-mode can execute)
+- U=1 4KB page for user data (tests SUM functionality)
+- 4 test scenarios: read, write, read-modify-write, buffer sum
+
+**Key Design Decisions**:
+1. **S-mode only**: S-mode cannot execute from U=1 pages (RISC-V spec), so staying in S-mode simplifies test
+2. **VA 0x20000000**: Avoids test marker collision at 0x80002100
+3. **Focus on data access**: SUM bit only affects loads/stores, not instruction fetch
+
+**Test Code**:
+- `tests/asm/test_syscall_user_memory_access.s` (254 lines)
+- Tests SUM=1 allows S-mode to read/write U=1 pages
+- Simulates kernel processing user data during syscalls
+
+**Status**: ⚠️ Test implemented and regression-clean, pending build fix
+
+**Validation**:
+- ✅ Zero regressions: 14/14 quick tests pass (100%)
+- ⚠️ Build hangs in test runner (pending debug)
+
+**Documentation**: `docs/SESSION_123_WEEK2_SUM_TEST.md`
+
+**Next Session**: Debug build issue, then continue with remaining Week 2 tests
+
+---
 
 ### Session 122: Critical Data MMU Bug Fix - Translation Now Working! (2025-11-07)
 **Achievement**: 🎉 **MAJOR BREAKTHROUGH** - Fixed critical bug where data memory accesses bypassed MMU translation!
