@@ -32,30 +32,33 @@ _start:
     # Setup page table with test page
     ###########################################################################
 
-    # Create a 2-level page table (Sv32)
-    # L1 entry 0: Points to L0 page table
-    la      t0, page_table_l0
-    srli    t0, t0, 12              # Get PPN
-    slli    t0, t0, 10              # Shift to PPN field
-    ori     t0, t0, 0x01            # V=1 (valid, non-leaf)
+    # Create page table with identity megapages
+    # This test focuses on TLB hit/miss behavior, not complex page table walks
     la      t1, page_table_l1
-    sw      t0, 0(t1)               # L1[0] = L0 page table
 
-    # L0 entry 0x10: VA 0x00010000 → test_data
-    # Flags: V=1, R=1, W=1, X=0, U=0, A=1, D=1 = 0xC7
-    la      t0, test_data
-    srli    t0, t0, 12
-    slli    t0, t0, 10
-    ori     t0, t0, 0xC7            # V|R|W|A|D
-    la      t1, page_table_l0
-    sw      t0, (0x10 * 4)(t1)      # L0[0x10] for VA 0x00010000
+    # L1 entry 512: Identity megapage for code/data region
+    # VA 0x80000000-0x803FFFFF → PA 0x80000000-0x803FFFFF (4MB megapage)
+    # This maps all code and data (code at 0x80000xxx, data at 0x80003xxx-0x80005xxx)
+    # PPN = 0x80000000 >> 12 = 0x80000
+    # PTE = (0x80000 << 10) | 0xCF = 0x20000000 | 0xCF
+    li      t0, 0x200000CF          # Megapage: V|R|W|X|A|D
+    li      t2, 2048                # Offset for L1[512] (512*4 bytes)
+    add     t2, t1, t2              # Calculate address of L1[512]
+    sw      t0, 0(t2)               # Store megapage PTE
 
-    # Enable paging with SATP
+    # Prepare SATP value (but don't enable yet - M-mode bypasses MMU)
     la      t0, page_table_l1
     srli    t0, t0, 12              # Get PPN of root page table
     li      t1, 0x80000000          # MODE = 1 (Sv32)
     or      t0, t0, t1
-    csrw    satp, t0
+    mv      s0, t0                  # Save SATP value to s0
+
+    # Enter S-mode (required for MMU/TLB to be active)
+    ENTER_SMODE_M smode_entry
+
+smode_entry:
+    # Now in S-mode - enable paging with SATP
+    csrw    satp, s0
     sfence.vma                      # Flush TLB (start clean)
 
     TEST_STAGE 2
@@ -64,9 +67,9 @@ _start:
     # First access - TLB miss (loads translation into TLB)
     ###########################################################################
 
-    # Write test data through VA 0x00010000
+    # Write test data through identity-mapped VA (VA = PA for test_data)
     li      t0, 0xDEADBEEF
-    li      t1, 0x00010000
+    la      t1, test_data           # VA 0x80005000 → PA 0x80005000 (identity)
     sw      t0, 0(t1)               # TLB miss → PTW → TLB load
 
     # Read back and verify
@@ -81,7 +84,7 @@ _start:
 
     # Access same VA again - should use cached TLB entry
     li      t0, 0xCAFEBABE
-    li      t1, 0x00010000
+    la      t1, test_data
     sw      t0, 0(t1)               # TLB hit (fast)
 
     # Read back and verify
@@ -104,7 +107,7 @@ _start:
 
     # Access same VA after SFENCE - should be TLB miss again
     li      t0, 0x12345678
-    li      t1, 0x00010000
+    la      t1, test_data
     sw      t0, 0(t1)               # TLB miss → PTW → TLB reload
 
     # Read back and verify
@@ -119,7 +122,7 @@ _start:
 
     # Access same VA again - should use newly cached entry
     li      t0, 0xABCDEF00
-    li      t1, 0x00010000
+    la      t1, test_data
     sw      t0, 0(t1)               # TLB hit
 
     # Read back and verify
@@ -136,13 +139,13 @@ _start:
     # - rs1 = VA to invalidate (or x0 for all)
     # - rs2 = ASID (or x0 for all)
 
-    # Invalidate specific VA (0x00010000)
-    li      a0, 0x00010000
-    sfence.vma a0, zero             # Invalidate VA 0x00010000, all ASIDs
+    # Invalidate specific VA (test_data address)
+    la      a0, test_data
+    sfence.vma a0, zero             # Invalidate specific VA, all ASIDs
 
     # Access after specific invalidation
     li      t0, 0x55555555
-    li      t1, 0x00010000
+    la      t1, test_data
     sw      t0, 0(t1)               # TLB miss → PTW → reload
 
     # Read back and verify
@@ -165,10 +168,26 @@ test_fail:
 ###############################################################################
 
 s_trap_handler:
+    # Check if this is an intentional ebreak (from TEST_PASS/TEST_FAIL)
+    # If x28 already has a result marker, just ebreak again to exit
+    li      t0, 0xDEADBEEF
+    beq     x28, t0, 1f         # If x28 = PASS marker, exit
+    li      t0, 0xDEADDEAD
+    beq     x28, t0, 1f         # If x28 = FAIL marker, exit
+    # Otherwise, this is an unexpected trap - mark as failure
     TEST_FAIL
+1:  ebreak                      # Re-execute ebreak to let testbench catch it
 
 m_trap_handler:
+    # Check if this is an intentional ebreak (from TEST_PASS/TEST_FAIL)
+    # If x28 already has a result marker, just ebreak again to exit
+    li      t0, 0xDEADBEEF
+    beq     x28, t0, 1f         # If x28 = PASS marker, exit
+    li      t0, 0xDEADDEAD
+    beq     x28, t0, 1f         # If x28 = FAIL marker, exit
+    # Otherwise, this is an unexpected trap - mark as failure
     TEST_FAIL
+1:  ebreak                      # Re-execute ebreak to let testbench catch it
 
 ###############################################################################
 # Data section

@@ -2622,16 +2622,32 @@ module rv_core_pipelined #(
   wire ex_needs_translation = satp_mode_enabled && (current_priv != 2'b11) &&
                               (idex_mem_read || idex_mem_write);
 
+  // Session 119: Round-robin MMU arbiter (interim solution until dual I-TLB/D-TLB)
+  // Toggle between IF and EX when both need MMU
+  reg mmu_grant_to_ex_r;
+
+  always @(posedge clk) begin
+    if (!reset_n) begin
+      mmu_grant_to_ex_r <= 1'b0;
+    end else if (if_needs_translation && ex_needs_translation) begin
+      // Both need MMU - toggle grant
+      mmu_grant_to_ex_r <= !mmu_grant_to_ex_r;
+    end else begin
+      // Only one needs it or neither - give to EX if it needs
+      mmu_grant_to_ex_r <= ex_needs_translation;
+    end
+  end
+
   // IF stage MMU request (instruction fetch translation)
-  // Note: Don't gate with stall_pc to avoid circular dependency (stall depends on MMU ready)
-  assign if_mmu_req_valid = if_needs_translation;
+  assign if_mmu_req_valid = if_needs_translation && !(ex_needs_translation && mmu_grant_to_ex_r);
   assign if_mmu_req_vaddr = pc_current;
 
   // EX stage MMU request (data access translation)
-  // Only request if IF is not requesting (IF has priority)
-  assign ex_mmu_req_valid = ex_needs_translation && !if_mmu_req_valid && idex_valid;
+  assign ex_mmu_req_valid = ex_needs_translation && idex_valid &&
+                            (!if_needs_translation || mmu_grant_to_ex_r);
   assign ex_mmu_req_vaddr = ex_alu_result;  // ALU result is the virtual address
   assign ex_mmu_req_is_store = idex_mem_write;
+
 
   // MMU Arbiter: Multiplex IF and EX requests (IF has priority)
   // IF gets priority to minimize instruction fetch stalls
@@ -2683,8 +2699,10 @@ module rv_core_pipelined #(
     end
   end
 
+  // Session 119: Stall when MMU busy OR when IF needs MMU but EX has it
   assign mmu_busy = (mmu_req_valid && !mmu_req_ready) ||      // PTW in progress
-                    mmu_page_fault_pending;                    // Page fault pending trap
+                    mmu_page_fault_pending ||                  // Page fault pending trap
+                    (if_needs_translation && ex_needs_translation && mmu_grant_to_ex_r);  // EX has MMU, stall IF
 
   // Instantiate MMU
   mmu #(

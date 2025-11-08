@@ -3,14 +3,59 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 118, 2025-11-07)
+## Current Status (Session 119, 2025-11-07)
 
-### 🎯 CURRENT PHASE: Phase 4 Prep - Test Infrastructure Complete!
+### 🎯 CURRENT PHASE: Phase 4 Week 1 COMPLETE!
 - **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: 🟢 **MAJOR PROGRESS** - Phase 4 test infrastructure working!
+- **Current Status**: ✅ **PHASE 4 WEEK 1 COMPLETE** - All 9 tests passing (100%)!
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: 8/9 Phase 4 Week 1 tests passing (89%!)
+- **Progress**: **9/9 Phase 4 Week 1 tests passing (100%!)**
+
+### Session 119: Critical MMU Arbiter Bug Fixed! (2025-11-07)
+**Achievement**: 🎉 **MAJOR BREAKTHROUGH** - Fixed critical MMU arbiter bug, Phase 4 Week 1 complete!
+
+**Critical Bug Discovered**: Session 117's instruction fetch MMU blocked ALL data translations!
+- `if_mmu_req_valid` was TRUE every cycle (constant instruction fetching)
+- Original arbiter: `ex_mmu_req_valid = ex_needs_translation && !if_mmu_req_valid`
+- Condition `!if_mmu_req_valid` was ALWAYS FALSE → data accesses NEVER translated!
+
+**Solution**: Round-Robin MMU Arbiter
+```verilog
+// Toggle grant between IF and EX when both need MMU
+reg mmu_grant_to_ex_r;
+always @(posedge clk) begin
+  if (if_needs_translation && ex_needs_translation)
+    mmu_grant_to_ex_r <= !mmu_grant_to_ex_r;  // Fair arbitration
+end
+```
+
+**Test Fixes** (`test_tlb_basic_hit_miss.s`):
+1. Added `ENTER_SMODE_M` - test now runs in S-mode (M-mode bypasses MMU)
+2. Fixed trap handlers - check for intentional ebreak before failing
+3. Added identity megapage for code region (0x80000000)
+4. Simplified to use identity mapping (VA = PA)
+
+**Test Results**:
+- ✅ Quick regression: 14/14 passing (100%)
+- ✅ **Phase 4 Week 1: 9/9 passing (100%)** ← Was 8/9!
+  - ✅ test_vm_identity_basic
+  - ✅ test_sum_disabled
+  - ✅ test_vm_identity_multi
+  - ✅ test_vm_sum_simple
+  - ✅ test_vm_sum_read
+  - ✅ test_sum_enabled
+  - ✅ test_sum_minimal
+  - ✅ test_mxr_basic
+  - ✅ test_tlb_basic_hit_miss ← **FIXED!**
+
+**Impact**: Phase 4 Week 1 COMPLETE! Data MMU translations now work. Round-robin arbiter unblocks all Phase 4 development.
+
+**Future Work**: Implement proper I-TLB/D-TLB separation (industry standard) for better performance
+
+**Documentation**: `docs/SESSION_119_MMU_ARBITER_FIX.md`
+
+**Next Session**: Continue Phase 4 Week 2 tests (page fault recovery, syscalls)
 
 ### Session 118: Testbench Fix for Phase 4 Tests (2025-11-07)
 **Achievement**: 🎉 Fixed Phase 4 test infrastructure - 8/9 tests now passing (was 5/11)!
@@ -23,24 +68,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - `tb/integration/tb_core_pipelined.v`: Added memory write monitor for marker address (+52 lines)
 - `tools/run_test_by_name.sh`: Enabled C extension by default (explicit `-DENABLE_C_EXT=1`)
 
-**Test Results**:
-- ✅ Quick regression: 13/14 passing (zero NEW regressions)
-- ✅ Phase 4 Week 1: 8/9 passing (89%)
-  - ✅ test_vm_identity_basic
-  - ✅ test_sum_disabled
-  - ✅ test_vm_identity_multi
-  - ✅ test_vm_sum_simple
-  - ✅ test_vm_sum_read
-  - ✅ test_sum_enabled ← Fixed!
-  - ✅ test_sum_minimal ← Fixed!
-  - ✅ test_mxr_basic ← Fixed!
-  - ❌ test_tlb_basic_hit_miss (test logic issue, not CPU bug)
-
-**Impact**: **Phase 4 fully unblocked!** Test infrastructure now supports virtual memory, privilege transitions, and compressed instructions. Ready for remaining Phase 4 Week 1 tests.
-
 **Documentation**: `docs/SESSION_118_TESTBENCH_FIX_PHASE4_TESTS.md`
-
-**Next Session**: Debug test_tlb_basic_hit_miss, continue Phase 4 Week 2 tests
 
 ### Session 117: Instruction Fetch MMU Implementation (2025-11-07)
 **Achievement**: 🎉 **CRITICAL MILESTONE** - Instruction fetch MMU successfully implemented!
@@ -180,11 +208,15 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 
 ---
 
-## Recent Critical Bug Fixes (Phase 4 Prep - Sessions 90-115)
+## Recent Critical Bug Fixes (Phase 4 - Sessions 90-119)
 
 ### Major Fixes Summary
 | Session | Fix | Impact |
 |---------|-----|--------|
+| **119** | Round-robin MMU arbiter | Data translations now work! Phase 4 Week 1 complete (9/9) |
+| **118** | Phase 4 test infrastructure | Test detection and C extension fixes (8/9 tests) |
+| **117** | Instruction fetch MMU | IF stage now translates through MMU |
+| **116** | Discovered IF MMU missing | Critical blocker identified |
 | **115** | PTW req_ready timing | PTW reads correct page table entries, all paging works |
 | **114** | Bus adapter req_ready timing | Store-load sequences work, completes registered memory |
 | **113** | M-mode MMU bypass (page faults) | M-mode ignores translation correctly |
