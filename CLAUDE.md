@@ -3,7 +3,7 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 121, 2025-11-07)
+## Current Status (Session 122, 2025-11-07)
 
 ### 🎯 CURRENT PHASE: Phase 4 Week 2 IN PROGRESS
 - **Previous Phase**: ✅ Phase 4 Week 1 COMPLETE - All 9 tests passing (Session 119)
@@ -11,6 +11,50 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
 - **Progress**: **5/11 Phase 4 Week 2 tests complete (45%)**
+
+### Session 122: Critical Data MMU Bug Fix - Translation Now Working! (2025-11-07)
+**Achievement**: 🎉 **MAJOR BREAKTHROUGH** - Fixed critical bug where data memory accesses bypassed MMU translation!
+
+**Critical Discovery**: All Phase 4 tests were passing by accident - they used identity mapping (VA=PA) which masked the fact that **data accesses were completely bypassing MMU translation!** Only instruction fetches were being translated.
+
+**The Bug (Two-Part)**:
+1. **EXMEM Register Using Wrong Signals** (`rv32i_core_pipelined.v:2428-2431`)
+   - Captured shared MMU outputs (`mmu_req_ready`) instead of EX-specific signals (`ex_mmu_req_ready`)
+   - When IF got MMU translation, EX incorrectly thought it was for data access
+
+2. **MMU Arbiter Starvation** (`rv32i_core_pipelined.v:2718-2722`)
+   - When both IF and EX needed MMU, arbiter toggled grant but EX never got to use it
+   - Missing stall condition: EX didn't hold when waiting for MMU grant
+   - Added: `(if_needs_translation && ex_needs_translation && !mmu_grant_to_ex_r)` to `mmu_busy`
+
+**The Fix**:
+```verilog
+// Change 1: EXMEM register inputs (line 2428-2431)
+- .mmu_paddr_in(mmu_req_paddr),      // Wrong: shared signal
++ .mmu_paddr_in(ex_mmu_req_paddr),   // Correct: EX-specific
+
+// Change 2: MMU busy stall logic (line 2722)
++ (if_needs_translation && ex_needs_translation && !mmu_grant_to_ex_r);  // Stall EX when waiting
+```
+
+**Test Results**:
+- ✅ **Data MMU now functional!** First time seeing `fetch=0 store=1` in MMU debug
+- ✅ Permission violations detected: `MMU: Permission DENIED - PAGE FAULT!`
+- ✅ Zero regressions: 14/14 quick tests pass
+- ⚠️ Page fault trap delivery needs debugging (test times out in infinite loop)
+
+**Files Changed**:
+- `rtl/core/rv32i_core_pipelined.v` - 2 critical fixes (6 lines)
+- Created: `tests/asm/test_pte_permission_simple.s` (103 lines)
+- Created: `tests/asm/test_pte_permission_rwx.s` (378 lines, incomplete)
+
+**Impact**: Unblocks Phase 4 Week 2 permission tests (pending page fault trap fix)
+
+**Documentation**: `docs/SESSION_122_DATA_MMU_FIX.md`
+
+**Next Session**: Debug why page faults from data accesses aren't triggering traps to exception handler
+
+---
 
 ### Session 121: Phase 4 Week 2 - FP and CSR Context Switch Tests (2025-11-07)
 **Achievement**: ✅ Completed context switch test suite - GPR, FP, and CSR preservation validated!
@@ -264,11 +308,12 @@ end
 
 ---
 
-## Recent Critical Bug Fixes (Phase 4 - Sessions 90-119)
+## Recent Critical Bug Fixes (Phase 4 - Sessions 90-122)
 
 ### Major Fixes Summary
 | Session | Fix | Impact |
 |---------|-----|--------|
+| **122** | Data MMU translation bug (2-part fix) | **Data accesses now use MMU!** Unblocks permission tests |
 | **119** | Round-robin MMU arbiter | Data translations now work! Phase 4 Week 1 complete (9/9) |
 | **118** | Phase 4 test infrastructure | Test detection and C extension fixes (8/9 tests) |
 | **117** | Instruction fetch MMU | IF stage now translates through MMU |

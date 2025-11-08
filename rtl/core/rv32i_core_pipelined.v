@@ -2424,11 +2424,11 @@ module rv_core_pipelined #(
     .rs1_data_in(ex_rs1_data_forwarded),  // Forwarded rs1 data
     .instruction_in(idex_instruction),
     .pc_in(idex_pc),
-    // MMU translation results from EX stage
-    .mmu_paddr_in(mmu_req_paddr),
-    .mmu_ready_in(mmu_req_ready),
-    .mmu_page_fault_in(mmu_req_page_fault),
-    .mmu_fault_vaddr_in(mmu_req_fault_vaddr),
+    // MMU translation results from EX stage (use EX-specific signals, not shared MMU outputs!)
+    .mmu_paddr_in(ex_mmu_req_paddr),
+    .mmu_ready_in(ex_mmu_req_ready),
+    .mmu_page_fault_in(ex_mmu_req_page_fault),
+    .mmu_fault_vaddr_in(ex_mmu_req_fault_vaddr),
     // Outputs
     .alu_result_out(exmem_alu_result),
     .mem_write_data_out(exmem_mem_write_data),          // Integer store data
@@ -2649,6 +2649,7 @@ module rv_core_pipelined #(
   assign ex_mmu_req_is_store = idex_mem_write;
 
 
+
   // MMU Arbiter: Multiplex IF and EX requests (IF has priority)
   // IF gets priority to minimize instruction fetch stalls
   assign mmu_req_valid    = if_mmu_req_valid || ex_mmu_req_valid;
@@ -2700,9 +2701,11 @@ module rv_core_pipelined #(
   end
 
   // Session 119: Stall when MMU busy OR when IF needs MMU but EX has it
+  // Session 122: Also stall when EX needs MMU but IF has it (waiting for grant)
   assign mmu_busy = (mmu_req_valid && !mmu_req_ready) ||      // PTW in progress
                     mmu_page_fault_pending ||                  // Page fault pending trap
-                    (if_needs_translation && ex_needs_translation && mmu_grant_to_ex_r);  // EX has MMU, stall IF
+                    (if_needs_translation && ex_needs_translation && mmu_grant_to_ex_r) ||  // EX has MMU, stall IF
+                    (if_needs_translation && ex_needs_translation && !mmu_grant_to_ex_r);   // IF has MMU, stall EX
 
   // Instantiate MMU
   mmu #(
