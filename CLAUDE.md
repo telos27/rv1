@@ -3,14 +3,47 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 120, 2025-11-07)
+## Current Status (Session 121, 2025-11-07)
 
 ### 🎯 CURRENT PHASE: Phase 4 Week 2 IN PROGRESS
 - **Previous Phase**: ✅ Phase 4 Week 1 COMPLETE - All 9 tests passing (Session 119)
 - **Current Status**: 🔄 **PHASE 4 WEEK 2** - Implementing OS readiness tests
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: **3/11 Phase 4 Week 2 tests complete (27%)**
+- **Progress**: **5/11 Phase 4 Week 2 tests complete (45%)**
+
+### Session 121: Phase 4 Week 2 - FP and CSR Context Switch Tests (2025-11-07)
+**Achievement**: ✅ Completed context switch test suite - GPR, FP, and CSR preservation validated!
+
+**Tests Completed**:
+1. ✅ **test_context_switch_fp_state.s** (718 lines) - FP register preservation
+   - Tests all 32 FP registers (f0-f31) and FCSR across context switches
+   - Task A: values 1.0-32.0, Task B: values 100.0-131.0
+   - Verifies perfect isolation between tasks (IEEE 754 bit-exact)
+   - 866 cycles, 531 instructions
+
+2. ✅ **test_context_switch_csr_state.s** (308 lines) - CSR state preservation
+   - Tests 5 supervisor CSRs: SEPC, SSTATUS, SSCRATCH, SCAUSE, STVAL
+   - Includes round-robin switching test (A→B→A→B→A)
+   - Validates OS task switching requirements
+   - 227 cycles, 139 instructions
+
+**Context Switch Suite Complete** (3/3 tests):
+- ✅ GPR preservation (Session 120)
+- ✅ FP preservation (Session 121)
+- ✅ CSR preservation (Session 121)
+
+**Test Results**:
+- ✅ Quick regression: 14/14 passing (100%)
+- ✅ New tests: 2/2 passing (100%)
+- ✅ Week 2 total: 5/5 tests passing (100%)
+- ✅ Total: 1,026 lines of new test code
+
+**Pending**: 6/11 Week 2 tests (page faults, syscall user memory, permissions)
+
+**Documentation**: `docs/SESSION_121_WEEK2_CONTEXT_SWITCH_TESTS.md`
+
+**Next Session**: Continue Week 2 tests (permission violations or page fault recovery)
 
 ### Session 120: Phase 4 Week 2 Tests - Part 1 (2025-11-07)
 **Achievement**: ✅ Implemented 3 Week 2 tests for OS readiness - syscalls and context switching
@@ -33,11 +66,7 @@ RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensio
 - ✅ New tests: 3/3 passing (100%)
 - ✅ Total: 950 lines of new test code
 
-**Pending**: 8/11 Week 2 tests (page fault tests deferred due to complexity)
-
 **Documentation**: `docs/SESSION_120_WEEK2_TESTS_PART1.md`
-
-**Next Session**: Continue Week 2 tests (page faults, SUM tests, FP/CSR context switching)
 
 ### Session 119: Critical MMU Arbiter Bug Fixed! (2025-11-07)
 **Achievement**: 🎉 **MAJOR BREAKTHROUGH** - Fixed critical MMU arbiter bug, Phase 4 Week 1 complete!
