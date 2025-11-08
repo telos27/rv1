@@ -3,14 +3,41 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 119, 2025-11-07)
+## Current Status (Session 120, 2025-11-07)
 
-### 🎯 CURRENT PHASE: Phase 4 Week 1 COMPLETE!
-- **Previous Phase**: ✅ Phase 3 COMPLETE - 100% RV32/RV64 compliance! (Session 87)
-- **Current Status**: ✅ **PHASE 4 WEEK 1 COMPLETE** - All 9 tests passing (100%)!
+### 🎯 CURRENT PHASE: Phase 4 Week 2 IN PROGRESS
+- **Previous Phase**: ✅ Phase 4 Week 1 COMPLETE - All 9 tests passing (Session 119)
+- **Current Status**: 🔄 **PHASE 4 WEEK 2** - Implementing OS readiness tests
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: **9/9 Phase 4 Week 1 tests passing (100%!)**
+- **Progress**: **3/11 Phase 4 Week 2 tests complete (27%)**
+
+### Session 120: Phase 4 Week 2 Tests - Part 1 (2025-11-07)
+**Achievement**: ✅ Implemented 3 Week 2 tests for OS readiness - syscalls and context switching
+
+**Tests Completed**:
+1. ✅ **test_syscall_args_passing.s** - U-mode→S-mode syscall argument passing
+   - Tests 3 different syscall types (add, sum4, xor_all)
+   - Validates ECALL/SRET mechanism and register preservation
+
+2. ✅ **test_context_switch_minimal.s** - GPR preservation across context switches
+   - Saves/restores all 31 general-purpose registers
+   - Tests two complete task contexts with perfect isolation
+
+3. ✅ **test_syscall_multi_call.s** - Multiple sequential syscalls
+   - 10 different syscall implementations (add, mul, sub, and, or, xor, sll, srl, max, min)
+   - Verifies independent operation without state corruption
+
+**Test Results**:
+- ✅ Quick regression: 14/14 passing (100%)
+- ✅ New tests: 3/3 passing (100%)
+- ✅ Total: 950 lines of new test code
+
+**Pending**: 8/11 Week 2 tests (page fault tests deferred due to complexity)
+
+**Documentation**: `docs/SESSION_120_WEEK2_TESTS_PART1.md`
+
+**Next Session**: Continue Week 2 tests (page faults, SUM tests, FP/CSR context switching)
 
 ### Session 119: Critical MMU Arbiter Bug Fixed! (2025-11-07)
 **Achievement**: 🎉 **MAJOR BREAKTHROUGH** - Fixed critical MMU arbiter bug, Phase 4 Week 1 complete!

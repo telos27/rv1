@@ -1,177 +1,254 @@
-# test_page_fault_invalid_recover.s - Test page fault recovery and retry
+# ==============================================================================
+# Test: Page Fault Recovery - Invalid Page
+# ==============================================================================
 #
-# Test Description:
-# - Setup page table with invalid PTE (V=0)
-# - Access invalid page → triggers page fault
-# - Trap handler fixes PTE (sets V=1)
-# - Handler executes SFENCE.VMA to flush TLB
-# - Handler returns via SRET (retry faulting instruction)
-# - Second attempt succeeds
+# This test verifies that page faults can be recovered by fixing the PTE
+# and retrying the faulting instruction. This is a critical OS feature for:
+# - Demand paging (allocate pages on first access)
+# - Copy-on-write (mark pages read-only, allocate on write  
+# - Swap (bring pages back from disk)
 #
-# This tests the critical OS capability for demand paging where pages
-# are initially marked invalid and loaded on-demand when accessed.
+# Test Sequence:
+# 1. Setup page table with INVALID page (V=0)  
+# 2. Enter S-mode
+# 3. Setup trap handler  
+# 4. Try to access invalid page → triggers load page fault
+# 5. Trap handler fixes PTE (sets V=1)
+# 6. Trap handler executes SFENCE.VMA
+# 7. Trap handler returns to retry instruction (SEPC unchanged)
+# 8. Load succeeds on retry
+# 9. Verify data is correct
+#
+# ==============================================================================
+
+.include "tests/asm/include/priv_test_macros.s"
+.option norvc
 
 .section .text
 .globl _start
 
 _start:
-    # Initialize test state
-    li gp, 0                    # gp=0 means test not passed yet
+    TEST_PREAMBLE
+    TEST_STAGE 1
 
-    #==========================================================================
-    # Stage 1: Setup page table with ONE invalid entry
-    #==========================================================================
+    ###########################################################################
+    # Setup M-mode trap handler first (for unexpected traps)
+    ###########################################################################
+    
+    SET_MTVEC_DIRECT m_trap_handler
 
-    # Create 1-level page table for Sv32
-    la t1, page_table_l1
+    TEST_STAGE 2
 
-    # Entry 512: Identity map for kernel code (VA 0x80000000 → PA 0x80000000)
-    # Valid, S-mode accessible
-    li t2, 0x200000CF           # PPN=0x80000, flags=0xCF (V,R,W,X)
-    li t3, 2048
-    add t3, t1, t3
-    sw t2, 0(t3)                # page_table[512] = 0x200000CF
+    ###########################################################################
+    # Setup page table with identity megapage (like test_tlb_basic_hit_miss)
+    ###########################################################################
 
-    # Entry 0: Map VA 0x00002000 with INVALID PTE initially (V=0)
-    # This will cause a page fault on first access
-    # We'll point to test_data_area but mark V=0
-    la t4, test_data_area
-    srli t2, t4, 12             # PPN = PA >> 12
-    slli t2, t2, 10             # Shift to PTE format
-    ori t2, t2, 0xD6            # V=0(!), R=1, W=1, X=0, U=1 (invalid user page)
-    sw t2, 0(t1)                # page_table[0] = PPN | 0xD6 (INVALID!)
+    la      t1, page_table_l1
 
-    # Save the invalid PTE value for trap handler to fix
-    la t3, saved_invalid_pte
-    sw t2, 0(t3)
+    # L1 entry 512: Identity megapage for code/data region
+    # VA 0x80000000-0x803FFFFF → PA 0x80000000-0x803FFFFF
+    li      t0, 0x200000CF          # Megapage: V|R|W|X|A|D
+    li      t2, 2048                # Offset for L1[512]
+    add     t2, t1, t2              # Calculate address of L1[512]
+    sw      t0, 0(t2)               # Store megapage PTE
 
-    #==========================================================================
-    # Stage 2: Enable paging
-    #==========================================================================
+    TEST_STAGE 3
 
-    # Setup SATP for Sv32
-    srli t1, t1, 12             # PPN
-    li t2, 0x80000000           # MODE = 1
-    or t1, t1, t2
+    ###########################################################################
+    # Setup test data in physical memory BEFORE enabling paging
+    ###########################################################################
 
-    # Setup trap delegation: delegate page faults to S-mode
-    li t2, 0x0000F000           # Bits 12,13,15 (instruction/load/store page fault)
-    csrw medeleg, t2
+    li      t0, 0x12345678          # Test value
+    la      t1, test_data
+    sw      t0, 0(t1)               # Write to physical address
 
-    # Setup STVEC (S-mode trap vector)
-    la t2, s_trap_handler
-    csrw stvec, t2
+    TEST_STAGE 4
 
-    # Enable SATP (enable paging)
-    csrw satp, t1
+    ###########################################################################
+    # Mark test_data page as INVALID in page table
+    # We'll set it up so when accessed, it causes page fault
+    # Then trap handler will fix it
+    ###########################################################################
+
+    # Get L1 entry index for test_data VA (0x80005xxx is in megapage 512)
+    # Actually, let's create a L0 page table for finer control
+    
+    # L1 entry 0: Points to L0 page table for VA 0x00000000-0x003FFFFF
+    la      t0, page_table_l0
+    srli    t0, t0, 12              # Get PPN
+    slli    t0, t0, 10              # Shift to PPN field
+    ori     t0, t0, 0x01            # V=1 (valid, non-leaf)
+    la      t1, page_table_l1
+    sw      t0, 0(t1)               # L1[0] = L0 page table pointer
+
+    # L0 entry for VA 0x00010000: Map to test_data but mark INVALID
+    la      t0, test_data
+    srli    t0, t0, 12              # Get PPN
+    slli    t0, t0, 10              # Shift to PPN field
+    ori     t0, t0, 0xD6            # R|W|U|A|D but V=0 (INVALID!)
+    la      t1, page_table_l0
+    sw      t0, 64(t1)              # L0[16] for VA 0x00010000
+
+    TEST_STAGE 5
+
+    ###########################################################################
+    # Enable paging
+    ###########################################################################
+
+    la      t0, page_table_l1
+    srli    t0, t0, 12              # Get PPN
+    li      t1, 0x80000000          # MODE = Sv32
+    or      t0, t0, t1
+    csrw    satp, t0
     sfence.vma
 
-    #==========================================================================
-    # Stage 3: Enter S-mode
-    #==========================================================================
+    TEST_STAGE 6
 
-    la t1, s_mode_entry
-    csrw mepc, t1
+    ###########################################################################
+    # Delegate page faults to S-mode and setup trap handler
+    ###########################################################################
 
-    # Setup MSTATUS: MPP=01 (S-mode), MPIE=1, SUM=1
-    li t1, 0x00041880           # MPP=01, MPIE=1, SUM=1
-    csrr t2, mstatus
-    li t3, 0xFFFFE777
-    and t2, t2, t3
-    or t2, t2, t1
-    csrw mstatus, t2
+    # Delegate load page fault to S-mode (so S-mode handler gets it, not M-mode)
+    DELEGATE_EXCEPTION CAUSE_LOAD_PAGE_FAULT
 
-    mret
+    # Setup S-mode trap handler BEFORE entering S-mode
+    SET_STVEC_DIRECT s_trap_handler
 
-    #==========================================================================
-    # S-mode code - Attempt to access invalid page
-    #==========================================================================
-s_mode_entry:
-    # Attempt 1: Load from VA 0x00002000 (invalid PTE, V=0)
-    # This WILL page fault and trap to s_trap_handler
-    li t5, 0x00002000
-    lw t6, 0(t5)                # ← PAGE FAULT HERE (first time)
+    TEST_STAGE 7
 
-    # If we reach here, the page fault was handled and we retried successfully!
-    # The trap handler fixed the PTE and we retried the load
+    ###########################################################################
+    # Enter S-mode
+    ###########################################################################
 
-    # Verify the data we loaded
-    li t0, 0xDEADBEEF           # Expected value (written by trap handler)
-    bne t6, t0, test_fail
+    ENTER_SMODE_M smode_entry
 
-    # Attempt 2: Try writing to the same page (should work now)
-    li t0, 0xCAFEBABE
-    sw t0, 4(t5)
-    lw t1, 4(t5)
-    bne t0, t1, test_fail
+smode_entry:
+    TEST_STAGE 8
 
-    # Success!
-    j test_pass
+    # Initialize fault counter
+    la      t0, fault_count
+    sw      zero, 0(t0)
 
-    #==========================================================================
-    # S-mode trap handler - Fix invalid PTE and retry
-    #==========================================================================
+    TEST_STAGE 9
+
+    ###########################################################################
+    # Try to access invalid page - should fault, handler fixes, then succeeds
+    ###########################################################################
+
+    li      t0, 0x00010000          # VA of invalid page
+    lw      t1, 0(t0)               # Load → PAGE FAULT → Handler fixes → Retry → Success
+
+    TEST_STAGE 10
+
+    ###########################################################################
+    # Verify loaded value matches what we wrote
+    ###########################################################################
+
+    li      t2, 0x12345678
+    bne     t1, t2, test_fail
+
+    TEST_STAGE 11
+
+    ###########################################################################
+    # Verify we only faulted once
+    ###########################################################################
+
+    la      t0, fault_count
+    lw      t1, 0(t0)
+    li      t2, 1
+    bne     t1, t2, test_fail       # Should have faulted exactly once
+
+    # Test passed!
+    j       test_pass
+
+###############################################################################
+# S-mode trap handler - Fixes invalid page
+###############################################################################
+
 s_trap_handler:
-    # Check SCAUSE to verify it's a page fault
-    csrr t0, scause
-    li t1, 13                   # Load page fault
-    bne t0, t1, test_fail       # If not load page fault, fail
+    # Check exception cause
+    csrr    t0, scause
+    li      t1, CAUSE_LOAD_PAGE_FAULT
+    bne     t0, t1, s_trap_fail
 
-    # Check STVAL contains the faulting address
-    csrr t0, stval
-    li t1, 0x00002000
-    bne t0, t1, test_fail       # If wrong address, fail
+    # Verify faulting address
+    csrr    t0, stval
+    li      t1, 0x00010000
+    bne     t0, t1, s_trap_fail
 
-    # Fix the PTE: Set V=1 to make it valid
-    la t1, page_table_l1
-    la t2, saved_invalid_pte
-    lw t2, 0(t2)                # Load saved PTE
-    ori t2, t2, 0x01            # Set V=1
-    sw t2, 0(t1)                # Update page_table[0]
+    # Increment fault counter
+    la      t0, fault_count
+    lw      t1, 0(t0)
+    addi    t1, t1, 1
+    sw      t1, 0(t0)
 
-    # Write test data to the page (before marking valid, direct PA access)
-    # Actually, we just marked it valid, so we can access via VA now
-    li t0, 0xDEADBEEF
-    li t3, 0x00002000
-    sw t0, 0(t3)                # Write through VA (now valid)
+    # Check not too many faults (would indicate fix didn't work)
+    li      t2, 2
+    bge     t1, t2, s_trap_fail
 
-    # CRITICAL: Flush TLB to ensure updated PTE is used
+    # Fix the PTE: Set V=1
+    la      t0, page_table_l0
+    lw      t1, 64(t0)              # Read PTE for VA 0x00010000
+    ori     t1, t1, 0x01            # Set V=1
+    sw      t1, 64(t0)              # Write back
+
+    # Flush TLB
     sfence.vma
 
-    # Return from trap (retry the faulting instruction)
-    # SEPC already points to the faulting load instruction
-    sret                        # Retry the load
+    # Return to retry instruction (don't modify SEPC)
+    sret
+
+s_trap_fail:
+    TEST_STAGE 0xF0
+    j       test_fail
+
+###############################################################################
+# M-mode trap handler (unexpected traps)
+###############################################################################
+
+m_trap_handler:
+    # Save mcause/mtval to s registers for debugging (TEST_STAGE uses t4)
+    csrr    s0, mcause
+    csrr    s1, mtval
+    TEST_STAGE 0xFF
+    j       test_fail
+
+###############################################################################
+# Test result handlers
+###############################################################################
 
 test_pass:
-    li gp, 1                    # Success
+    li gp, 1
     j end_test
 
 test_fail:
-    li gp, 0                    # Failure
+    li gp, 0
     j end_test
 
 end_test:
-    # Write to test marker
     li t0, 0x80002100
     sw gp, 0(t0)
-
 1:  j 1b
 
-#==============================================================================
-# Data Section
-#==============================================================================
-.section .data
-.align 12
+###############################################################################
+# Data section
+###############################################################################
 
+.section .data
+
+.align 12
 page_table_l1:
     .space 4096
 
-.align 4
-test_data_area:
-    .word 0x00000000
-    .word 0x00000000
-    .word 0x00000000
-    .word 0x00000000
+.align 12
+page_table_l0:
+    .space 4096
 
-saved_invalid_pte:
-    .word 0x00000000            # Store invalid PTE here for handler
+.align 12
+test_data:
+    .word 0x00000000
+    .space 4092
+
+.align 4
+fault_count:
+    .word 0
