@@ -49,12 +49,13 @@ _start:
 
     # Create a second-level page table for user data pages
     # We'll map a 4KB page at VA 0x20000000 with U=1
-    li      t4, 0x80002400          # L2 page table base (avoid 0x80002100 = test marker!)
+    # NOTE: L2 table must be page-aligned (lower 12 bits = 0)
+    li      t4, 0x80003000          # L2 page table base (page-aligned, avoids 0x80002100)
 
     # Create L1 PTE pointing to L2 table
     # VA 0x20000000 (VPN[1]=0x080) for user data
-    li      t1, 0x80002400
-    srli    t1, t1, 12              # PPN of L2 table = 0x80002
+    li      t1, 0x80003000
+    srli    t1, t1, 12              # PPN of L2 table = 0x80003
     slli    t1, t1, 10              # Shift to PPN field
     ori     t1, t1, 0x01            # V=1, but R=W=X=0 (pointer to next level)
     li      t2, 0x080               # VPN[1] = 0x080 (VA 0x20000000)
@@ -250,4 +251,20 @@ test_pass:
     TEST_PASS
 
 test_fail:
+    TEST_FAIL
+
+###############################################################################
+# Trap handlers
+###############################################################################
+
+m_trap_handler:
+    # M-mode trap is unexpected (we delegated exceptions to S-mode)
+    TEST_FAIL
+
+s_trap_handler:
+    # S-mode trap is unexpected for this test
+    # (We're not testing fault cases, only successful SUM accesses)
+    csrr    a0, scause
+    csrr    a1, sepc
+    csrr    a2, stval
     TEST_FAIL

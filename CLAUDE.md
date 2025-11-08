@@ -3,45 +3,71 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 123, 2025-11-08)
+## Current Status (Session 124, 2025-11-08)
 
 ### 🎯 CURRENT PHASE: Phase 4 Week 2 IN PROGRESS
 - **Previous Phase**: ✅ Phase 4 Week 1 COMPLETE - All 9 tests passing (Session 119)
 - **Current Status**: 🔄 **PHASE 4 WEEK 2** - Implementing OS readiness tests
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
 - **Next Milestone**: `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: **5/11 Phase 4 Week 2 tests complete (45%)** + 1 pending build fix
+- **Progress**: **5/11 Phase 4 Week 2 tests complete (45%)** + 1 blocked by architectural issue
+- **Critical Blocker**: 🔴 Unified TLB arbiter livelock - requires I-TLB/D-TLB separation
+
+### Session 124: MMU Arbiter Livelock Discovery (2025-11-08)
+**Achievement**: ⚠️ **CRITICAL ARCHITECTURAL ISSUE DISCOVERED** - Unified TLB causes livelock with 2-level page tables
+
+**Initial Goal**: Debug build hang for test_syscall_user_memory_access
+
+**Issues Fixed**:
+1. ✅ **Build hang** - Missing trap handler definitions (`m_trap_handler`, `s_trap_handler`)
+2. ✅ **Page table bug** - L2 table misalignment (`0x80002400` → `0x80003000`, must be page-aligned)
+
+**Critical Discovery**: Unified TLB arbiter causes **livelock** when IF and EX stages simultaneously need MMU:
+- Session 119's round-robin arbiter toggles every cycle
+- EX gets MMU for 1 cycle, translates VA→PA
+- Arbiter toggles to IF before memory bus operation completes
+- EX retries → infinite loop at 99.9% stall rate
+
+**Why This Surfaced Now**:
+- Existing tests use identity mapping (VA=PA) or megapages
+- test_syscall_user_memory_access uses **2-level page tables + non-identity mapping**
+- First test to trigger high IF/EX MMU contention
+
+**Attempted Fixes** (all caused regressions):
+- Hold EX grant for N cycles → broke test_vm_identity_basic
+- Track memory operation state → cleared too early
+- Priority arbiter → deadlocks IF stage
+
+**Root Cause**: Structural hazard in unified TLB architecture
+
+**Proper Solution**: Implement separate I-TLB and D-TLB (industry standard)
+- Eliminates IF/EX contention
+- Allows parallel translation
+- No arbiter needed
+- Estimated: 4-8 hours (1-2 sessions)
+
+**Status**: ⚠️ Test infrastructure ready, blocked pending I-TLB/D-TLB implementation
+
+**Validation**:
+- ✅ Zero regressions: 14/14 quick tests pass (100%)
+- ✅ Test builds successfully
+- ⚠️ Runtime livelock with 2-level page tables
+
+**Documentation**: `docs/SESSION_124_MMU_ARBITER_LIVELOCK.md` (detailed analysis)
+
+**Next Session**: Implement dual TLB architecture (I-TLB + D-TLB)
+
+---
 
 ### Session 123: SUM Bit Test Implementation (2025-11-08)
 **Achievement**: ✅ Implemented test_syscall_user_memory_access - validates S-mode accessing user memory with SUM bit
 
-**Test Purpose**: Validates SUM (Supervisor User Memory) functionality - critical for OS syscalls where kernel needs to access user buffers.
-
-**Test Design** (simplified approach):
-- Stays in S-mode throughout (avoids U-mode code execution complexity)
-- U=0 megapage for kernel code (S-mode can execute)
-- U=1 4KB page for user data (tests SUM functionality)
-- 4 test scenarios: read, write, read-modify-write, buffer sum
-
-**Key Design Decisions**:
-1. **S-mode only**: S-mode cannot execute from U=1 pages (RISC-V spec), so staying in S-mode simplifies test
-2. **VA 0x20000000**: Avoids test marker collision at 0x80002100
-3. **Focus on data access**: SUM bit only affects loads/stores, not instruction fetch
-
 **Test Code**:
-- `tests/asm/test_syscall_user_memory_access.s` (254 lines)
+- `tests/asm/test_syscall_user_memory_access.s` (270 lines with trap handlers)
 - Tests SUM=1 allows S-mode to read/write U=1 pages
 - Simulates kernel processing user data during syscalls
 
-**Status**: ⚠️ Test implemented and regression-clean, pending build fix
-
-**Validation**:
-- ✅ Zero regressions: 14/14 quick tests pass (100%)
-- ⚠️ Build hangs in test runner (pending debug)
-
 **Documentation**: `docs/SESSION_123_WEEK2_SUM_TEST.md`
-
-**Next Session**: Debug build issue, then continue with remaining Week 2 tests
 
 ---
 
@@ -341,11 +367,13 @@ end
 
 ---
 
-## Recent Critical Bug Fixes (Phase 4 - Sessions 90-122)
+## Recent Critical Bug Fixes (Phase 4 - Sessions 90-124)
 
 ### Major Fixes Summary
 | Session | Fix | Impact |
 |---------|-----|--------|
+| **124** | MMU arbiter livelock discovered | **Identified structural hazard** - needs I-TLB/D-TLB split |
+| **124** | Test infrastructure (trap handlers, page align) | Build issues fixed, test ready |
 | **122** | Data MMU translation bug (2-part fix) | **Data accesses now use MMU!** Unblocks permission tests |
 | **119** | Round-robin MMU arbiter | Data translations now work! Phase 4 Week 1 complete (9/9) |
 | **118** | Phase 4 test infrastructure | Test detection and C extension fixes (8/9 tests) |
@@ -403,7 +431,7 @@ end
 **Architecture**:
 - **Pipeline**: 5-stage (IF/ID/EX/MEM/WB), data forwarding, hazard detection
 - **Privilege**: M/S/U modes, trap handling, exception delegation
-- **MMU**: Sv32/Sv39 with 16-entry TLB, 2-level page table walks
+- **MMU**: Sv32/Sv39 with 16-entry unified TLB, 2-level page table walks (⚠️ needs I-TLB/D-TLB split)
 - **FPU**: Single/double precision IEEE 754, NaN-boxing
 - **Memory**: Synchronous registered memory (FPGA BRAM/ASIC SRAM compatible)
 
@@ -415,26 +443,29 @@ end
 - ✅ All compliance tests passing (165/165)
 - ✅ Registered memory implementation complete and validated
 - ✅ Phase 3 complete
-- 🔴 **BLOCKER**: Instruction fetch bypasses MMU (discovered Session 116)
+- ✅ Phase 4 Week 1 complete (9/9 tests)
+- 🔴 **BLOCKER**: Unified TLB arbiter livelock (discovered Session 124)
 
 **Critical Issue**:
-- **Instruction fetch MMU missing** - instruction memory access doesn't go through MMU
-- Location: `rtl/core/rv32i_core_pipelined.v:2593` hardcoded to data-only
-- Impact: All Phase 4 VM tests fail (11/11 Week 1 tests blocked)
-- Required: RISC-V spec mandates instruction fetch translation
+- **Unified TLB structural hazard** - IF and EX compete for single 16-entry TLB
+- Symptom: Pipeline livelock (99.9% stalls) with 2-level page tables + non-identity mapping
+- Location: `rtl/core/rv32i_core_pipelined.v:2629-2639` (round-robin arbiter)
+- Impact: test_syscall_user_memory_access blocked (Week 2 SUM test)
+- Root Cause: Arbiter toggles every cycle, EX loses grant before memory operation completes
 
-**Next Session Tasks (Session 117)**:
-1. **PRIORITY**: Implement instruction fetch MMU translation
-   - Add IF stage MMU arbiter (unified 16-entry TLB)
-   - Update instruction memory to use translated addresses
-   - Add instruction page fault handling (exception code 12)
-   - Add pipeline stall logic for instruction TLB miss
+**Next Session Tasks (Session 125)**:
+1. **PRIORITY**: Implement separate I-TLB and D-TLB (industry standard)
+   - Create `rtl/core/mmu/itlb.v` (8-16 entry instruction TLB)
+   - Create `rtl/core/mmu/dtlb.v` (8-16 entry data TLB)
+   - Extract `rtl/core/mmu/ptw.v` (shared page table walker)
+   - Update `rtl/core/rv32i_core_pipelined.v` (connect dual TLBs)
    - Estimated: 4-8 hours (1-2 sessions)
-2. Validate: All 11 Week 1 Phase 4 tests should pass
-3. Continue: Week 2 Phase 4 tests (page fault recovery, syscalls)
-4. Target: v1.1-xv6-ready milestone
+2. Validate: Zero regressions (14/14 quick tests)
+3. Test: test_syscall_user_memory_access should pass
+4. Continue: Remaining Week 2 tests (5 more)
+5. Target: v1.1-xv6-ready milestone
 
-**See**: `docs/INSTRUCTION_FETCH_MMU_IMPLEMENTATION_PLAN.md` for detailed plan
+**See**: `docs/SESSION_124_MMU_ARBITER_LIVELOCK.md` for detailed analysis
 
 ---
 
