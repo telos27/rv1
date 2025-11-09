@@ -21,9 +21,10 @@ SCRIPT_DIR = tools
 
 # RTL Sources
 RTL_CORE = $(wildcard $(RTL_DIR)/core/*.v)
+RTL_MMU = $(wildcard $(RTL_DIR)/core/mmu/*.v)
 RTL_MEM = $(wildcard $(RTL_DIR)/memory/*.v)
 RTL_CONFIG = $(RTL_DIR)/config/rv_config.vh
-RTL_ALL = $(RTL_CORE) $(RTL_MEM)
+RTL_ALL = $(RTL_CORE) $(RTL_MMU) $(RTL_MEM)
 
 # Testbenches
 TB_UNIT = $(wildcard $(TB_DIR)/unit/*.v)

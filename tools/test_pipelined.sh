@@ -110,6 +110,7 @@ iverilog -g2012 \
     -DMEM_FILE=\"$HEX_FILE\" \
     -o "$OUTPUT_VVP" \
     rtl/core/*.v \
+    rtl/core/mmu/*.v \
     rtl/memory/*.v \
     "$TESTBENCH"
 

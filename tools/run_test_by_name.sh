@@ -226,6 +226,7 @@ iverilog $IVERILOG_FLAGS \
   -o "$SIM_FILE" \
   "$TESTBENCH" \
   "$PROJECT_ROOT/rtl/core"/*.v \
+  "$PROJECT_ROOT/rtl/core/mmu"/*.v \
   "$PROJECT_ROOT/rtl/memory"/*.v 2>&1 | grep -v "warning: choosing typ"
 
 if [ ${PIPESTATUS[0]} -ne 0 ]; then

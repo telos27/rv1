@@ -154,6 +154,7 @@ run_test() {
     -DMEM_FILE="\"$hex_file\"" \
     -o "$SIM_DIR/${test_name}.vvp" \
     "$RTL_DIR"/core/*.v \
+    "$RTL_DIR"/core/mmu/*.v \
     "$RTL_DIR"/memory/*.v \
     "$TB_DIR"/integration/tb_core_pipelined.v \
     2>&1 | grep -v "warning" > "$SIM_DIR/${test_name}_compile.log" || true

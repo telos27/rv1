@@ -774,8 +774,9 @@ module rv_core_pipelined #(
 
   // PC stall control: override stall on flush (trap/xRET/branch)
   // When a control flow change occurs, PC MUST update regardless of hazards
+  // Session 125: Also stall PC when I-TLB miss (waiting for instruction translation)
   wire pc_stall_gated;
-  assign pc_stall_gated = stall_pc && !(trap_flush | mret_flush | sret_flush | ex_take_branch);
+  assign pc_stall_gated = (stall_pc || if_mmu_busy) && !(trap_flush | mret_flush | sret_flush | ex_take_branch);
 
   // Program Counter
   pc #(
@@ -2622,52 +2623,18 @@ module rv_core_pipelined #(
   wire ex_needs_translation = satp_mode_enabled && (current_priv != 2'b11) &&
                               (idex_mem_read || idex_mem_write);
 
-  // Session 119: Round-robin MMU arbiter (interim solution until dual I-TLB/D-TLB)
-  // Toggle between IF and EX when both need MMU
-  reg mmu_grant_to_ex_r;
-
-  always @(posedge clk) begin
-    if (!reset_n) begin
-      mmu_grant_to_ex_r <= 1'b0;
-    end else if (if_needs_translation && ex_needs_translation) begin
-      // Both need MMU - toggle grant
-      mmu_grant_to_ex_r <= !mmu_grant_to_ex_r;
-    end else begin
-      // Only one needs it or neither - give to EX if it needs
-      mmu_grant_to_ex_r <= ex_needs_translation;
-    end
-  end
+  // Session 125: Dual TLB MMU (I-TLB + D-TLB, no arbiter needed!)
+  // Separate TLBs eliminate structural hazard from Session 119's round-robin arbiter
+  // IF and EX can translate in parallel without contention
 
   // IF stage MMU request (instruction fetch translation)
-  assign if_mmu_req_valid = if_needs_translation && !(ex_needs_translation && mmu_grant_to_ex_r);
+  assign if_mmu_req_valid = if_needs_translation;
   assign if_mmu_req_vaddr = pc_current;
 
   // EX stage MMU request (data access translation)
-  assign ex_mmu_req_valid = ex_needs_translation && idex_valid &&
-                            (!if_needs_translation || mmu_grant_to_ex_r);
+  assign ex_mmu_req_valid = ex_needs_translation && idex_valid;
   assign ex_mmu_req_vaddr = ex_alu_result;  // ALU result is the virtual address
   assign ex_mmu_req_is_store = idex_mem_write;
-
-
-
-  // MMU Arbiter: Multiplex IF and EX requests (IF has priority)
-  // IF gets priority to minimize instruction fetch stalls
-  assign mmu_req_valid    = if_mmu_req_valid || ex_mmu_req_valid;
-  assign mmu_req_vaddr    = if_mmu_req_valid ? if_mmu_req_vaddr : ex_mmu_req_vaddr;
-  assign mmu_req_is_store = if_mmu_req_valid ? 1'b0 : ex_mmu_req_is_store;
-  assign mmu_req_is_fetch = if_mmu_req_valid;
-  assign mmu_req_size     = if_mmu_req_valid ? 3'b010 : idex_funct3;  // IF: word (4 bytes), EX: funct3
-
-  // Demultiplex MMU response to IF and EX
-  assign if_mmu_req_ready      = if_mmu_req_valid && mmu_req_ready;
-  assign if_mmu_req_paddr      = mmu_req_paddr;
-  assign if_mmu_req_page_fault = if_mmu_req_valid && mmu_req_page_fault;
-  assign if_mmu_req_fault_vaddr = mmu_req_fault_vaddr;
-
-  assign ex_mmu_req_ready      = ex_mmu_req_valid && mmu_req_ready;
-  assign ex_mmu_req_paddr      = mmu_req_paddr;
-  assign ex_mmu_req_page_fault = ex_mmu_req_valid && mmu_req_page_fault;
-  assign ex_mmu_req_fault_vaddr = mmu_req_fault_vaddr;
 
   // TLB flush control from SFENCE.VMA instruction
   // SFENCE.VMA in MEM stage: rs1 specifies vaddr, rs2 specifies ASID
@@ -2700,31 +2667,39 @@ module rv_core_pipelined #(
     end
   end
 
-  // Session 119: Stall when MMU busy OR when IF needs MMU but EX has it
-  // Session 122: Also stall when EX needs MMU but IF has it (waiting for grant)
-  assign mmu_busy = (mmu_req_valid && !mmu_req_ready) ||      // PTW in progress
-                    mmu_page_fault_pending ||                  // Page fault pending trap
-                    (if_needs_translation && ex_needs_translation && mmu_grant_to_ex_r) ||  // EX has MMU, stall IF
-                    (if_needs_translation && ex_needs_translation && !mmu_grant_to_ex_r);   // IF has MMU, stall EX
+  // Session 125: Dual TLB - stall only when actual translation in progress
+  // No arbiter contention anymore! IF and EX TLBs operate independently
+  // Stall IF when: IF translation not ready
+  // Stall EX when: EX translation not ready OR page fault pending
+  wire if_mmu_busy = if_needs_translation && !if_mmu_req_ready;
+  wire ex_mmu_busy = (ex_needs_translation && !ex_mmu_req_ready) || mmu_page_fault_pending;
 
-  // Instantiate MMU
-  mmu #(
+  assign mmu_busy = ex_mmu_busy;  // Only EX busy signal stalls pipeline (IF stalls handled separately)
+
+  // Instantiate Dual TLB MMU (Session 125: I-TLB + D-TLB)
+  dual_tlb_mmu #(
     .XLEN(XLEN),
-    .TLB_ENTRIES(16)  // 16-entry TLB
-  ) mmu_inst (
+    .ITLB_ENTRIES(8),   // 8-entry I-TLB for instruction fetch
+    .DTLB_ENTRIES(16)   // 16-entry D-TLB for data access (more frequent)
+  ) dual_mmu_inst (
     .clk(clk),
     .reset_n(reset_n),
-    // Translation request
-    .req_valid(mmu_req_valid),
-    .req_vaddr(mmu_req_vaddr),
-    .req_is_store(mmu_req_is_store),
-    .req_is_fetch(mmu_req_is_fetch),
-    .req_size(mmu_req_size),
-    .req_ready(mmu_req_ready),
-    .req_paddr(mmu_req_paddr),
-    .req_page_fault(mmu_req_page_fault),
-    .req_fault_vaddr(mmu_req_fault_vaddr),
-    // Page table walk memory interface
+    // Instruction fetch translation (I-TLB)
+    .if_req_valid(if_mmu_req_valid),
+    .if_req_vaddr(if_mmu_req_vaddr),
+    .if_req_ready(if_mmu_req_ready),
+    .if_req_paddr(if_mmu_req_paddr),
+    .if_req_page_fault(if_mmu_req_page_fault),
+    .if_req_fault_vaddr(if_mmu_req_fault_vaddr),
+    // Data access translation (D-TLB)
+    .ex_req_valid(ex_mmu_req_valid),
+    .ex_req_vaddr(ex_mmu_req_vaddr),
+    .ex_req_is_store(ex_mmu_req_is_store),
+    .ex_req_ready(ex_mmu_req_ready),
+    .ex_req_paddr(ex_mmu_req_paddr),
+    .ex_req_page_fault(ex_mmu_req_page_fault),
+    .ex_req_fault_vaddr(ex_mmu_req_fault_vaddr),
+    // Page table walk memory interface (shared PTW)
     .ptw_req_valid(mmu_ptw_req_valid),
     .ptw_req_addr(mmu_ptw_req_addr),
     .ptw_req_ready(mmu_ptw_req_ready),
