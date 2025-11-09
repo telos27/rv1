@@ -118,6 +118,20 @@ module tlb #(
     end
   end
 
+  // Debug: print TLB lookups
+  always @(posedge clk) begin
+    if (lookup_valid && translation_enabled && reset_n) begin
+      $display("[TLB_LOOKUP] VA=0x%h VPN=0x%h hit=%b fetch=%b",
+               lookup_vaddr, get_full_vpn(lookup_vaddr), lookup_hit, lookup_is_fetch);
+      for (i = 0; i < TLB_ENTRIES; i = i + 1) begin
+        if (tlb_valid[i]) begin
+          $display("[TLB_LOOKUP]   Entry[%0d]: VPN=0x%h match=%b",
+                   i, tlb_vpn[i], (tlb_vpn[i] == get_full_vpn(lookup_vaddr)));
+        end
+      end
+    end
+  end
+
   assign lookup_hit = tlb_hit_found;
 
   // =========================================================================
@@ -245,6 +259,8 @@ module tlb #(
         tlb_pte[tlb_replace_idx] <= update_pte;
         tlb_level[tlb_replace_idx] <= update_level;
         tlb_replace_idx <= tlb_replace_idx + 1;
+        $display("[TLB] Update entry[%0d]: VPN=0x%h PPN=0x%h pte=0x%02h level=%0d fetch=%b",
+                 tlb_replace_idx, update_vpn, update_ppn, update_pte, update_level, lookup_is_fetch);
       end
     end
   end

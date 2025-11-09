@@ -325,6 +325,7 @@ module ptw #(
           end
           result_pte <= ptw_pte_data[7:0];
           result_level <= ptw_level;
+          $display("PTW: State PTW_UPDATE_TLB - sending result_valid");
 
           // Check permissions again for current access
           if (check_permission(ptw_pte_data[7:0], ptw_is_store_save, ptw_is_fetch_save,
@@ -339,6 +340,7 @@ module ptw #(
           end
 
           ptw_state <= PTW_IDLE;
+          $display("PTW: State PTW_UPDATE_TLB -> PTW_IDLE");
         end
 
         PTW_FAULT: begin

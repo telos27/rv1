@@ -480,9 +480,12 @@ module csr_file #(
             // Mask format: bit 11, bit 9, bit 7, bit 3 = 1 (read-only)
             mip_r      <= csr_write_value & ~({{(XLEN-12){1'b0}}, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 3'b0, 1'b1, 3'b0});
           end
+          CSR_SATP: begin
+            satp_r <= csr_write_value;
+            $display("[CSR] SATP write: 0x%h priv=%b at time %0t", csr_write_value, current_priv, $time);
+          end
           CSR_MEDELEG:  medeleg_r  <= csr_write_value;
           CSR_MIDELEG:  mideleg_r  <= csr_write_value;
-          CSR_SATP:     satp_r     <= csr_write_value;
           // Supervisor CSRs
           CSR_SSTATUS: begin
             // SSTATUS is a restricted view of MSTATUS

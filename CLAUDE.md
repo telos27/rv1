@@ -3,15 +3,67 @@
 ## Project Overview
 RISC-V CPU core in Verilog: 5-stage pipelined processor with RV32IMAFDC extensions and privilege architecture (M/S/U modes).
 
-## Current Status (Session 125, 2025-11-08)
+## Current Status (Session 126, 2025-11-08)
 
 ### 🎯 CURRENT PHASE: Phase 4 Week 2 IN PROGRESS
-- **Previous Phase**: ✅ Phase 4 Week 1 COMPLETE - All 9 tests passing (Session 119)
-- **Current Status**: 🔄 **PHASE 4 WEEK 2** - Implementing OS readiness tests
+- **Previous Phase**: ✅ Phase 4 Week 1 was complete in Session 119 (9/9 tests)
+- **Current Status**: 🔄 **DEBUGGING DUAL TLB** - Fixed PTW bug, investigating test failures
 - **Git Tag**: `v1.0-rv64-complete` (marks Phase 3 completion)
-- **Next Milestone**: `v1.2-dual-tlb` (Industry-standard MMU) or `v1.1-xv6-ready` (Phase 4 OS features)
-- **Progress**: **5/11 Phase 4 Week 2 tests complete (45%)**
-- **Recent Fix**: ✅ Session 124 livelock RESOLVED with dual TLB architecture
+- **Next Milestone**: `v1.2-dual-tlb` (Industry-standard MMU) after validation complete
+- **Progress**: **Quick tests: 14/14 (100%), Phase 4 Week 1: 3/9 (33%)**
+- **Recent Fix**: ✅ Session 126 PTW duplicate walk bug FIXED
+
+### Session 126: Dual TLB PTW Duplicate Walk Bug Fix (2025-11-08)
+**Achievement**: ✅ **PTW DUPLICATE WALK BUG FIXED** - Eliminated redundant page table walks!
+
+**Validation Goal**: Test Session 125's dual TLB architecture implementation
+
+**Initial Test Results**:
+- ✅ Quick regression: 14/14 passing (100%) - Core functionality intact!
+- ⚠️ Phase 4 Week 1: 3/9 passing (33%) - Regression from Session 119 (was 9/9)
+
+**Debug Process**:
+1. Added comprehensive debug output to dual_tlb_mmu.v, tlb.v, ptw.v, csr_file.v
+2. Compared passing tests (test_sum_enabled) vs failing tests (test_vm_identity_basic)
+3. Discovered PTW was performing DUPLICATE walks for same virtual address
+
+**Bug Discovered**: PTW Duplicate Walk Issue
+- PTW would walk for VA X, complete, return to IDLE
+- But `ptw_req_valid_internal` remained HIGH (request not de-asserted)
+- PTW saw `req_valid=1` again on next cycle → started SECOND walk for same VA
+- Result: Duplicate TLB entries, wasted cycles
+
+**Root Cause**: `dual_tlb_mmu.v:178` (Session 125)
+```verilog
+// BUGGY: No gate on PTW busy status
+assign ptw_req_valid_internal = if_needs_ptw || ex_needs_ptw;
+```
+
+**The Fix**: `dual_tlb_mmu.v:182` (Session 126)
+```verilog
+// FIXED: Gate PTW request when already busy
+assign ptw_req_valid_internal = (if_needs_ptw || ex_needs_ptw) && !ptw_busy_r;
+```
+
+**Results After Fix**:
+- ✅ Duplicate PTW walks eliminated (verified in debug output)
+- ✅ Quick regression: 14/14 passing (100%)
+- ⚠️ Phase 4 Week 1: 3/9 passing (33%) - Still failing, different issue
+
+**Files Modified**:
+- `rtl/core/mmu/dual_tlb_mmu.v` - PTW request gating fix + debug output
+- `rtl/core/mmu/tlb.v` - Added debug output (temporary)
+- `rtl/core/mmu/ptw.v` - Added debug output (temporary)
+- `rtl/core/csr_file.v` - Added debug output (temporary)
+- `check_week1_tests.sh` - New test runner script
+
+**Status**: PTW bug fixed, but Phase 4 tests still failing. Continuing debug in next session.
+
+**Documentation**: `docs/SESSION_126_DUAL_TLB_PTW_BUG_FIX.md`
+
+**Next Session**: Continue debugging Phase 4 test failures (infrastructure/environment issues)
+
+---
 
 ### Session 125: Dual TLB Architecture Implementation (2025-11-08)
 **Achievement**: 🎉 **LIVELOCK FIXED** - Implemented industry-standard I-TLB + D-TLB architecture!

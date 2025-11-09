@@ -175,7 +175,34 @@ module dual_tlb_mmu #(
   wire ptw_req_is_store;
   wire ptw_req_is_fetch;
 
-  assign ptw_req_valid_internal = if_needs_ptw || ex_needs_ptw;
+  // Forward declare ptw_busy_r (defined below)
+  reg ptw_busy_r;
+
+  // Only generate PTW request if not already busy (prevents duplicate walks)
+  assign ptw_req_valid_internal = (if_needs_ptw || ex_needs_ptw) && !ptw_busy_r;
+
+  // Debug: Detailed MMU operation tracing
+  always @(posedge clk) begin
+    // PTW requests
+    if (ptw_req_valid_internal && reset_n) begin
+      $display("[DUAL_MMU] PTW req: VA=0x%h grant_if=%b grant_ex=%b fetch=%b store=%b satp=0x%h",
+               ptw_req_vaddr, ptw_grant_to_if, ptw_grant_to_ex, ptw_req_is_fetch, ptw_req_is_store, satp);
+    end
+
+    // PTW completions and TLB updates
+    if (ptw_result_valid && reset_n) begin
+      $display("[DUAL_MMU] PTW result: VPN=0x%h PPN=0x%h route_to=%s pte=0x%02h for_itlb=%b",
+               ptw_result_vpn, ptw_result_ppn, ptw_for_itlb ? "I-TLB" : "D-TLB", ptw_result_pte, ptw_for_itlb);
+    end
+
+    // TLB updates
+    if (itlb_update_valid && reset_n) begin
+      $display("[DUAL_MMU] I-TLB update: VPN=0x%h -> PPN=0x%h", itlb_update_vpn, itlb_update_ppn);
+    end
+    if (dtlb_update_valid && reset_n) begin
+      $display("[DUAL_MMU] D-TLB update: VPN=0x%h -> PPN=0x%h", dtlb_update_vpn, dtlb_update_ppn);
+    end
+  end
   assign ptw_req_vaddr = ptw_grant_to_ex ? ex_req_vaddr : if_req_vaddr;
   assign ptw_req_is_store = ptw_grant_to_ex ? ex_req_is_store : 1'b0;
   assign ptw_req_is_fetch = ptw_grant_to_if;
@@ -228,7 +255,7 @@ module dual_tlb_mmu #(
   // Track which TLB initiated the PTW (to route result back)
   // Latch only on the FIRST cycle of PTW (when PTW transitions from idle to busy)
   reg ptw_for_itlb;
-  reg ptw_busy_r;  // Track if PTW is currently busy
+  // Note: ptw_busy_r declared earlier (line 179)
 
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
