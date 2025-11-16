@@ -1,775 +1,775 @@
-# Development Phases
+# 开发阶段
 
-This document tracks the development progress of the RV1 RISC-V processor through major implementation phases.
+本文档按主要实现阶段跟踪 RV1 RISC-V 处理器的开发进度。
 
-## Current Status
+## 当前状态
 
-**Implementation**: RV32IMAFDC + Supervisor Mode + MMU - **COMPLETE**
-**Compliance**: **100% ON ALL EXTENSIONS - 81/81 TESTS PASSING** ✅🎉
-**Architecture**: 5-stage pipelined with data forwarding, hazard detection, and virtual memory
+**实现**：RV32IMAFDC + 监督者模式 + MMU - **已完成**
+**一致性**：**所有扩展 100% 通过 - 81/81 测试全部通过** ✅🎉
+**体系结构**：5 级流水线，具备数据前递、冒险检测和虚拟内存
 
-### Latest Achievement: 100% Compliance Achieved! (2025-10-23)
+### 最新成果：已实现 100% 一致性！(2025-10-23)
 
-**ALL RISC-V Extensions 100% Compliant** - Perfect score across all implemented extensions!
+**所有 RISC-V 扩展 100% 一致** - 所有已实现扩展测试全通过！
 - RV32I: 42/42 (100%) ✅
 - RV32M: 8/8 (100%) ✅
 - RV32A: 10/10 (100%) ✅
 - RV32C: 1/1 (100%) ✅
 - RV32F: 11/11 (100%) ✅
 - RV32D: 9/9 (100%) ✅
-- **Total: 81/81 official RISC-V compliance tests passing**
+- **总计：81/81 官方 RISC-V 一致性测试通过**
 
 ---
 
-## Phase Summary
+## 阶段概览
 
-### Phase 0: Documentation and Setup ✅ COMPLETE
-**Goal**: Project structure and design planning
+### 阶段 0：文档与环境搭建 ✅ 已完成
+**目标**：项目结构与设计规划
 
-**Deliverables**:
-- Complete architecture documentation (ARCHITECTURE.md, CLAUDE.md)
-- Directory structure and build system (Makefile, tools/)
-- RISC-V ISA reference materials (instruction checklists, control signals)
-
----
-
-### Phase 1: Single-Cycle RV32I Core ✅ COMPLETE
-**Goal**: Implement basic RV32I ISA in single-cycle datapath
-
-**Implementation** (~705 lines RTL, ~450 lines testbenches):
-- Core modules: ALU, Register File, PC, Decoder, Control, Branch Unit
-- Memory: Instruction Memory (4KB), Data Memory (4KB)
-- Full RV32I support: All 47 instructions
-
-**Verification**:
-- Unit tests: 126/126 passing (ALU, RegFile, Decoder)
-- Integration tests: 7/7 test programs passing
-- Compliance: 24/42 tests (57%) - expected due to missing features
-
-**Key Design Decisions**:
-- Harvard architecture (separate I/D memory)
-- Immediate generation integrated into decoder
-- Synchronous register file writes
-- FENCE/ECALL/EBREAK as NOPs (proper handling in Phase 4)
+**交付物**：
+- 完整体系结构文档（ARCHITECTURE.md, CLAUDE.md）
+- 目录结构与构建系统（Makefile, tools/）
+- RISC-V ISA 参考资料（指令清单、控制信号）
 
 ---
 
-### Phase 2: Multi-Cycle Implementation ⊗ SKIPPED
-**Rationale**: Skipped in favor of direct pipeline implementation
-- Multi-cycle doesn't address RAW hazards discovered in Phase 1
-- Pipelined approach provides better performance and cleaner hazard handling
+### 阶段 1：单周期 RV32I 核心 ✅ 已完成
+**目标**：在单周期数据通路中实现基础 RV32I ISA
+
+**实现**（约 705 行 RTL，约 450 行测试平台）：
+- 核心模块：ALU、寄存器堆、PC、译码器、控制、分支单元
+- 存储器：指令存储器（4KB）、数据存储器（4KB）
+- 完整 RV32I 支持：全部 47 条指令
+
+**验证**：
+- 单元测试：126/126 通过（ALU、寄存器堆、译码器）
+- 集成测试：7/7 测试程序通过
+- 一致性：24/42 测试（57%）- 由于缺失特性，属预期结果
+
+**关键设计决策**：
+- 哈佛结构（指令/数据存储器分离）
+- 立即数生成集成在译码器中
+- 同步寄存器堆写入
+- FENCE/ECALL/EBREAK 先作为 NOP 处理（在阶段 4 正式处理）
 
 ---
 
-### Phase 3: 5-Stage Pipeline ✅ COMPLETE (100% RV32I Compliance)
-**Goal**: Implement classic 5-stage pipeline with hazard handling
-
-**Architecture**:
-- 5 stages: IF → ID → EX → MEM → WB
-- Pipeline registers: IF/ID, ID/EX, EX/MEM, MEM/WB
-- Early branch resolution in ID stage (1-cycle penalty vs 3-cycle)
-
-**Hazard Handling**:
-- **Data Forwarding**: 3-level forwarding system
-  - EX→ID, MEM→ID, WB→ID (for early branch resolution)
-  - MEM→EX, WB→EX (for ALU operations)
-  - Priority-based: most recent data has highest priority
-- **Load-Use Hazards**: Automatic 1-cycle stall + forwarding
-- **Control Hazards**: Predict-not-taken, flush on misprediction
-- **Forwarding Unit**: Centralized module (268 lines) - single source of truth
-
-**Critical Bugs Fixed**:
-1. Multi-level ID-stage forwarding for branches
-2. MMU stall propagation (Phase 12)
-3. LUI/AUIPC forwarding
-4. Data memory initialization ($readmemh bug)
-5. FENCE.I instruction support (self-modifying code)
-6. Misaligned memory access support
-
-**Verification**:
-- Compliance: **42/42 RV32I tests (100%)** ✅
-- All instruction types verified (R/I/S/B/U/J formats)
-- Complex programs: Fibonacci, load/store, branches
+### 阶段 2：多周期实现 ⊗ 已跳过
+**理由**：跳过多周期，直接转向流水线实现
+- 多周期无法解决在阶段 1 中发现的 RAW 冒险
+- 流水线方式性能更好，冒险处理更干净
 
 ---
 
-### Phase 4: CSR and Exception Support ✅ COMPLETE
-**Goal**: Implement CSR instructions and trap handling
+### 阶段 3：5 级流水线 ✅ 已完成（100% RV32I 一致性）
+**目标**：实现经典 5 级流水线和冒险处理
 
-**Implementation**:
-- **CSR File** (13 Machine-mode CSRs): mstatus, mtvec, mepc, mcause, mtval, mie, mip, mscratch, misa, mvendorid, marchid, mimpid, mhartid
-- **CSR Instructions** (6 ops): CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
-- **Exception Unit**: Detects 6 exception types with priority encoding
-- **Trap Handling**: ECALL, EBREAK, MRET instructions
-- **Pipeline Integration**: Exception detection in all stages, precise exceptions
+**体系结构**：
+- 5 个阶段：IF → ID → EX → MEM → WB
+- 流水级间寄存器：IF/ID, ID/EX, EX/MEM, MEM/WB
+- 在 ID 阶段提前分支判决（1 周期惩罚，相比原始 3 周期）
 
-**Features**:
-- Synchronous exception handling
-- Privilege mode tracking (M-mode initially)
-- Exception priority: External interrupt > Timer > Software > Exceptions
-- PC save/restore on trap entry/exit
+**冒险处理**：
+- **数据前递**：3 级前递系统
+  - EX→ID, MEM→ID, WB→ID（用于提前分支判决）
+  - MEM→EX, WB→EX（用于 ALU 运算）
+  - 基于优先级：最新数据优先级最高
+- **Load-Use 冒险**：自动 1 周期停顿 + 前递
+- **控制冒险**：预测不跳转，错误预测时冲刷水线
+- **前递单元**：集中模块（268 行）- 所有前递决策的单一事实源
 
----
+**修复的关键 Bug**：
+1. 分支的多级 ID 阶段前递
+2. MMU 停顿信号的传播（阶段 12）
+3. LUI/AUIPC 的前递
+4. 数据存储器初始化（$readmemh Bug）
+5. FENCE.I 指令支持（自修改代码）
+6. 非对齐内存访问支持
 
-### Phase 5: Parameterization ✅ COMPLETE
-**Goal**: Support both RV32 and RV64 configurations
-
-**Implementation**:
-- **Central Configuration**: `rtl/config/rv_config.vh` (XLEN parameter)
-- **XLEN Parameterization**: 16 modules updated for 32/64-bit operation
-- **RV64I Instructions**: LD, SD, LWU, ADDIW, SLLIW, etc.
-- **Build System**: 5 configuration targets (RV32I, RV32IM, RV32IMAF, RV64I, RV64IM)
-
-**Parameterized Modules**:
-- Datapath: ALU, register file, decoder, branch unit, PC
-- Pipeline: All pipeline registers and forwarding logic
-- Memory: Instruction/data memory with XLEN-wide addressing
-- CSRs: XLEN-wide CSR file
+**验证**：
+- 一致性：**42/42 RV32I 测试（100%）** ✅
+- 所有指令类型已验证（R/I/S/B/U/J 格式）
+- 复杂程序：斐波那契、访存、分支
 
 ---
 
-### Phase 6: M Extension ✅ COMPLETE (100% Compliant)
-**Goal**: Implement multiply/divide instructions
+### 阶段 4：CSR 与异常支持 ✅ 已完成
+**目标**：实现 CSR 指令与陷入处理
 
-**Implementation**:
-- **Multiply Unit**: 32-cycle sequential add-and-shift algorithm
-- **Divide Unit**: 64-cycle non-restoring division algorithm
-- **Instructions**: All 8 RV32M + 5 RV64M ops
-- **Pipeline Integration**: EX-stage holding with hazard detection
+**实现**：
+- **CSR 文件**（13 个 M 模式 CSRs）：mstatus, mtvec, mepc, mcause, mtval, mie, mip, mscratch, misa, mvendorid, marchid, mimpid, mhartid
+- **CSR 指令**（6 操作）：CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
+- **异常单元**：检测 6 种异常类型并进行优先级编码
+- **陷入处理**：ECALL, EBREAK, MRET 指令
+- **流水线集成**：各阶段异常检测，精确异常
 
-**Features**:
-- Edge case handling: division by zero (all 1s), signed overflow (per spec)
-- Multi-cycle operation with stall logic
-- High/unsigned multiply variants
-
-**Verification**:
-- All M operations tested and verified
-- Edge cases: 0÷0, MIN_INT÷(-1), multiply overflow
+**特性**：
+- 同步异常处理
+- 特权模式跟踪（起始为 M 模式）
+- 异常优先级：外部中断 > 定时器 > 软件中断 > 其它异常
+- 陷入进入/返回时的 PC 保存/恢复
 
 ---
 
-### Phase 7: A Extension ✅ COMPLETE (100% Compliant)
-**Goal**: Implement atomic memory operations
+### 阶段 5：参数化 ✅ 已完成
+**目标**：同时支持 RV32 和 RV64 配置
 
-**Implementation** (~330 lines):
-- **Atomic Unit**: All 11 AMO operations (SWAP, ADD, XOR, AND, OR, MIN, MAX, MINU, MAXU)
-- **Reservation Station**: LR/SC reservation tracking with address matching
-- **Instructions**: All 11 RV32A + 11 RV64A ops (LR.W/D, SC.W/D, AMO*.W/D)
-- **Pipeline Integration**: MEM-stage execution with multi-cycle stalls
+**实现**：
+- **集中配置**：`rtl/config/rv_config.vh`（XLEN 参数）
+- **XLEN 参数化**：16 个模块更新为支持 32/64 位运行
+- **RV64I 指令**：LD, SD, LWU, ADDIW, SLLIW 等
+- **构建系统**：5 个配置目标（RV32I、RV32IM、RV32IMAF、RV64I、RV64IM）
 
-**Critical Bug Fixed**:
-- **LR/SC Forwarding Hazard**: Atomic→dependent instruction hazard during completion cycle
-  - Root cause: Dependent instructions slip through during `atomic_done` transition
-  - Fix: Stall entire atomic execution if RAW dependency exists
-  - Trade-off: 6% performance overhead (conservative approach)
-
-**Features**:
-- Acquire/Release memory ordering (aq/rl flags)
-- Reservation invalidation on intervening stores
-- 3-6 cycle latency per operation
-
-**Verification**:
-- Official compliance: 10/10 rv32ua tests ✅
-- LR/SC scenarios: reservation tracking, invalidation, success/failure
+**参数化模块**：
+- 数据通路：ALU、寄存器堆、译码器、分支单元、PC
+- 流水线：所有流水级寄存器和前递逻辑
+- 存储器：指令/数据存储器，地址宽度随 XLEN 变化
+- CSR：XLEN 宽度的 CSR 文件
 
 ---
 
-### Phase 8: F/D Extension ✅ COMPLETE (FPU)
-**Goal**: Implement single and double-precision floating-point
+### 阶段 6：M 扩展 ✅ 已完成（100% 一致）
+**目标**：实现乘/除指令
 
-**Implementation** (~2500 lines FPU):
-- **FP Register File**: 32 × 64-bit registers (f0-f31)
-- **FP Modules** (11 modules): adder, multiplier, divider, sqrt, FMA, converter, compare, classify, minmax, sign
-- **Instructions**: 26 F extension + 26 D extension (52 total)
-- **FCSR**: Floating-point CSR with rounding mode (frm) and exception flags (fflags)
+**实现**：
+- **乘法单元**：32 周期串行加移算法
+- **除法单元**：64 周期非恢复除法算法
+- **指令**：全部 8 条 RV32M + 5 条 RV64M
+- **流水线集成**：EX 阶段保持并配合冒险检测
 
-**IEEE 754-2008 Compliance**:
-- All 5 rounding modes: RNE, RTZ, RDN, RUP, RMM
-- Exception flags: Invalid, Divide-by-zero, Overflow, Underflow, Inexact
-- NaN-boxing for single-precision in 64-bit registers
-- Special value handling: ±Inf, ±0, NaN, subnormals
+**特性**：
+- 边界情况处理：除以 0（结果全 1）、有符号溢出（按规范处理）
+- 多周期操作带停顿逻辑
+- 高位/无符号乘法变体
 
-**Performance**:
-- Single-cycle: FADD, FSUB, FMUL, FMIN/FMAX, compare, classify, sign
-- Multi-cycle: FDIV (16-32 cycles), FSQRT (16-32 cycles), FMA (4-5 cycles)
-
-**Critical Bugs Fixed** (10 total):
-1. FPU restart condition (blocking after first operation)
-2. FSW operand selection (integer rs2 vs FP rs2)
-3. FLW write-back select signal
-4. Data memory $readmemh byte ordering
-5. FP load-use forwarding (using wrong signal)
-6. FP-to-INT write-back path (FEQ/FLT/FLE/FCLASS/FMV.X.W/FCVT.W.S)
-7. Cross-file forwarding (INT↔FP register forwarding)
-8. **FSQRT Iteration Counter** (Bug #40): Off-by-one, only 26 of 27 iterations executed
-9. **FSQRT Rounding Logic** (Bug #40): Non-blocking assignment prevented same-cycle rounding
-10. **FSQRT Flag Persistence** (Bug #40): Exception flags not cleared between operations
-
-**Verification**:
-- Official compliance: rv32uf-p-fdiv PASSING (includes FDIV + FSQRT tests) ✅
-- Custom test suite: 13/13 tests passing (100%) ✅
-- Test coverage: arithmetic, load/store, compare, classify, conversion, FMA, FDIV, FSQRT
-- Hazard scenarios: FP load-use, cross-file dependencies
-- Special cases: sqrt(π), sqrt(-1.0)→NaN, perfect squares
+**验证**：
+- 所有 M 操作均已测试并通过
+- 边界情况：0÷0、MIN_INT÷(-1)、乘法溢出
 
 ---
 
-### Phase 8.5: MMU Implementation ✅ COMPLETE
-**Goal**: Add virtual memory support
+### 阶段 7：A 扩展 ✅ 已完成（100% 一致）
+**目标**：实现原子内存操作
 
-**Implementation** (467 lines):
-- **MMU Module**: Complete TLB and page table walker
-- **TLB**: 16-entry fully-associative with round-robin replacement
-- **Address Translation**: Sv32 (RV32) and Sv39 (RV64) page table formats
-- **Permission Checking**: Read/Write/Execute bits, User/Supervisor mode access
-- **SATP CSR**: Address translation control (MODE, ASID, PPN)
+**实现**（约 330 行）：
+- **原子单元**：全部 11 种 AMO 操作（SWAP, ADD, XOR, AND, OR, MIN, MAX, MINU, MAXU）
+- **保留站**：LR/SC 保留跟踪和地址匹配
+- **指令**：全部 11 条 RV32A + 11 条 RV64A（LR.W/D, SC.W/D, AMO*.W/D）
+- **流水线集成**：在 MEM 阶段执行，含多周期停顿
 
-**Features**:
-- Multi-cycle page table walk (2-3 levels)
-- Page fault exception detection
-- Superpage support (megapages/gigapages)
-- TLB miss handling
-- Bare mode (no translation)
+**修复的关键 Bug**：
+- **LR/SC 前递冒险**：原子指令→依赖指令在完成周期的冒险
+  - 根因：在 `atomic_done` 变为 1 的过渡周期，依赖指令溜进流水线
+  - 修复：若存在 RAW 依赖则整段原子执行期间停顿
+  - 代价：性能约 6% 开销（保守方案）
 
-**Pipeline Integration**:
-- MEM-stage address translation
-- MMU stall propagation to prevent instruction loss
-- SFENCE.VMA instruction for TLB flushing
+**特性**：
+- 获取/释放（aq/rl）内存序
+- 在中间 store 时失效保留
+- 每操作 3-6 个周期延迟
 
-**Critical Bug Fixed** (Phase 13):
-- **Bare Mode Stale Address**: MMU integration caused off-by-1 addressing in bare mode
-  - Root cause: Pipeline used MMU's registered output even when translation disabled
-  - Fix: Check `translation_enabled` before using MMU translation
-  - Result: 41/42 → 42/42 RV32I tests (100%) ✅
+**验证**：
+- 官方一致性：10/10 rv32ua 测试 ✅
+- LR/SC 场景：保留跟踪、失效、成功/失败
 
 ---
 
-### Phase 9: C Extension ✅ COMPLETE (100% Validated)
-**Goal**: Implement compressed 16-bit instructions
+### 阶段 8：F/D 扩展 ✅ 已完成（FPU）
+**目标**：实现单精度和双精度浮点
 
-**Implementation**:
-- **RVC Decoder**: All 40 compressed instructions (Q0, Q1, Q2 quadrants)
-- **Instruction Expansion**: 16-bit → 32-bit transparent conversion
-- **PC Logic**: 2-byte and 4-byte PC increments for mixed streams
-- **Pipeline Integration**: IF-stage decoding with instruction alignment
+**实现**（约 2500 行 FPU）：
+- **FP 寄存器堆**：32 × 64 位寄存器（f0-f31）
+- **FP 模块**（11 个）：加法器、乘法器、除法器、sqrt、FMA、转换、比较、分类、最小最大、符号处理
+- **指令**：26 条 F 扩展 + 26 条 D 扩展（共 52 条）
+- **FCSR**：浮点 CSR，包含舍入模式（frm）和异常标志（fflags）
 
-**Instruction Coverage**:
-- **Q0**: C.ADDI4SPN, C.LW/LD/FLD, C.SW/SD/FSD
-- **Q1**: C.ADDI, C.JAL/J, C.LI, C.LUI, C.SRLI/SRAI/ANDI, C.SUB/XOR/OR/AND, C.BEQZ/BNEZ
-- **Q2**: C.SLLI, C.LWSP/LDSP/FLDSP, C.JR/JALR, C.MV/ADD, C.EBREAK, C.SWSP/SDSP/FSDSP
+**IEEE 754-2008 一致性**：
+- 5 种舍入模式：RNE, RTZ, RDN, RUP, RMM
+- 异常标志：Invalid, Divide-by-zero, Overflow, Underflow, Inexact
+- NaN 盒装：单精度保存在 64 位寄存器中
+- 特殊值处理：±Inf, ±0, NaN, 次正规数
 
-**Benefits**:
-- Code density: ~25-30% size reduction
-- Full compatibility: Mixed 16/32-bit instruction streams
-- Register aliasing: Common registers (x8-x15, f8-f15) for frequently used ops
+**性能**：
+- 单周期：FADD, FSUB, FMUL, FMIN/FMAX, 比较、分类、符号操作
+- 多周期：FDIV (16-32 周期), FSQRT (16-32 周期), FMA (4-5 周期)
 
-**Verification**:
-- Unit tests: 34/34 decoder tests ✅
-- Integration tests: All passing with correct PC increments
-- Mixed streams: 16-bit and 32-bit instructions working together
+**修复的关键 Bug**（共 10 个）：
+1. FPU 重新启动条件（阻塞在第一次操作后）
+2. FSW 操作数选择（整数 rs2 与 FP rs2 混用）
+3. FLW 写回多路选择信号
+4. 数据存储器 $readmemh 字节序问题
+5. FP Load-Use 前递（使用了错误信号）
+6. FP→INT 写回路径（FEQ/FLT/FLE/FCLASS/FMV.X.W/FCVT.W.S）
+7. 跨寄存器堆前递（整数↔浮点寄存器前递）
+8. **FSQRT 迭代计数**（Bug #40）：少执行一轮，只执行了 26/27 轮
+9. **FSQRT 舍入逻辑**（Bug #40）：非阻塞赋值导致同一周期无法舍入
+10. **FSQRT 标志保持**（Bug #40）：异常标志未在操作间清除
 
----
-
-### Phase 10: Supervisor Mode & MMU Integration ✅ COMPLETE
-**Goal**: Implement full privilege architecture
-
-**Phase 10.1: Privilege Mode Infrastructure**
-- 3 privilege levels: M-mode (11), S-mode (01), U-mode (00)
-- Privilege tracking in pipeline
-- Mode-aware instruction validation
-
-**Phase 10.2: Supervisor CSRs**
-- **8 S-mode CSRs**: sstatus, sie, stvec, sscratch, sepc, scause, stval, sip
-- **Delegation CSRs**: medeleg, mideleg (M→S trap delegation)
-- **SRET Instruction**: Supervisor trap return
-- **CSR Privilege Checking**: Illegal instruction on privilege violation
-
-**Phase 10.3: MMU Integration**
-- MMU fully integrated in MEM stage
-- Virtual memory: Sv32/Sv39 translation active
-- TLB management: SFENCE.VMA instruction
-- Page fault exceptions: Proper trap handling
-
-**Features**:
-- Trap routing: Automatic M/S-mode selection based on delegation
-- SSTATUS: Read-only subset view of MSTATUS
-- SIE/SIP: Masked views of MIE/MIP
-- Permission checks: SUM (Supervisor User Memory), MXR (Make eXecutable Readable)
-
-**Verification**:
-- Test suite: 12 comprehensive tests (10/12 passing, 83%)
-- CSR operations: Read/write verified for all S-mode CSRs
-- Privilege transitions: M→S→M transitions working
-- Virtual memory: Identity-mapped page tables functional
+**验证**：
+- 官方一致性：rv32uf-p-fdiv 通过（包含 FDIV + FSQRT 测试）✅
+- 自定义测试集：13/13 全通过（100%）✅
+- 覆盖：算术、访存、比较、分类、转换、FMA、FDIV、FSQRT
+- 冒险场景：FP Load-Use、跨寄存器堆依赖
+- 特殊情况：sqrt(π)、sqrt(-1.0)→NaN、完全平方数
 
 ---
 
-### Phase 11: Official RISC-V Compliance ✅ INFRASTRUCTURE COMPLETE
-**Goal**: Set up official test infrastructure
+### 阶段 8.5：MMU 实现 ✅ 已完成
+**目标**：增加虚拟内存支持
 
-**Infrastructure**:
-- Cloned and built official riscv-tests repository
-- **81 test binaries**: RV32UI (42), RV32UM (8), RV32UA (10), RV32UF (11), RV32UD (9), RV32UC (1)
-- **Automated tools**: `build_riscv_tests.sh`, `run_official_tests.sh`
-- **Testbench support**: COMPLIANCE_TEST mode with ECALL detection
-- **ELF→hex conversion**: Automated objcopy pipeline
+**实现**（467 行）：
+- **MMU 模块**：完整 TLB + 页表遍历器
+- **TLB**：16 项全相联，轮询替换
+- **地址翻译**：Sv32（RV32）和 Sv39（RV64）页表格式
+- **权限检查**：读/写/执行位，用户/监督者模式访问
+- **SATP CSR**：地址翻译控制（MODE, ASID, PPN）
 
-**Current Compliance**:
+**特性**：
+- 多周期页表遍历（2-3 级）
+- 页故障异常检测
+- 大页支持（megapages/gigapages）
+- TLB 未命中处理
+- Bare 模式（不做翻译）
+
+**流水线集成**：
+- MEM 阶段地址翻译
+- MMU 停顿信号向前传播以防指令丢失
+- SFENCE.VMA 指令用于 TLB 刷新
+
+**修复的关键 Bug**（阶段 13）：
+- **Bare 模式陈旧地址**：MMU 集成后在 bare 模式产生 off-by-1 地址错误
+  - 根因：即使禁用翻译时，流水线仍使用 MMU 注册输出
+  - 修复：在使用 MMU 翻译结果前检查 `translation_enabled`
+  - 结果：RV32I 测试由 41/42 → 42/42（100%）✅
+
+---
+
+### 阶段 9：C 扩展 ✅ 已完成（100% 验证）
+**目标**：实现压缩 16 位指令
+
+**实现**：
+- **RVC 译码器**：全部 40 条压缩指令（Q0, Q1, Q2 象限）
+- **指令扩展**：16 位 → 32 位透明转换
+- **PC 逻辑**：支持 2 字节和 4 字节 PC 递增以适配混合指令流
+- **流水线集成**：在 IF 阶段进行压缩指令译码和对齐
+
+**指令覆盖**：
+- **Q0**：C.ADDI4SPN, C.LW/LD/FLD, C.SW/SD/FSD
+- **Q1**：C.ADDI, C.JAL/J, C.LI, C.LUI, C.SRLI/SRAI/ANDI, C.SUB/XOR/OR/AND, C.BEQZ/BNEZ
+- **Q2**：C.SLLI, C.LWSP/LDSP/FLDSP, C.JR/JALR, C.MV/ADD, C.EBREAK, C.SWSP/SDSP/FSDSP
+
+**收益**：
+- 代码密度：约 25-30% 大小缩减
+- 完全兼容：16/32 位混合指令流
+- 寄存器别名：常用寄存器（x8-x15, f8-f15）高频操作优化
+
+**验证**：
+- 单元测试：34/34 译码器测试 ✅
+- 集成测试：全部通过，PC 递增正确
+- 混合指令流：16 位和 32 位指令协同工作
+
+---
+
+### 阶段 10：监督者模式与 MMU 集成 ✅ 已完成
+**目标**：实现完整特权体系结构
+
+**阶段 10.1：特权模式基础设施**
+- 3 个特权等级：M 模式（11）、S 模式（01）、U 模式（00）
+- 流水线中跟踪特权模式
+- 基于模式的指令合法性检查
+
+**阶段 10.2：S 模式 CSR**
+- **8 个 S 模式 CSR**：sstatus, sie, stvec, sscratch, sepc, scause, stval, sip
+- **委托 CSR**：medeleg, mideleg（M→S 陷入委托）
+- **SRET 指令**：S 模式陷入返回
+- **CSR 特权检查**：特权不符合时产生非法指令异常
+
+**阶段 10.3：MMU 集成**
+- MMU 完整集成于 MEM 阶段
+- 虚拟内存：启用 Sv32/Sv39 翻译
+- TLB 管理：SFENCE.VMA 指令
+- 页故障异常：正确的陷入处理
+
+**特性**：
+- 陷入路由：基于委托自动选择 M/S 模式
+- SSTATUS：MSTATUS 的只读子视图
+- SIE/SIP：MIE/MIP 的掩码视图
+- 权限检查：SUM（Supervisor User Memory）、MXR（Make eXecutable Readable）
+
+**验证**：
+- 测试集：12 个综合测试（10/12 通过，83%）
+- CSR 操作：所有 S 模式 CSR 的读写已验证
+- 特权切换：M→S→M 流程正常
+- 虚拟内存：同地址映射页表可用
+
+---
+
+### 阶段 11：官方 RISC-V 一致性 ✅ 基础设施已完成
+**目标**：搭建官方测试基础设施
+
+**基础设施**：
+- 克隆并构建官方 riscv-tests 仓库
+- **81 个测试二进制**：RV32UI（42）、RV32UM（8）、RV32UA（10）、RV32UF（11）、RV32UD（9）、RV32UC（1）
+- **自动化工具**：`build_riscv_tests.sh`, `run_official_tests.sh`
+- **测试平台支持**：COMPLIANCE_TEST 模式，支持 ECALL 检测
+- **ELF→hex 转换**：自动 objcopy 流程
+
+**当前一致性**：
 - RV32I: 42/42 (100%) ✅
 - RV32M: 8/8 (100%) ✅
 - RV32A: 10/10 (100%) ✅
 - RV32C: 1/1 (100%) ✅
-- RV32F/D: Testing in progress
+- RV32F/D：测试进行中
 
 ---
 
-## Implementation Statistics
+## 实现统计
 
-### Lines of Code
-- **RTL**: ~7,500 lines (36 modules total)
-- **Testbenches**: ~3,000 lines
-- **Test Programs**: ~2,500 lines assembly
-- **Documentation**: ~6,000 lines
+### 代码行数
+- **RTL**：约 7,500 行（共 36 个模块）
+- **测试平台**：约 3,000 行
+- **测试程序**：约 2,500 行汇编
+- **文档**：约 6,000 行
 
-### Module Breakdown
-- **Core**: 22 modules (datapath, pipeline, control, hazard detection, forwarding)
-- **Memory**: 2 modules (instruction, data)
-- **Extensions**: M (3), A (2), F/D (11), C (1)
-- **System**: MMU (1), CSR (1), Exception (1)
+### 模块划分
+- **核心**：22 个模块（数据通路、流水线、控制、冒险检测、前递）
+- **存储器**：2 个模块（指令、数据）
+- **扩展**：M（3）、A（2）、F/D（11）、C（1）
+- **系统**：MMU（1）、CSR（1）、异常（1）
 
-### Instruction Support
-- **RV32I/RV64I**: 47 base instructions
-- **M Extension**: 13 instructions (8 RV32M + 5 RV64M)
-- **A Extension**: 22 instructions (11 RV32A + 11 RV64A)
-- **F Extension**: 26 single-precision FP
-- **D Extension**: 26 double-precision FP
-- **C Extension**: 40 compressed instructions
-- **Zicsr**: 6 CSR instructions
-- **Privileged**: 4 system instructions (ECALL, EBREAK, MRET, SRET)
-- **Total**: 184 instructions
-
----
-
-## Key Technical Achievements
-
-### Pipeline Architecture
-- **5-stage pipeline** with full hazard handling
-- **3-level forwarding**: EX/MEM/WB → ID and MEM/WB → EX
-- **Centralized forwarding unit**: Single source of truth for all forwarding decisions
-- **Early branch resolution**: ID-stage branches (1-cycle penalty vs 3-cycle)
-- **Precise exceptions**: PC tracking through all pipeline stages
-
-### Performance Features
-- **CPI**: 1.0-1.2 typical (near-ideal with forwarding)
-- **Multi-cycle operations**: Automatic stalling and hazard detection
-- **Virtual memory**: TLB hit in 1 cycle, miss in 3-4 cycles (page table walk)
-- **FPU**: Single-cycle for most ops, 16-32 cycles for FDIV/FSQRT
-
-### Design Quality
-- **Parameterized**: Full RV32/RV64 support with single XLEN parameter
-- **Modular**: Clean interfaces, reusable components
-- **Synthesis-ready**: No latches, proper reset, FPGA-friendly
-- **Well-tested**: 100% compliance on implemented extensions
+### 指令支持
+- **RV32I/RV64I**：47 条基础指令
+- **M 扩展**：13 条（8 RV32M + 5 RV64M）
+- **A 扩展**：22 条（11 RV32A + 11 RV64A）
+- **F 扩展**：26 条单精度 FP
+- **D 扩展**：26 条双精度 FP
+- **C 扩展**：40 条压缩指令
+- **Zicsr**：6 条 CSR 指令
+- **特权**：4 条系统指令（ECALL, EBREAK, MRET, SRET）
+- **总计**：184 条指令
 
 ---
 
-## Future Work
+## 关键技术成果
 
-### ⚠️ Known Limitations to Address First
+### 流水线体系结构
+- **5 级流水线**，具备完整冒险处理
+- **3 级前递**：EX/MEM/WB → ID 以及 MEM/WB → EX
+- **集中式前递单元**：所有前递决策的单一事实源
+- **提前分支判决**：在 ID 阶段进行（1 周期惩罚，相比 3 周期）
+- **精确异常**：PC 在各流水级跟踪
 
-Before adding new features, consider fixing these existing issues:
+### 性能特性
+- **CPI**：典型 1.0-1.2（前递接近理想）
+- **多周期操作**：自动停顿与冒险检测
+- **虚拟内存**：TLB 命中 1 周期，未命中 3-4 周期（页表遍历）
+- **FPU**：大多数操作单周期，FDIV/FSQRT 16-32 周期
 
-1. **Atomic Forwarding Overhead (6%)** - Can be optimized to 0.3%
-   - Current: Conservative stall of entire atomic operation
-   - Better: Single-cycle transition tracking
-   - Impact: Low for typical code, medium for lock-heavy workloads
-   - See: KNOWN_ISSUES.md §1, hazard_detection_unit.v:126-155
-
-2. ~~**FPU Pipeline Hazards (Bugs #5, #6, #7, #7b, #8, #9, #10, #11, #12)**~~ - ✅ **ALL FIXED (2025-10-20)**
-   - **Before**: 3/11 RV32UF passing (27%) - Tests failing at #11 due to flag contamination
-   - **After**: 4/11 RV32UF passing (36%) - Major progress on special case handling
-   - **Progress**: fadd test now passing, fdiv timeout eliminated (342x faster!)
-
-   **Fixed bugs** (2025-10-13 AM):
-     1. Mantissa extraction bug in FP_ADDER: `normalized_man[26:3]` → `normalized_man[25:3]`
-     2. Rounding timing bug: Sequential `round_up` → Combinational `round_up_comb`
-     3. FFLAGS normalization: Added left-shift logic for leading zeros
-
-   **Fixed bugs** (2025-10-13 PM):
-     4. **Bug #5**: FFLAGS CSR write priority - FPU accumulation vs CSR write conflict ✅
-     5. **Bug #6**: CSR-FPU dependency hazard - Pipeline bubble solution ✅
-
-   **Fixed bugs** (2025-10-14):
-     6. **Bug #7**: CSR-FPU hazard - Extended to MEM/WB stages ✅
-        - Extended hazard detection to check all pipeline stages (EX/MEM/WB)
-        - Prevents FSFLAGS from reading before FPU writeback completes
-     7. **Bug #7b**: FP Load flag contamination ✅ **CRITICAL FIX**
-        - FP loads (FLW/FLD) were accumulating stale flags from pipeline
-        - Solution: Exclude FP loads from flag accumulation (`wb_sel != 3'b001`)
-        - Impact: Tests progressed from #11 → #17 (6 more tests passing!)
-
-   **Fixed bugs** (2025-10-19 AM):
-     8. **Bug #8**: FP Multiplier bit extraction error ✅ **CRITICAL FIX**
-        - Root cause: Off-by-one error in mantissa bit extraction for product < 2.0
-        - Was extracting `product[47:24]` then using `[22:0]` → effectively bits `[46:24]`
-        - Should extract `product[46:23]` to get correct mantissa alignment
-        - Fix: Changed `product[(2*MAN_WIDTH+1):(MAN_WIDTH+1)]` → `product[(2*MAN_WIDTH):(MAN_WIDTH)]`
-        - Also corrected guard/round/sticky bit positions
-        - Impact: fadd test progressed from #17 → #21 (4 more tests passing!)
-        - Location: rtl/core/fp_multiplier.v:199
-
-   **Fixed bugs** (2025-10-19 PM):
-     9. **Bug #9**: FP Multiplier normalization - Wrong bit check and extraction ✅ **CRITICAL FIX**
-        - Root cause: Two separate errors in NORMALIZE stage
-          1. Checked bit 48 instead of bit 47 to determine if product >= 2.0
-          2. Extracted wrong bit ranges for mantissa in both cases
-        - Product format is Q2.46 fixed-point after multiplying two Q1.23 mantissas
-          - Bit 47 = 1: product >= 2.0, implicit 1 at bit 47, extract [46:24]
-          - Bit 47 = 0: product < 2.0, implicit 1 at bit 46, extract [45:23]
-        - Fix: Changed bit check from `product[48]` → `product[47]`
-        - Fix: Correct extraction ranges for both >= 2.0 and < 2.0 cases
-        - Impact: fadd test progressed from #21 → #23 (2 more tests passing!)
-        - Location: rtl/core/fp_multiplier.v:188-208
-        - See: docs/FPU_BUG9_NORMALIZATION_FIX.md
-
-   **Fixed bugs** (2025-10-20):
-     10. **Bug #10**: FP Adder special case flag contamination ✅ **CRITICAL FIX**
-         - Root cause: ROUND stage unconditionally set flag_nx even for special cases
-         - Special cases (Inf-Inf, NaN, etc.) set flags in ALIGN stage but ROUND overwrote them
-         - Fix: Added `special_case_handled` flag to bypass ROUND stage updates
-         - Impact: rv32uf-p-fadd test now PASSING! ✅
-         - Location: rtl/core/fp_adder.v
-         - See: docs/FPU_BUG10_SPECIAL_CASE_FLAGS.md
-
-     11. **Bug #11**: FP Divider timeout - Uninitialized counter ✅ **CRITICAL FIX**
-         - Root cause: div_counter not initialized before DIVIDE state entry
-         - Caused infinite loops, 49,999 cycle timeouts (vs expected ~150 cycles)
-         - Fix: Initialize div_counter = DIV_CYCLES in UNPACK stage
-         - Also applied special_case_handled pattern from Bug #10
-         - Impact: Timeout eliminated! 49,999 → 146 cycles (342x faster)
-         - Location: rtl/core/fp_divider.v
-         - See: docs/FPU_BUG11_FDIV_TIMEOUT.md
-
-     12. **Bug #12**: FP Multiplier special case flag contamination ✅
-         - Same pattern as Bug #10 - ROUND stage contaminating flags
-         - Fix: Applied special_case_handled pattern to multiplier
-         - Location: rtl/core/fp_multiplier.v
-
-   **Fixed bugs** (2025-10-20 PM): FPU Converter Infrastructure - Bugs #13-#18 ✅
-     13. **Bug #13**: INT→FP leading zero counter broken ✅
-         - Root cause: For loop incorrectly counted all zeros, not just leading
-         - Fix: Replaced with 64-bit casez priority encoder
-         - Location: rtl/core/fp_converter.v:296-365
-     14. **Bug #13b**: Mantissa shift off-by-one ✅
-         - Root cause: Shifted by leading_zeros+1 instead of leading_zeros
-         - Fix: Corrected shift amount and bit extraction range
-         - Location: rtl/core/fp_converter.v:374
-     15. **Bug #14**: Flag contamination in conversions ✅
-         - Root cause: Exception flags never cleared between operations
-         - Fix: Clear all flags at start of CONVERT state
-         - Location: rtl/core/fp_converter.v:135-139, 245-249
-     16. **Bug #16**: Mantissa rounding overflow not handled ✅
-         - Root cause: When rounding 0x7FFFFF+1, exponent not incremented
-         - Fix: Detect all-1s mantissa before rounding, increment exp if overflow
-         - Location: rtl/core/fp_converter.v:499-526
-     17. **Bug #17**: **CRITICAL** - funct7 direction bit wrong ✅ **MAJOR FIX**
-         - Root cause: Checked funct7[6] instead of funct7[3] for INT↔FP direction
-         - Impact: ALL INT→FP conversions (fcvt.s.w, fcvt.s.wu) decoded as FP→INT!
-         - Fix: Changed to funct7[3] per RISC-V spec
-         - Location: rtl/core/fpu.v:344-349
-         - **This bug prevented fcvt.s.w/fcvt.s.wu from EVER working**
-     18. **Bug #18**: **CRITICAL** - Non-blocking assignment timing bug ✅ **MAJOR FIX**
-         - Root cause: Intermediate values assigned with <= then used same cycle
-         - Impact: Converter produced undefined (X) values
-         - Fix: Refactored CONVERT state to use blocking = for all intermediate values
-         - Location: rtl/core/fp_converter.v:268-401
-         - **This bug caused all converter outputs to be undefined**
-     19. **Bug #19**: **CRITICAL** - Control unit FCVT direction bit wrong ✅ **MAJOR FIX**
-         - Root cause: Same as Bug #17 but in control.v instead of fpu.v
-         - Checked funct7[6] instead of funct7[3] for INT↔FP direction
-         - Impact: `fp_reg_write` signal NEVER set for INT→FP conversions!
-         - Fix: Changed control.v:437 to check funct7[3] with correct polarity:
-           - `funct7[3]=0`: FP→INT (FCVT.W.S=0x60) → write to integer register
-           - `funct7[3]=1`: INT→FP (FCVT.S.W=0x68) → write to FP register
-         - Location: rtl/core/control.v:437
-         - Verification: Added pipeline debug showing full writeback path working
-         - **This bug prevented converter results from EVER reaching FP register file**
-
-   - **Current Status**: Writeback path FIXED! Converter results successfully reach FP register file ✅
-   - **Progress**: Test #2 passes (2→0x40000000), writes to f10, transfers to a0 via FMV.X.S
-   - **Remaining Issues**: Other FPU edge cases (tests #3-5 in fcvt, test #17 in fcvt_w)
-   - See: docs/SESSION_2025-10-21_BUG19_WRITEBACK_FIX.md
-
-   **Fixed bugs** (2025-10-21): FP→INT Conversion Overflow & Flags - Bugs #20-#22 ✅
-     20. **Bug #20**: FP→INT overflow detection missing int_exp==31 edge case ✅ **CRITICAL FIX**
-         - Root cause: Overflow check was `int_exp > 31`, missing boundary case
-         - Impact: -3e9 with int_exp=31, man≠0 incorrectly calculated instead of saturating
-         - Test case: fcvt.w.s -3e9 → should be 0x80000000, was 0x4d2fa200
-         - Fix: Added special handling for int_exp==31 and int_exp==63:
-           - Signed: Only -2^31 (man=0, sign=1) valid; else overflow
-           - Unsigned: All values with int_exp≥31 overflow
-         - Location: rtl/core/fp_converter.v:206-258
-         - Impact: Tests #8, #9 now pass (overflow saturation cases)
-         - **This bug caused incorrect results for large magnitude conversions**
-     21. **Bug #21**: Missing invalid flag for unsigned FP→INT with negative input ✅
-         - Root cause: Saturated to 0 but didn't set flag_nv
-         - Impact: Tests #12, #13, #18 expected flag_nv=0x10, got 0x00
-         - Fix: Added `flag_nv <= 1'b1` for unsigned conversions with negative inputs
-         - Location: rtl/core/fp_converter.v:432
-         - Impact: Tests #12, #13, #18 now pass
-     22. **Bug #22**: Incorrect invalid flag for fractional unsigned negative conversions ✅
-         - Root cause: Bug #21 fix too broad - set invalid for ALL negative→unsigned
-         - Impact: Test #14 (fcvt.wu.s -0.9) expected inexact only, got invalid+inexact
-         - Analysis: -0.9 rounds to 0 (RTZ), which IS representable → inexact only
-         - Fix: Refined fractional path - only set invalid if rounded magnitude ≥ 1.0
-         - Location: rtl/core/fp_converter.v:305-313
-         - Impact: Tests #14-17 now pass
-         - **This bug fixed IEEE 754 flag semantics for fractional conversions**
-
-   - **Status** (2025-10-21 AM): RV32UF 6/11 (54%), fcvt_w at 94% (test #37)
-   - **New Passing**: rv32uf-p-fcvt ✅, rv32uf-p-fcmp ✅
-   - **Improved**: fcvt_w from test #17 → test #37 (11 ops → 15 ops)
-   - See: docs/SESSION_2025-10-21_BUGS20-22_FP_TO_INT_OVERFLOW.md
-
-   **Fixed bugs** (2025-10-21 PM Session 3): Operation Signal & Overflow Logic - Bugs #24-#25 ✅
-     24. **Bug #24**: Operation signal inconsistency in saturation logic ✅
-         - Root cause: Used `operation` instead of `operation_latched` in case statements
-         - Impact: NaN/Inf and overflow saturation could use stale/incorrect operation codes
-         - Fix: Changed both instances (lines 192, 224) to use `operation_latched`
-         - Location: rtl/core/fp_converter.v:192, 224
-         - This bug alone didn't fix test failures but was necessary for correctness
-     25. **Bug #25**: Incorrect unsigned word overflow detection ✅ **CRITICAL FIX**
-         - Root cause: Line 220 flagged int_exp==31 as overflow for unsigned word conversions
-         - Impact: FCVT.WU.S values in [2^31, 2^32) incorrectly overflowed
-         - Test case: fcvt.wu.s 3e9 → expected 0xB2D05E00, got 0xFFFFFFFF (overflow)
-         - Analysis:
-           - For unsigned 32-bit: valid range is [0, 2^32-1]
-           - int_exp==31 covers [2^31, 2^32), which is VALID for unsigned
-           - Only int_exp >= 32 should trigger overflow for unsigned word
-         - Fix: Removed blanket `int_exp==31 && unsigned` overflow check
-           - Now only signed word gets special handling at int_exp==31
-         - Location: rtl/core/fp_converter.v:212-221
-         - Impact: fcvt_w test progressed from #39 → #85 (+46 tests = +54.1%)
-         - **This was a critical bug affecting all large unsigned conversions**
-
-   - **Status** (2025-10-21 PM Session 4): RV32UF **7/11 (63.6%)**, fcvt_w **100% PASSING** ✅
-   - **Massive Progress**: fcvt_w from test #39 → test #85 (+46 tests) → **100% complete!**
-   - **New Tool**: Created `tools/run_single_test.sh` for streamlined debugging
-   - See: docs/SESSION_2025-10-21_BUGS24-25_FCVT_W_OVERFLOW.md, docs/SESSION_2025-10-21_PM4_BUG26_NAN_CONVERSION.md
-
-   **Fixed bugs** (2025-10-21 PM Session 2):
-     23. **Bug #23**: Unsigned long negative saturation ✅ **CRITICAL FIX**
-         - Root cause: FCVT.WU.S/FCVT.LU.S saturated negative values to 0xFFFF... instead of 0
-         - Impact: All negative→unsigned conversions returned max value instead of 0
-         - Fix: Added sign check in overflow saturation (sign_fp ? 0 : MAX)
-         - Location: rtl/core/fp_converter.v:220-227
-     23b. **Bug #23b**: 64-bit overflow detection excluded FCVT.LU.S ✅
-         - Root cause: Checked operation[1:0]==2'b10 (only FCVT.L.S), missed FCVT.LU.S (2'b11)
-         - Fix: Changed to operation[1]==1 to include both L.S and LU.S
-         - Location: rtl/core/fp_converter.v:213-220
-   - **Progress**: fcvt_w test #37 → test #39 (2 tests further)
-   - See: docs/SESSION_2025-10-21_BUG23_UNSIGNED_LONG_SATURATION.md
-
-   **Fixed bugs** (2025-10-21 PM Session 4):
-     26. **Bug #26**: NaN→INT conversion sign bit handling ✅ **CRITICAL FIX**
-         - Root cause: NaN conversions checked sign bit, treating NaN same as Infinity
-         - Impact: FCVT.W.S with "negative" NaN (0xFFFFFFFF) returned 0x80000000 instead of 0x7FFFFFFF
-         - RISC-V spec: NaN always converts to maximum positive integer (sign bit ignored)
-         - Infinity: Respects sign bit (+Inf→MAX, -Inf→MIN for signed, 0 for unsigned)
-         - Fix: Changed from `sign_fp ? MIN : MAX` to `(is_nan || !sign_fp) ? MAX : MIN`
-         - Location: rtl/core/fp_converter.v:190-200
-         - Impact: fcvt_w test #85/85 **PASSING (100%)** ✅
-         - **This completed fcvt_w - first perfect FPU test score!**
-         - See: docs/SESSION_2025-10-21_PM4_BUG26_NAN_CONVERSION.md
-
-3. **Mixed Compressed/Normal Instructions** - Addressing issue
-   - Pure compressed works, pure 32-bit works, mixed has bugs
-   - See: KNOWN_ISSUES.md §2
+### 设计质量
+- **参数化**：通过单一 XLEN 参数支持 RV32/RV64
+- **模块化**：接口清晰、组件可复用
+- **可综合**：无锁存器，复位正确，适合 FPGA
+- **测试充分**：已实现扩展全部达到 100% 一致性
 
 ---
 
-### Performance Enhancements
-- [ ] **Optimize atomic forwarding** (6% → 0.3% overhead) ⚡ *Recommended first*
-- [ ] Branch prediction (2-bit saturating counters)
-- [ ] Cache hierarchy (I-cache, D-cache)
-- [ ] Larger TLB (16 → 64 entries)
+## 后续工作
 
-### Testing & Validation
-- [x] **Run official RISC-V F/D compliance tests** 🧪 *Initial: 3/20 passing (15%)*
-- [x] **Debug FPU failures** ✓ *Root cause identified: 2 critical bugs in fp_adder.v*
-- [x] **Fix FP adder mantissa computation** ✓ *Fixed 2025-10-13: +12% improvement*
-- [x] **Re-run FPU compliance tests after fix** 🧪 *Result: 3/11 RV32UF (27%)*
-- [x] **Fix FPU pipeline hazards (Bugs #6, #7, #7b)** ✓ *Fixed 2025-10-14: Flag contamination resolved*
-- [x] **Fix FPU converter overflow & flags (Bugs #20, #21, #22)** ✓ *Fixed 2025-10-21 AM: fcvt passing, fcvt_w 94%*
-- [x] **Fix unsigned long saturation (Bug #23)** ✓ *Fixed 2025-10-21 PM Session 2: fcvt_w test #37 → #39*
-- [x] **Fix unsigned word overflow detection (Bugs #24, #25)** ✓ *Fixed 2025-10-21 PM Session 3: fcvt_w test #39 → #85*
-- [x] **Fix NaN→INT conversion (Bug #26)** ✓ *Fixed 2025-10-21 PM Session 4: fcvt_w 100% PASSING!*
-- [ ] **Fix remaining FPU edge cases** ⚠️ *In progress - fmin/fdiv/fmadd/recoding (4 tests remaining)*
-- [ ] **Debug mixed compressed/normal instructions** 🔀
-- [ ] Performance benchmarking (Dhrystone, CoreMark)
-- [ ] Formal verification for critical paths
+### ⚠️ 需优先解决的已知限制
 
-### System Features
-- [ ] Interrupt controller (PLIC)
-- [ ] Timer (CLINT)
-- [ ] Debug module (hardware breakpoints)
-- [ ] Performance counters
-- [ ] Physical memory protection (PMP)
+在增加新特性前，优先修复以下问题：
 
-### Hardware Deployment
-- [ ] FPGA synthesis and hardware validation
-- [ ] Peripheral interfaces (UART, GPIO, SPI)
-- [ ] Boot ROM and bootloader
-- [ ] Run Linux or xv6-riscv
-- [ ] Multicore support
+1. **原子前递开销（6%）** - 可优化到 0.3%
+   - 当前：保守地在整个原子操作期间停顿
+   - 更优方案：只在单周期转换时跟踪
+   - 影响：对一般代码影响小，对锁密集负载影响中等
+   - 参见：KNOWN_ISSUES.md §1, hazard_detection_unit.v:126-155
+
+2. ~~**FPU 流水线冒险（Bug #5, #6, #7, #7b, #8, #9, #10, #11, #12）**~~ - ✅ **全部修复（2025-10-20）**
+   - **修复前**：RV32UF 仅 3/11 通过（27%）- 在测试 #11 因标志污染失败
+   - **修复后**：RV32UF 4/11 通过（36%）- 特殊情况处理取得重大进展
+   - **进展**：fadd 测试已通过，fdiv 超时消失（速度提升 342 倍！）
+
+   **已修复 Bug**（2025-10-13 上午）：
+     1. FP_ADDER 尾数提取 Bug：`normalized_man[26:3]` → `normalized_man[25:3]`
+     2. 舍入时序 Bug：顺序式 `round_up` → 组合式 `round_up_comb`
+     3. FFLAGS 归一化：添加前导零左移逻辑
+
+   **已修复 Bug**（2025-10-13 下午）：
+     4. **Bug #5**：FFLAGS CSR 写优先级 - FPU 累积与 CSR 写入冲突 ✅
+     5. **Bug #6**：CSR-FPU 依赖冒险 - 通过插入流水气泡解决 ✅
+
+   **已修复 Bug**（2025-10-14）：
+     6. **Bug #7**：CSR-FPU 冒险 - 扩展至 MEM/WB 阶段 ✅
+        - 冒险检测扩展以检查所有流水级（EX/MEM/WB）
+        - 防止 FSFLAGS 在 FPU 写回完成前读出
+     7. **Bug #7b**：FP Load 标志污染 ✅ **关键修复**
+        - FP Load（FLW/FLD）累积了流水线中残留标志
+        - 解决方案：从标志累积中排除 FP Load（`wb_sel != 3'b001`）
+        - 影响：测试从 #11 前进到 #17（多通过 6 个测试！）
+
+   **已修复 Bug**（2025-10-19 上午）：
+     8. **Bug #8**：FP 乘法器位提取错误 ✅ **关键修复**
+        - 根因：当乘积 < 2.0 时 mantissa 位提取 off-by-one
+        - 之前提取 `product[47:24]` 然后使用 `[22:0]` → 实际是 `[46:24]`
+        - 正确应提取 `product[46:23]` 得到正确对齐 mantissa
+        - 修复：修改 `product[(2*MAN_WIDTH+1):(MAN_WIDTH+1)]` → `product[(2*MAN_WIDTH):(MAN_WIDTH)]`
+        - 同时修正 guard/round/sticky 位位置
+        - 影响：fadd 测试从 #17 → #21（+4 个测试）
+        - 位置：rtl/core/fp_multiplier.v:199
+
+   **已修复 Bug**（2025-10-19 下午）：
+     9. **Bug #9**：FP 乘法器归一化 - 错误的位检查和提取 ✅ **关键修复**
+        - 根因：NORMALIZE 阶段两个独立错误
+          1. 使用 bit 48 而不是 bit 47 决定 product ≥ 2.0
+          2. 两种情况下 mantissa 提取范围错误
+        - 乘积格式：Q1.23 × Q1.23 → Q2.46 定点
+          - bit 47 = 1：product ≥ 2.0，隐含 1 在 bit 47，提取 [46:24]
+          - bit 47 = 0：product < 2.0，隐含 1 在 bit 46，提取 [45:23]
+        - 修复：检查位从 `product[48]` → `product[47]`
+        - 修复：更正两种情况下 mantissa 提取范围
+        - 影响：fadd 测试从 #21 → #23（+2 个测试）
+        - 位置：rtl/core/fp_multiplier.v:188-208
+        - 详见：docs/FPU_BUG9_NORMALIZATION_FIX.md
+
+   **已修复 Bug**（2025-10-20）：
+     10. **Bug #10**：FP 加法器特殊情况标志污染 ✅ **关键修复**
+         - 根因：ROUND 阶段无条件设置 flag_nx，即使在特殊情况
+         - 特殊情况（Inf-Inf, NaN 等）在 ALIGN 阶段已设置标志，但 ROUND 将其覆盖
+         - 修复：增加 `special_case_handled` 标志绕过 ROUND 阶段更新
+         - 影响：rv32uf-p-fadd 测试通过 ✅
+         - 位置：rtl/core/fp_adder.v
+         - 详见：docs/FPU_BUG10_SPECIAL_CASE_FLAGS.md
+
+     11. **Bug #11**：FP 除法器超时 - 计数器未初始化 ✅ **关键修复**
+         - 根因：在进入 DIVIDE 状态前未初始化 div_counter
+         - 导致死循环，49,999 周期超时（应为约 150 周期）
+         - 修复：在 UNPACK 状态中初始化 `div_counter = DIV_CYCLES`
+         - 同时应用与 Bug #10 类似的特殊情况处理模式
+         - 影响：超时消失！49,999 → 146 周期（提速 342 倍）
+         - 位置：rtl/core/fp_divider.v
+         - 详见：docs/FPU_BUG11_FDIV_TIMEOUT.md
+
+     12. **Bug #12**：FP 乘法器特殊情况标志污染 ✅
+         - 与 Bug #10 同类问题 - ROUND 阶段污染标志
+         - 修复：在乘法器中同样应用 special_case_handled 模式
+         - 位置：rtl/core/fp_multiplier.v
+
+   **已修复 Bug**（2025-10-20 晚）：FPU 转换器基础设施 - Bug #13-#18 ✅
+     13. **Bug #13**：INT→FP 前导零计数器损坏 ✅
+         - 根因：for 循环统计了所有 0，而不只是前导 0
+         - 修复：改为 64 位 casez 优先编码器
+         - 位置：rtl/core/fp_converter.v:296-365
+     14. **Bug #13b**：mantissa 移位 off-by-one ✅
+         - 根因：按 leading_zeros+1 移位而不是 leading_zeros
+         - 修复：更正移位量和位提取范围
+         - 位置：rtl/core/fp_converter.v:374
+     15. **Bug #14**：转换中的标志污染 ✅
+         - 根因：操作之间从未清除异常标志
+         - 修复：在 CONVERT 状态开始清除所有标志
+         - 位置：rtl/core/fp_converter.v:135-139, 245-249
+     16. **Bug #16**：mantissa 舍入溢出未处理 ✅
+         - 根因：0x7FFFFF+1 舍入时未增加指数
+         - 修复：舍入前检测全 1 mantissa，溢出时增加 exp
+         - 位置：rtl/core/fp_converter.v:499-526
+     17. **Bug #17**：**关键** - funct7 方向位错误 ✅ **重大修复**
+         - 根因：用 funct7[6] 而不是 funct7[3] 判断 INT↔FP 方向
+         - 影响：所有 INT→FP（fcvt.s.w, fcvt.s.wu）都被解码为 FP→INT！
+         - 修复：改为 funct7[3]（符合 RISC-V 规范）
+         - 位置：rtl/core/fpu.v:344-349
+         - **该 Bug 导致 fcvt.s.w/fcvt.s.wu 永远不会工作**
+     18. **Bug #18**：**关键** - 非阻塞赋值时序 Bug ✅ **重大修复**
+         - 根因：中间值用 `<=` 赋值但在同周期使用
+         - 影响：转换器产生未定义（X）值
+         - 修复：在 CONVERT 状态中将所有中间值改为阻塞赋值 `=`
+         - 位置：rtl/core/fp_converter.v:268-401
+         - **该 Bug 导致所有转换器输出为未定义**
+     19. **Bug #19**：**关键** - 控制单元 FCVT 方向位错误 ✅ **重大修复**
+         - 根因：与 Bug #17 相同问题，但出现在 control.v
+         - 使用 funct7[6] 而非 funct7[3] 判断 INT↔FP 方向
+         - 影响：INT→FP 转换从未产生 `fp_reg_write` 信号！
+         - 修复：修改 control.v:437，检查 funct7[3] 及其极性：
+           - `funct7[3]=0`：FP→INT（FCVT.W.S=0x60）→ 写整数寄存器
+           - `funct7[3]=1`：INT→FP（FCVT.S.W=0x68）→ 写 FP 寄存器
+         - 位置：rtl/core/control.v:437
+         - 验证：添加流水线调试，显示写回路径正常
+         - **该 Bug 导致转换结果永远无法写入 FP 寄存器堆**
+
+   - **当前状态**：写回路径已修复！转换结果成功写入 FP 寄存器堆 ✅
+   - **进展**：测试 #2 通过（2→0x40000000），写入 f10，再通过 FMV.X.S 传递到 a0
+   - **剩余问题**：其他 FPU 边界情况（fcvt 测试 #3-#5，fcvt_w 测试 #17）
+   - 详见：docs/SESSION_2025-10-21_BUG19_WRITEBACK_FIX.md
+
+   **已修复 Bug**（2025-10-21）：FP→INT 溢出与标志 - Bug #20-#22 ✅
+     20. **Bug #20**：FP→INT 溢出检测缺少 int_exp==31 边界 ✅ **关键修复**
+         - 根因：溢出判断为 `int_exp > 31`，漏掉边界情况
+         - 影响：-3e9，int_exp=31, man≠0，被错误地计算而非饱和
+         - 测试：fcvt.w.s -3e9 → 应为 0x80000000，实际 0x4d2fa200
+         - 修复：增加 int_exp==31/63 的特殊处理：
+           - 有符号：仅 -2^31（man=0, sign=1）合法；其余溢出
+           - 无符号：int_exp≥31 全部溢出
+         - 位置：rtl/core/fp_converter.v:206-258
+         - 影响：测试 #8, #9 通过（溢出饱和）
+         - **该 Bug 导致大幅度转换结果错误**
+     21. **Bug #21**：无符号 FP→INT 对负数缺少 invalid 标志 ✅
+         - 根因：饱和到 0 时未置 flag_nv
+         - 影响：测试 #12, #13, #18 期望 flag_nv=0x10，实际为 0x00
+         - 修复：对无符号转换且输入为负数的情况设置 `flag_nv <= 1'b1`
+         - 位置：rtl/core/fp_converter.v:432
+         - 影响：测试 #12, #13, #18 通过
+     22. **Bug #22**：无符号负数小数转换 wrong invalid 标志 ✅
+         - 根因：Bug #21 修复过宽——对所有负数→无符号都置 invalid
+         - 影响：测试 #14（fcvt.wu.s -0.9）期望仅 inexact，实际 invalid+inexact
+         - 分析：-0.9 舍入为 0（RTZ），该值可表示 → 仅 inexact
+         - 修复：细化小数路径——只在舍入后绝对值 ≥ 1.0 时置 invalid
+         - 位置：rtl/core/fp_converter.v:305-313
+         - 影响：测试 #14-17 全部通过
+         - **该 Bug 修复了小数转换时 IEEE 754 标志语义**
+
+   - **状态**（2025-10-21 上午）：RV32UF 6/11（54%），fcvt_w 94%（测试到 #37）
+   - **新通过**：rv32uf-p-fcvt ✅, rv32uf-p-fcmp ✅
+   - **改进**：fcvt_w 从测试 #17 → #37（11 操作→15 操作）
+   - 详见：docs/SESSION_2025-10-21_BUGS20-22_FP_TO_INT_OVERFLOW.md
+
+   **已修复 Bug**（2025-10-21 下午 Session 3）：操作信号与溢出逻辑 - Bug #24-#25 ✅
+     24. **Bug #24**：饱和逻辑中操作信号不一致 ✅
+         - 根因：在 case 语句中使用 `operation` 而非 `operation_latched`
+         - 影响：NaN/Inf 和溢出饱和可能使用过时/错误操作码
+         - 修复：将两处（行 192, 224）改为使用 `operation_latched`
+         - 位置：rtl/core/fp_converter.v:192, 224
+         - 单独不会修复测试，但对正确性必要
+     25. **Bug #25**：无符号 word 溢出检测错误 ✅ **关键修复**
+         - 根因：行 220 将 int_exp==31 对无符号 word 也标记为溢出
+         - 影响：FCVT.WU.S 范围 [2^31, 2^32) 被错误溢出
+         - 示例：fcvt.wu.s 3e9 → 期望 0xB2D05E00，实际 0xFFFFFFFF
+         - 分析：
+           - 32 位无符号有效范围 [0, 2^32-1]
+           - int_exp==31 覆盖 [2^31, 2^32)，对无符号应为有效
+           - 仅 int_exp ≥ 32 时无符号 word 才溢出
+         - 修复：移除 `int_exp==31 && unsigned` 的溢出判断
+           - 现在仅有符号 word 在 int_exp==31 做特殊处理
+         - 位置：rtl/core/fp_converter.v:212-221
+         - 影响：fcvt_w 测试从 #39 → #85（+46 个测试，+54.1%）
+         - **该 Bug 严重影响所有大无符号转换**
+
+   - **状态**（2025-10-21 下午 Session 4）：RV32UF **7/11 (63.6%)**，fcvt_w **100% 通过** ✅
+   - **重大进展**：fcvt_w 从测试 #39 → #85（+46 个测试）→ **完全通过！**
+   - **新工具**：新增 `tools/run_single_test.sh` 简化调试
+   - 详见：docs/SESSION_2025-10-21_BUGS24-25_FCVT_W_OVERFLOW.md, docs/SESSION_2025-10-21_PM4_BUG26_NAN_CONVERSION.md
+
+   **已修复 Bug**（2025-10-21 下午 Session 2）：
+     23. **Bug #23**：无符号 long 负数饱和 ✅ **关键修复**
+         - 根因：FCVT.WU.S/FCVT.LU.S 将负数饱和为 0xFFFF... 而非 0
+         - 影响：所有负数→无符号转换返回最大值而非 0
+         - 修复：在溢出饱和逻辑中加入符号检测（sign_fp ? 0 : MAX）
+         - 位置：rtl/core/fp_converter.v:220-227
+     23b. **Bug #23b**：64 位溢出检测漏掉 FCVT.LU.S ✅
+         - 根因：只检查 operation[1:0]==2'b10（仅 FCVT.L.S），漏掉 FCVT.LU.S (2'b11)
+         - 修复：改为 operation[1]==1，包含 L.S 与 LU.S
+         - 位置：rtl/core/fp_converter.v:213-220
+   - **进展**：fcvt_w 测试从 #37 → #39（+2 个测试）
+   - 详见：docs/SESSION_2025-10-21_BUG23_UNSIGNED_LONG_SATURATION.md
+
+   **已修复 Bug**（2025-10-21 下午 Session 4）：
+     26. **Bug #26**：NaN→INT 转换符号位处理 ✅ **关键修复**
+         - 根因：NaN 转换按符号位处理，将 NaN 与 Infinity 混为一谈
+         - 影响：FCVT.W.S 对“负”NaN (0xFFFFFFFF) 返回 0x80000000 而非 0x7FFFFFFF
+         - RISC-V 规范：NaN 始终转换为最大正整数（忽略符号位）
+         - Infinity：遵守符号位（+Inf→MAX，-Inf→MIN；无符号则为 0）
+         - 修复：由 `sign_fp ? MIN : MAX` 改为 `(is_nan || !sign_fp) ? MAX : MIN`
+         - 位置：rtl/core/fp_converter.v:190-200
+         - 影响：fcvt_w 测试 #85/85 **全部通过** ✅
+         - **这标志着 fcvt_w 首个 FPU 测试实现满分**
+         - 详见：docs/SESSION_2025-10-21_PM4_BUG26_NAN_CONVERSION.md
+
+3. **混合压缩/非压缩指令** - 地址问题
+   - 仅压缩可用，仅 32 位可用，混合流存在 Bug
+   - 参见：KNOWN_ISSUES.md §2
 
 ---
 
-## Testing Status
+### 性能增强
+- [ ] **优化原子前递**（开销由 6% → 0.3%）⚡ *优先推荐*
+- [ ] 分支预测（2 位饱和计数器）
+- [ ] Cache 层级（指令缓存、数据缓存）
+- [ ] 更大 TLB（16 → 64 项）
 
-### Compliance Results
-| Extension | Tests | Pass | Rate | Status |
+### 测试与验证
+- [x] **运行官方 RISC-V F/D 一致性测试** 🧪 *初始：3/20 通过（15%）*
+- [x] **调试 FPU 失败** ✓ *已定位根因：fp_adder.v 两个关键 Bug*
+- [x] **修复 FP 加法器尾数计算** ✓ *2025-10-13 修复：提升 12%*
+- [x] **修复后重新跑 FPU 一致性测试** 🧪 *结果：RV32UF 3/11（27%）*
+- [x] **修复 FPU 流水线冒险（Bug #6, #7, #7b）** ✓ *2025-10-14 修复：标志污染解决*
+- [x] **修复 FPU 转换器溢出与标志（Bug #20, #21, #22）** ✓ *2025-10-21 上午修复：fcvt 通过，fcvt_w 94%*
+- [x] **修复无符号 long 饱和（Bug #23）** ✓ *2025-10-21 下午 Session 2：fcvt_w 测试 #37 → #39*
+- [x] **修复无符号 word 溢出检测（Bug #24, #25）** ✓ *2025-10-21 下午 Session 3：fcvt_w 测试 #39 → #85*
+- [x] **修复 NaN→INT 转换（Bug #26）** ✓ *2025-10-21 下午 Session 4：fcvt_w 100% 通过！*
+- [ ] **修复剩余 FPU 边界情况** ⚠️ *进行中 - fmin/fdiv/fmadd/recoding（剩 4 个测试）*
+- [ ] **调试压缩/非压缩混合指令问题** 🔀
+- [ ] 性能基准测试（Dhrystone, CoreMark）
+- [ ] 关键路径形式化验证
+
+### 系统特性
+- [ ] 中断控制器（PLIC）
+- [ ] 定时器（CLINT）
+- [ ] 调试模块（硬件断点）
+- [ ] 性能计数器
+- [ ] 物理内存保护（PMP）
+
+### 硬件部署
+- [ ] FPGA 综合与硬件验证
+- [ ] 外设接口（UART, GPIO, SPI）
+- [ ] Boot ROM 与 Bootloader
+- [ ] 运行 Linux 或 xv6-riscv
+- [ ] 多核支持
+
+---
+
+## 测试状态
+
+### 一致性结果
+| 扩展 | 测试数 | 通过 | 通过率 | 状态 |
 |-----------|-------|------|------|--------|
-| RV32I     | 42    | 42   | 100% | ✅ Complete |
-| RV32M     | 8     | 8    | 100% | ✅ Complete |
-| RV32A     | 10    | 10   | 100% | ✅ Complete |
-| RV32C     | 1     | 1    | 100% | ✅ Complete |
-| RV32F     | 11    | 11   | 100% | ✅ Complete |
-| RV32D     | 9     | 9    | 100% | ✅ Complete |
-| **TOTAL** | **81**| **81**| **100%** | **✅ ALL TESTS PASSING** 🎉 |
+| RV32I     | 42    | 42   | 100% | ✅ 已完成 |
+| RV32M     | 8     | 8    | 100% | ✅ 已完成 |
+| RV32A     | 10    | 10   | 100% | ✅ 已完成 |
+| RV32C     | 1     | 1    | 100% | ✅ 已完成 |
+| RV32F     | 11    | 11   | 100% | ✅ 已完成 |
+| RV32D     | 9     | 9    | 100% | ✅ 已完成 |
+| **总计** | **81**| **81**| **100%** | **✅ 所有测试通过** 🎉 |
 
-### Custom Test Coverage
-- **Unit tests**: All modules have dedicated unit tests
-- **Integration tests**: 20+ assembly programs
-- **FPU test suite**: 13/13 tests passing (100%)
-- **Supervisor mode**: 12 tests (10/12 passing, 83%)
-- **Atomic operations**: LR/SC scenarios fully covered
-
----
-
-## Documentation
-
-### Core Documentation
-- [README.md](README.md) - Project overview and quick start
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed microarchitecture
-- [CLAUDE.md](CLAUDE.md) - AI assistant context
-- [PHASES.md](PHASES.md) - This file
-
-### Extension Design Docs
-- [docs/M_EXTENSION_DESIGN.md](docs/M_EXTENSION_DESIGN.md) - Multiply/Divide
-- [docs/A_EXTENSION_DESIGN.md](docs/A_EXTENSION_DESIGN.md) - Atomic operations
-- [docs/FD_EXTENSION_DESIGN.md](docs/FD_EXTENSION_DESIGN.md) - Floating-point
-- [docs/C_EXTENSION_DESIGN.md](docs/C_EXTENSION_DESIGN.md) - Compressed instructions
-- [docs/MMU_DESIGN.md](docs/MMU_DESIGN.md) - Virtual memory
-
-### Technical Deep-Dives
-- [docs/FORWARDING_ARCHITECTURE.md](docs/FORWARDING_ARCHITECTURE.md) - Data forwarding system
-- [docs/PARAMETERIZATION_GUIDE.md](docs/PARAMETERIZATION_GUIDE.md) - RV32/RV64 support
-
-### Verification Reports
-- [docs/PHASE8_VERIFICATION_REPORT.md](docs/PHASE8_VERIFICATION_REPORT.md) - FPU verification
-- [docs/OFFICIAL_COMPLIANCE_TESTING.md](docs/OFFICIAL_COMPLIANCE_TESTING.md) - Compliance infrastructure
+### 自定义测试覆盖
+- **单元测试**：所有模块均有对应单元测试
+- **集成测试**：20+ 汇编程序
+- **FPU 测试集**：13/13 通过（100%）
+- **S 模式**：12 个测试（10/12 通过，83%）
+- **原子操作**：LR/SC 场景完全覆盖
 
 ---
 
-## Project History
+## 文档
 
-**2025-10-23 (Session 22)**: 🎉🎉🎉 **100% COMPLIANCE ACHIEVED!** 🎉🎉🎉
-  - **MILESTONE**: All 81/81 official RISC-V compliance tests PASSING!
-  - RV32D: 8/9 → 9/9 (100%) - fmadd test now passing
-  - Complete implementation of RV32IMAFDC:
+### 核心文档
+- [README.md](README.md) - 项目概览与快速上手
+- [ARCHITECTURE.md](ARCHITECTURE.md) - 详细微体系结构
+- [CLAUDE.md](CLAUDE.md) - AI 助手上下文
+- [PHASES.md](PHASES.md) - 本文件
+
+### 扩展设计文档
+- [docs/M_EXTENSION_DESIGN.md](docs/M_EXTENSION_DESIGN.md) - 乘除扩展
+- [docs/A_EXTENSION_DESIGN.md](docs/A_EXTENSION_DESIGN.md) - 原子操作
+- [docs/FD_EXTENSION_DESIGN.md](docs/FD_EXTENSION_DESIGN.md) - 浮点扩展
+- [docs/C_EXTENSION_DESIGN.md](docs/C_EXTENSION_DESIGN.md) - 压缩指令
+- [docs/MMU_DESIGN.md](docs/MMU_DESIGN.md) - 虚拟内存
+
+### 技术深入
+- [docs/FORWARDING_ARCHITECTURE.md](docs/FORWARDING_ARCHITECTURE.md) - 数据前递系统
+- [docs/PARAMETERIZATION_GUIDE.md](docs/PARAMETERIZATION_GUIDE.md) - RV32/RV64 支持
+
+### 验证报告
+- [docs/PHASE8_VERIFICATION_REPORT.md](docs/PHASE8_VERIFICATION_REPORT.md) - FPU 验证
+- [docs/OFFICIAL_COMPLIANCE_TESTING.md](docs/OFFICIAL_COMPLIANCE_TESTING.md) - 一致性基础设施
+
+---
+
+## 项目历史
+
+**2025-10-23（Session 22）**：🎉🎉🎉 **100% 一致性达成！** 🎉🎉🎉
+  - **里程碑**：所有 81/81 官方 RISC-V 一致性测试全部通过！
+  - RV32D: 8/9 → 9/9 (100%) - fmadd 测试通过
+  - 完整实现 RV32IMAFDC：
     * RV32I: 42/42 (100%) ✅
     * RV32M: 8/8 (100%) ✅
     * RV32A: 10/10 (100%) ✅
     * RV32C: 1/1 (100%) ✅
     * RV32F: 11/11 (100%) ✅
     * RV32D: 9/9 (100%) ✅
-  - This represents a fully compliant RISC-V processor with:
-    * Base integer ISA (47 instructions)
-    * Multiply/Divide (13 instructions)
-    * Atomic operations (22 instructions)
-    * Compressed instructions (40 instructions)
-    * Single-precision floating-point (26 instructions)
-    * Double-precision floating-point (26 instructions)
-    * Total: 184+ instructions fully verified!
-**2025-10-23 (Session 21)**: Bug #53 FIXED - FDIV Rounding Logic - RV32D 88%! 🎉
-  - **Bug #53 COMPLETE**: Fixed FP divider rounding logic timing issue
-  - Root cause: `round_up` was assigned with non-blocking `<=` then immediately used in same cycle
-  - Solution: Changed to combinational `round_up_comb` computed from guard/round/sticky/lsb bits
-  - Additional fix: Latched LSB bit in NORMALIZE state to preserve value through quotient shifts
-  - Impact: fdiv test now PASSING - all FDIV and FSQRT operations working correctly ✅
-  - **RV32D Progress**: 7/9 → 8/9 tests passing (88%)
-  - **Passing**: fadd, fclass, fcmp, fcvt, fcvt_w, fdiv, fmin, ldst ✅
-  - **Remaining**: fmadd (1 test) - 97% complete!
-**2025-10-23 (Session 20)**: RV32D Progress - FCVT Tests Now Passing - 77%! 🎉
-  - **Bug #51 & #52 FIXED**: FCVT.S.D/D.S conversion operations now working
-  - **RV32D Progress**: 6/9 → 7/9 tests passing (77%)
-  - **New Passing**: fadd, fcvt, fcvt_w ✅
-  - **Already Passing**: fclass, fcmp, fmin, ldst ✅
-  - All conversion tests complete
-**2025-10-23 (Session 17)**: Bug #50 FIXED - FLD Format Bit Extraction - RV32D 66%! 🎉
-  - **Bug #50 COMPLETE**: Fixed decoder format bit extraction for FP loads/stores
-  - Root cause: decoder.v always used instruction[26:25] for format, but FLD uses funct3[1:0]
-  - Impact: FLD loaded 0xfff0000000000000 as 0xffffffff00000000 (incorrect NaN-boxing)
-  - Fix: Use funct3[1:0] for FP load/store format, instruction[26:25] for FP ops/FMA
-  - **RV32D Progress**: 0/9 → 6/9 tests passing (66%)
-  - Systematic debugging approach documented in docs/RV32D_DEBUG_PLAN.md
-  - See: docs/SESSION_2025-10-23_BUG50_FLD_FORMAT_FIX.md
-**2025-10-23 (Session 16)**: Bug #49 - MISA Register Fixed - RV32F 100%! 🎉
-  - **RV32F COMPLETE**: Bug #48 fixed (FCVT mantissa padding) - ALL 11/11 tests PASSING! ✅
-  - Bug #49 Phase 1: Fixed MISA register to advertise M/A/F/D extensions (was only I)
-  - Root cause: MISA extensions 0x100 → 0x1129 (added bits 0,3,5,12 for A,D,F,M)
-  - Fixed test runner to support rv32ud/rv64ud test configuration
-  - **RV32D Status**: 0/9 tests passing - infrastructure ready, debugging FLD/double-precision ops
-  - See: docs/SESSION_2025-10-23_BUG49_RV32D_INVESTIGATION.md
-**2025-10-23 (Session 15)**: Bug #48 FIXED - FCVT Mantissa Padding - RV32F progress continues
-  - Bug #48: Fixed FCVT.S.W mantissa padding when converting to double-precision format
-  - Root cause: Single-precision result (23-bit mantissa) needs zero-padding to 52 bits for FLEN=64
-  - Impact: fcvt_w test now closer to passing
-**2025-10-23 (Session 14)**: Bug #47 FIXED - FSGNJ NaN-Boxing Issue - RV32F 10/11 (90%) ✅
-  - Bug #47 COMPLETE: Fixed fp_sign.v single-precision result assembly with FLEN=64
-  - Root cause: magnitude_a construction {operand_a[63:32], operand_a[30:0]} shifted bits by 1
-  - Fix: Changed to {operand_a[63:32], result_sign, operand_a[30:0]} to preserve NaN-boxing
-  - move test now PASSING (was failing at test #21 with wrong sign bit)
-  - Remaining: fcvt_w test #5 (memory load issue - separate from FSGNJ)
-**2025-10-23 (Session 13)**: Bugs #44 & #45 FIXED - FMA positioning and FMV.W.X width mismatch - RV32F 9/11 (81%) ✅
-  - Bug #44 COMPLETE: Fixed FMA aligned_c shift amount (exp_diff → exp_diff+1) - fmadd now PASSING!
-  - Bug #45 FIXED: FMV.W.X undefined value bug (RV32D with FLEN=64 accessing 64-bit from 32-bit signal)
-  - move test no longer times out (was 49,999 cycles with X values, now 138 cycles)
-**2025-10-22 (Session 11)**: Bug #43 PHASE 2 COMPLETE - All 10 FPU modules support F+D mixed precision - RV32F 8/11 (72%) ✅
-  - Fixed fp_divider.v, fp_sqrt.v, fp_fma.v with format-aware UNPACK, PACKING, GRS, and BIAS
-  - fdiv test now PASSING (includes FDIV + FSQRT operations)
-  - Applied three-part fix: operand extraction, result packing, exponent arithmetic
-  - Remaining failures (fcvt_w, fmadd, move) are separate issues
-**2025-10-22 (Session 10 late PM)**: Bug #43 CRITICAL GRS FIX - fp_adder.v NORMALIZE stage fixed - fadd test PASSING! RV32F 7/11 (63%) ✅
-**2025-10-22 (Session 10 PM)**: Bug #43 Phase 2.1 - fp_adder.v ROUND stage fixed - fadd test #5 → #8, FADD/FSUB working ✅
-**2025-10-22 (Session 9 AM)**: Bug #43 Phase 1 COMPLETE - Phase 2 partial (fp_adder) - RV32F 4/11 (36%) - fclass, fcmp, fmin passing ✅
-**2025-10-22 (Session 8 evening)**: Bug #43 identified - F+D mixed precision support incomplete - RV32F regressed 11/11 → 1/11 ❌
-**2025-10-22 (Session 8 afternoon)**: RV32D FLEN refactoring - Bugs #27 & #28 COMPLETE - Memory interface widened to 64-bit, 1/9 tests passing ✅
-**2025-10-21 (late PM)**: RV32F completion - All remaining FPU tests passing! RV32UF 11/11 (100%) ✅
-**2025-10-21 (PM session 4)**: FPU NaN conversion - Fixed Bug #26 (NaN→INT sign bit handling) - fcvt_w 100% PASSING! RV32UF 7/11 (63.6%) ✅
-**2025-10-21 (PM session 3)**: FPU unsigned word overflow - Fixed Bugs #24-#25 (operation signal, overflow logic) - fcvt_w test #39 → #85 (98.8%!)
-**2025-10-21 (PM session 2)**: FPU unsigned long saturation - Fixed Bug #23 (negative→unsigned overflow) - fcvt_w test #37 → #39
-**2025-10-21 (PM session 1)**: FPU FP→INT overflow & flags - Fixed Bugs #20-#22 (overflow detection, invalid flags) - fcvt passing, fcvt_w 94%!
-**2025-10-21 (AM)**: FPU writeback path - Fixed Bug #19 (control unit FCVT direction bit) - Converter results now reach FP register file!
-**2025-10-20 (PM)**: FPU converter infrastructure - Fixed Bugs #13-#18 (leading zeros, flags, rounding, funct7, timing)
-**2025-10-20 (AM)**: FPU special case handling - Fixed Bugs #10, #11, #12 - fadd passing, fdiv timeout fixed (342x faster!)
-**2025-10-19**: FPU multiplier debugging - Fixed Bugs #8 and #9 (bit extraction and normalization)
-**2025-10-14**: FPU pipeline hazard marathon - Fixed Bugs #7 and #7b, tests now progress from #11 → #17
-**2025-10-13 (pm afternoon)**: Deep FPU debugging - Fixed Bug #5 (FFLAGS priority), attempted Bug #6 (CSR-FPU hazard) but needs refinement
-**2025-10-13 (pm)**: FPU debugging session - Fixed 2 critical bugs (mantissa/rounding), 15% → 27% pass rate
-**2025-10-13 (am)**: Phase 7 complete - A Extension 100% compliant
-**2025-10-12**: Phase 13 complete - Fixed MMU bare mode bug, 100% RV32I compliance
-**2025-10-12**: Phase 11 complete - Official compliance infrastructure ready
-**2025-10-12**: Phase 10 complete - Supervisor mode + MMU integration
-**2025-10-12**: Phase 9 complete - C Extension 100% validated
-**2025-10-11**: Phase 8 complete - FPU fully functional
-**2025-10-11**: Phase 6 complete - M Extension working
-**2025-10-10**: Phase 5 complete - Parameterization for RV32/RV64
-**2025-10-10**: Phase 4 complete - CSR and exceptions
-**2025-10-10**: Phase 3 complete - 5-stage pipeline
-**2025-10-09**: Phase 1 complete - Single-cycle RV32I core
+  - 达成一个完全符合 RISC-V 规范的处理器，包含：
+    * 基础整数 ISA（47 条指令）
+    * 乘除扩展（13 条指令）
+    * 原子操作（22 条指令）
+    * 压缩指令（40 条指令）
+    * 单精度浮点（26 条指令）
+    * 双精度浮点（26 条指令）
+    * 总计：184+ 条指令全部验证通过！
+**2025-10-23（Session 21）**：Bug #53 修复 - FDIV 舍入逻辑 - RV32D 88%! 🎉
+  - **Bug #53 完成**：修复 FP 除法器舍入逻辑时序问题
+  - 根因：`round_up` 使用非阻塞 `<=` 赋值后又在同周期使用
+  - 方案：改为组合逻辑 `round_up_comb`，由 guard/round/sticky/lsb 位计算
+  - 额外修复：在 NORMALIZE 阶段锁存 LSB 位以抵抗商移位
+  - 影响：fdiv 测试通过 - 所有 FDIV 和 FSQRT 操作正常 ✅
+  - **RV32D 进展**：7/9 → 8/9（88%）
+  - **通过测试**：fadd, fclass, fcmp, fcvt, fcvt_w, fdiv, fmin, ldst ✅
+  - **剩余**：fmadd（1 个测试）- 进度 97%！
+**2025-10-23（Session 20）**：RV32D 进展 - FCVT 测试通过 - 77%! 🎉
+  - **Bug #51 & #52 修复**：FCVT.S.D/D.S 转换操作正常
+  - **RV32D 进展**：6/9 → 7/9（77%）
+  - **新通过**：fadd, fcvt, fcvt_w ✅
+  - **已通过**：fclass, fcmp, fmin, ldst ✅
+  - 所有转换测试已完成
+**2025-10-23（Session 17）**：Bug #50 修复 - FLD 格式位提取 - RV32D 66%! 🎉
+  - **Bug #50 完成**：修复 FP Load/Store 的格式位提取
+  - 根因：decoder.v 一直用 instruction[26:25] 标识格式，但 FLD 使用 funct3[1:0]
+  - 影响：FLD 将 0xfff0000000000000 读成 0xffffffff00000000（NaN 盒装错误）
+  - 修复：FP Load/Store 使用 funct3[1:0]，FP 操作/FMA 使用 instruction[26:25]
+  - **RV32D 进展**：0/9 → 6/9（66%）
+  - 系统性调试方案记录在 docs/RV32D_DEBUG_PLAN.md
+  - 详见：docs/SESSION_2025-10-23_BUG50_FLD_FORMAT_FIX.md
+**2025-10-23（Session 16）**：Bug #49 - MISA 寄存器修复 - RV32F 100%! 🎉
+  - **RV32F 完成**：Bug #48 修复（FCVT mantissa 填充）- 11/11 全通过 ✅
+  - Bug #49 第 1 阶段：修复 MISA 寄存器，使其标记 M/A/F/D 扩展（之前只有 I）
+  - 根因：MISA 扩展从 0x100 → 0x1129（增加位 0,3,5,12 表示 A,D,F,M）
+  - 修复测试脚本以支持 rv32ud/rv64ud 配置
+  - **RV32D 状态**：0/9 通过 - 基础设施就绪，开始调试 FLD/双精度操作
+  - 详见：docs/SESSION_2025-10-23_BUG49_RV32D_INVESTIGATION.md
+**2025-10-23（Session 15）**：Bug #48 修复 - FCVT mantissa 填充 - RV32F 继续推进
+  - Bug #48：修复 FCVT.S.W 转为双精度格式时的 mantissa 填充
+  - 根因：单精度 mantissa（23 位）需要在 FLEN=64 时填充到 52 位
+  - 影响：fcvt_w 测试更接近通过
+**2025-10-23（Session 14）**：Bug #47 修复 - FSGNJ NaN 盒装问题 - RV32F 10/11 (90%) ✅
+  - Bug #47 完成：修复 fp_sign.v 在 FLEN=64 模式下单精度结果组装
+  - 根因：magnitude_a 构造 `{operand_a[63:32], operand_a[30:0]}` 导致位偏移
+  - 修复：改为 `{operand_a[63:32], result_sign, operand_a[30:0]}` 保持 NaN 盒装
+  - move 测试通过（原在测试 #21 上 sign 位出错）
+  - 剩余：fcvt_w 测试 #5（内存读问题 - 与 FSGNJ 无关）
+**2025-10-23（Session 13）**：Bug #44 & #45 修复 - FMA 对齐和 FMV.W.X 宽度不一致 - RV32F 9/11 (81%) ✅
+  - Bug #44 完成：修复 FMA 中 aligned_c 的移位量（exp_diff → exp_diff+1）- fmadd 通过！
+  - Bug #45 修复：FMV.W.X 未定义值 Bug（RV32D, FLEN=64 时从 32 位信号取 64 位）
+  - move 测试不再超时（之前 49,999 周期 X 值，现在 138 周期）
+**2025-10-22（Session 11）**：Bug #43 第 2 阶段完成 - 所有 10 个 FPU 模块支持 F+D 混合精度 - RV32F 8/11 (72%) ✅
+  - 修复 fp_divider.v, fp_sqrt.v, fp_fma.v 的格式感知 UNPACK、PACKING、GRS 和 BIAS
+  - fdiv 测试通过（含 FDIV + FSQRT 操作）
+  - 采用三步修复：操作数提取、结果打包、指数运算
+  - 剩余失败（fcvt_w, fmadd, move）属于其他问题
+**2025-10-22（Session 10 深夜）**：Bug #43 关键 GRS 修复 - 修正 fp_adder.v NORMALIZE 阶段 - fadd 测试通过！RV32F 7/11 (63%) ✅
+**2025-10-22（Session 10 晚）**：Bug #43 第 2.1 阶段 - 修复 fp_adder.v ROUND 阶段 - fadd 测试从 #5 → #8，FADD/FSUB 生效 ✅
+**2025-10-22（Session 9 早）**：Bug #43 第 1 阶段完成 - 第 2 阶段部分完成（fp_adder）- RV32F 4/11 (36%) - fclass, fcmp, fmin 通过 ✅
+**2025-10-22（Session 8 晚）**：发现 Bug #43 - F+D 混合精度支持不完整 - RV32F 从 11/11 退化到 1/11 ❌
+**2025-10-22（Session 8 下午）**：RV32D FLEN 重构 - Bug #27 & #28 完成 - 内存接口扩展到 64 位，1/9 测试通过 ✅
+**2025-10-21（深夜）**：RV32F 完成 - 所有剩余 FPU 测试通过！RV32UF 11/11 (100%) ✅
+**2025-10-21（下午 Session 4）**：FPU NaN 转换 - 修复 Bug #26（NaN→INT 符号位处理）- fcvt_w 100% 通过！RV32UF 7/11 (63.6%) ✅
+**2025-10-21（下午 Session 3）**：FPU 无符号 word 溢出 - 修复 Bug #24-#25（操作信号、溢出逻辑）- fcvt_w 测试 #39 → #85 (98.8%!)
+**2025-10-21（下午 Session 2）**：FPU 无符号 long 饱和 - 修复 Bug #23（负数→无符号溢出）- fcvt_w 测试 #37 → #39
+**2025-10-21（下午 Session 1）**：FPU FP→INT 溢出与标志 - 修复 Bug #20-#22（溢出检测、invalid 标志）- fcvt 通过，fcvt_w 94%！
+**2025-10-21（上午）**：FPU 写回路径 - 修复 Bug #19（控制单元 FCVT 方向位）- 转换结果可写入 FP 寄存器堆！
+**2025-10-20（晚）**：FPU 转换器基础设施 - 修复 Bug #13-#18（前导零、标志、舍入、funct7、时序）
+**2025-10-20（早）**：FPU 特殊情况处理 - 修复 Bug #10, #11, #12 - fadd 通过，fdiv 超时解决（快 342 倍！）
+**2025-10-19**：FPU 乘法器调试 - 修复 Bug #8 和 #9（位提取和归一化）
+**2025-10-14**：FPU 流水线冒险马拉松 - 修复 Bug #7 和 #7b，测试从 #11 → #17
+**2025-10-13（下午）**：FPU 深度调试 - 修复 Bug #5（FFLAGS 优先级），尝试 Bug #6（CSR-FPU 冒险）但需完善
+**2025-10-13（下午）**：FPU 调试阶段 - 修复 2 个关键 Bug（尾数/舍入），通过率从 15% 提升到 27%
+**2025-10-13（上午）**：阶段 7 完成 - A 扩展 100% 一致
+**2025-10-12**：阶段 13 完成 - 修复 MMU Bare 模式 Bug，RV32I 一致性 100%
+**2025-10-12**：阶段 11 完成 - 官方一致性基础设施准备就绪
+**2025-10-12**：阶段 10 完成 - 监督者模式 + MMU 集成
+**2025-10-12**：阶段 9 完成 - C 扩展 100% 验证
+**2025-10-11**：阶段 8 完成 - FPU 完全可用
+**2025-10-11**：阶段 6 完成 - M 扩展可用
+**2025-10-10**：阶段 5 完成 - RV32/RV64 参数化
+**2025-10-10**：阶段 4 完成 - CSR 与异常
+**2025-10-10**：阶段 3 完成 - 5 级流水线
+**2025-10-09**：阶段 1 完成 - 单周期 RV32I 核心
 
 ---
 
-*This is an educational RISC-V processor implementation. All code is synthesis-ready and follows RISC-V specifications.*
+*本项目是一个教学用 RISC-V 处理器实现。所有代码可综合，且符合 RISC-V 规范。*

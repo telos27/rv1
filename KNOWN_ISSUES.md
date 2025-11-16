@@ -1,36 +1,36 @@
-# Known Issues and Limitations
+# 已知问题与限制
 
-**Date**: 2025-10-13
-**Project**: RV1 RISC-V CPU Core
-
----
-
-## Overview
-
-This document tracks known issues, limitations, and areas requiring future work in the RV1 RISC-V CPU implementation.
+**日期**: 2025-10-13  
+**项目**: RV1 RISC-V CPU Core
 
 ---
 
-## Performance Limitations
+## 概览
 
-### 1. Conservative Atomic Instruction Forwarding (6% Overhead)
+本文档跟踪 RV1 RISC-V CPU 实现中的已知问题、限制以及未来需要处理的内容。
 
-**Status**: 🟡 **DOCUMENTED - Optimization Opportunity**
+---
 
-**Component**: A Extension - Hazard Detection Unit
+## 性能限制
 
-**Description**:
-The atomic instruction forwarding implementation uses a conservative approach that stalls the entire atomic operation if any RAW (Read-After-Write) dependency exists. This prevents a one-cycle forwarding gap bug but introduces ~6% performance overhead.
+### 1. 保守的原子指令转发（6% 开销）
 
-**Technical Details**:
-- **Problem**: When an atomic instruction completes (`atomic_done=1`), there's a one-cycle transition where dependent instructions could slip through without proper stalling
-- **Current Fix**: Stall entire atomic execution if dependency exists (`idex_is_atomic && hazard`)
-- **Performance**: rv32ua-p-lrsc test completes in 18,616 cycles (expected: 17,567, overhead: 1,049 cycles = 6%)
+**状态**: 🟡 **已记录 - 可优化点**
 
-**Better Solution Available (Not Implemented)**:
-Add single-cycle state tracking to detect only the transition cycle:
+**组件**: A 扩展 - 冒险检测单元
+
+**描述**：  
+当前的原子指令转发实现采用保守策略，只要存在任意 RAW（读后写）依赖，就会停顿整个原子操作。这避免了一周期的转发空窗 Bug，但带来了约 6% 的性能开销。
+
+**技术细节**：
+- **问题**：当原子指令完成（`atomic_done=1`）时，会有一个周期间隙，在此周期中依赖指令可能在没有正确停顿的情况下溜过去
+- **当前修复**：只要存在依赖（`idex_is_atomic && hazard`），就停顿整个原子执行
+- **性能**：rv32ua-p-lrsc 测试在 18,616 周期完成（期望：17,567 周期，额外 1,049 周期 = 6% 开销）
+
+**更优但尚未实现的方案**：  
+增加单周期状态跟踪，只在转换周期检测：
 ```verilog
-// Would reduce overhead from 6% to ~0.3%
+// 可将开销从 6% 降到约 0.3%
 reg atomic_completing;
 always @(posedge clk) begin
   atomic_completing <= atomic_done;
@@ -38,163 +38,163 @@ end
 assign atomic_stall = (atomic_completing && hazard) || normal_atomic_stall;
 ```
 
-**Why Not Implemented**:
-- Requires adding `clk`/`reset_n` ports to `hazard_detection_unit.v`
-- Current solution is simpler and correctness is more important than 6% performance
-- 6% overhead is acceptable for atomic operations (not common in typical code)
-- Documented in code for future optimization if needed
+**未实施原因**：
+- 需要给 `hazard_detection_unit.v` 增加 `clk`/`reset_n` 端口
+- 当前方案更简单，且正确性比这 6% 性能更重要
+- 对于原子操作（在典型代码中不频繁）6% 开销是可接受的
+- 已在代码和文档中记录，供未来优化
 
-**Impact**:
-- **Low** for non-atomic code (no overhead)
-- **Low** for typical mixed code (atomics are infrequent)
-- **Medium** for atomic-heavy workloads (e.g., lock-based synchronization)
+**影响**：
+- **对非原子代码**：影响为 0（无开销）
+- **对典型混合代码**：影响较低（原子操作不多）
+- **对原子密集的工作负载**（如基于锁的同步）：影响中等
 
-**Workaround**: None needed - functionality is correct
+**变通办法**：不需要——功能是正确的
 
-**Files Involved**:
-- `rtl/core/hazard_detection_unit.v` (lines 126-155)
-- `docs/SESSION33_LR_SC_FIX_COMPLETE.md` (full analysis)
+**相关文件**：
+- `rtl/core/hazard_detection_unit.v`（第 126-155 行）
+- `docs/SESSION33_LR_SC_FIX_COMPLETE.md`（完整分析）
 
-**Priority**: Low (optimization opportunity, not a bug)
+**优先级**：低（性能优化，而非 Bug）
 
-**Future Work**: Implement cycle-accurate state tracking to reduce overhead to 0.3%
-
----
-
-## Active Issues
-
-(None currently)
+**未来工作**：实现周期精确的状态跟踪，将开销降至 0.3%
 
 ---
 
-## Resolved Issues
+## 活跃问题
 
-### ✅ Mixed Compressed/Normal Instruction Configuration Issue (Bug #23)
+（当前无）
 
-**Status**: ✅ **RESOLVED** - Not a bug, configuration requirement clarified (2025-10-23)
+---
 
-**Component**: C Extension configuration and exception handling
+## 已解决问题
 
-**Description**:
-Tests with compressed instructions would hang when compiled with `-DCONFIG_RV32I`, causing the CPU to loop infinitely between PC=0x00 and PC=0x02 with instruction address misaligned exceptions.
+### ✅ 混合压缩/非压缩指令配置问题（Bug #23）
 
-**Root Cause**:
-**Configuration mismatch**, not a hardware bug:
-- The RVC decoder is always instantiated and active in the pipeline
-- When compiled with `-DCONFIG_RV32I`, the `ENABLE_C_EXT` flag is set to 0
-- The exception unit checks PC alignment based on `ENABLE_C_EXT`:
-  - With C extension: Only PC[0] must be 0 (2-byte aligned)
-  - Without C extension: PC[1:0] must be 00 (4-byte aligned)
-- Compressed instructions at PC=0x00 increment PC to 0x02 (2-byte aligned)
-- Exception unit rejects PC=0x02 as misaligned when `ENABLE_C_EXT=0`
-- Trap vector redirects to 0x00, creating infinite loop
+**状态**: ✅ **已解决** - 非 Bug，已澄清配置要求 (2025-10-23)
 
-**Symptoms**:
-- CPU oscillates between PC=0x00 and PC=0x02
-- Instruction address misaligned exception (code 0x00) on every cycle with PC[1]=1
-- Test programs with compressed instructions timeout
-- Flush signal active every other cycle due to trap
+**组件**: C 扩展配置与异常处理
 
-**Resolution**:
-Use correct configuration when compiling tests with compressed instructions:
-- `-DCONFIG_RV32IMC` or any config with `ENABLE_C_EXT=1`
-- NOT `-DCONFIG_RV32I` which has `ENABLE_C_EXT=0`
+**描述**：  
+包含压缩指令的测试在使用 `-DCONFIG_RV32I` 编译时会卡住，CPU 在 PC=0x00 和 PC=0x02 之间无限循环，并产生指令地址未对齐异常。
 
-**Configuration Reference**:
+**根因**：  
+**配置不匹配**，非硬件 Bug：
+- RVC 解码器总是被实例化并在流水线上激活
+- 当使用 `-DCONFIG_RV32I` 编译时，`ENABLE_C_EXT` 置为 0
+- 异常单元按 `ENABLE_C_EXT` 判断 PC 对齐：
+  - 启用 C 扩展时：只要求 PC[0]=0（2 字节对齐）
+  - 关闭 C 扩展时：要求 PC[1:0]=00（4 字节对齐）
+- 压缩指令在 PC=0x00 时执行完会将 PC 增加到 0x02（2 字节对齐）
+- 异常单元在 `ENABLE_C_EXT=0` 时认为 PC=0x02 未对齐
+- 陷入向量跳转回 0x00，形成无限循环
+
+**症状**：
+- CPU 在 PC=0x00 和 PC=0x02 之间振荡
+- 当 PC[1]=1 时，每个周期产生 “指令地址未对齐” 异常（编码 0x00）
+- 包含压缩指令的测试程序超时
+- 由于陷入反复发生，流水线每隔一个周期就被刷新
+
+**解决方案**：  
+在使用压缩指令的测试中，使用正确的配置：
+- 使用 `-DCONFIG_RV32IMC` 或任意将 `ENABLE_C_EXT=1` 的配置
+- 不要使用 `-DCONFIG_RV32I`（其 `ENABLE_C_EXT=0`）
+
+**配置示例**：
 ```bash
-# Correct - for tests with compressed instructions
+# 正确 - 用于包含压缩指令的测试
 iverilog -DCONFIG_RV32IMC ...
 
-# Incorrect - will fail on 2-byte aligned PCs
+# 错误 - 在 2 字节对齐 PC 上会失败
 iverilog -DCONFIG_RV32I ...
 ```
 
-**Test Evidence**:
-- With CONFIG_RV32I: Infinite loop at PC=0x00↔0x02, exception code 0x00
-- With CONFIG_RV32IMC: Test executes correctly, official rv32uc-p-rvc passes
-- Official compliance: RV32UC 1/1 tests PASSING (100%) ✅
+**测试证据**：
+- 使用 CONFIG_RV32I：PC 在 0x00↔0x02 无限循环，异常码 0x00
+- 使用 CONFIG_RV32IMC：测试正常执行，官方 rv32uc-p-rvc 通过
+- 官方兼容性：RV32UC 1/1 测试通过 (100%) ✅
 
-**Files Involved**:
-- `rtl/config/rv_config.vh` - Configuration definitions
-- `rtl/core/exception_unit.v` - PC alignment checking
+**相关文件**：
+- `rtl/config/rv_config.vh` - 配置定义
+- `rtl/core/exception_unit.v` - PC 对齐检查
 
-**Impact**: Medium - User error, not a hardware defect
-**Priority**: Resolved - Configuration requirement documented
+**影响**：中等 - 用户配置错误，而非硬件缺陷  
+**优先级**：已解决 - 已记录配置要求
 
-**Note**: The RVC decoder and exception unit work correctly. Tests must use appropriate configuration flags.
+**备注**：RVC 解码器与异常单元行为正确。测试必须使用正确的配置宏。
 
 ---
 
-### 3. FPU Converter Blocking Assignments
+### 3. FPU 转换器中的阻塞赋值
 
-**Status**: 🟡 **DOCUMENTED - Low Priority**
+**状态**: 🟡 **已记录 - 低优先级**
 
-**Component**: Floating-Point Unit (FPU)
+**组件**: 浮点单元（FPU）
 
-**Description**:
-The `fp_converter.v` module uses blocking assignments (`=`) in sequential logic blocks, which can cause synthesis issues and simulation mismatches.
+**描述**：  
+`fp_converter.v` 模块在时序逻辑块中使用了阻塞赋值（`=`），这可能导致综合问题和仿真不一致。
 
-**Evidence**:
-Verilator warnings:
-```
+**证据**：  
+Verilator 警告：
+```text
 Warning-BLKSEQ: rtl/core/fp_converter.v:136:23:
   Blocking assignment '=' in sequential logic process
   Suggest using delayed assignment '<='
 ```
 
-Approximately 20-30 instances throughout `fp_converter.v`.
+在 `fp_converter.v` 中大约有 20-30 处类似用法。
 
-**Root Cause**:
-Mixed coding style - combinational logic embedded in sequential blocks.
+**根因**：  
+混合编码风格——在时序块中嵌入组合逻辑。
 
-**Impact**:
-- **Low** for current simulation (Icarus Verilog tolerates it)
-- **Medium** for synthesis (may cause timing issues)
-- **High** for formal verification tools
+**影响**：
+- **对当前仿真**（Icarus Verilog）：影响低
+- **对综合**：中等（可能造成时序问题）
+- **对形式验证工具**：高
 
-**Workaround**: None currently needed for simulation
+**变通办法**：当前仿真不需要特别处理
 
-**Fix Required**:
-Separate combinational and sequential logic:
+**建议修复**：  
+将组合逻辑与时序逻辑分离：
 ```verilog
-// Current (problematic):
+// 当前（有问题）：
 always @(posedge clk) begin
-  sign_fp = fp_operand[FLEN-1];  // Blocking in sequential
+  sign_fp = fp_operand[FLEN-1];  // 时序块中的阻塞赋值
   if (reset_n) begin
     result <= computed_value;
   end
 end
 
-// Fixed:
-always @(*) begin  // Combinational block
+// 修复版：
+always @(*) begin  // 组合逻辑块
   sign_fp = fp_operand[FLEN-1];
 end
 
-always @(posedge clk) begin  // Sequential block
+always @(posedge clk) begin  // 时序逻辑块
   if (reset_n) begin
     result <= computed_value;
   end
 end
 ```
 
-**Files Involved**:
+**相关文件**：
 - `rtl/core/fp_converter.v`
 
-**Priority**: Low (works in simulation, fix before FPGA deployment)
+**优先级**：低（仿真可用，建议在 FPGA 部署前修复）
 
 ---
 
-### 4. FPU Width Mismatch Warnings
+### 4. FPU 位宽不匹配警告
 
-**Status**: 🟡 **DOCUMENTED - Low Priority**
+**状态**: 🟡 **已记录 - 低优先级**
 
-**Component**: Floating-Point Unit (FPU)
+**组件**: 浮点单元（FPU）
 
-**Description**:
-Multiple width mismatch warnings in FPU modules where signal widths don't match exactly.
+**描述**：  
+多个 FPU 模块存在位宽不匹配的警告，某些信号位宽并未完全匹配。
 
-**Evidence**:
-```
+**证据**：
+```text
 Warning-WIDTHEXPAND: rtl/core/fp_minmax.v:56:48:
   Operator COND expects 64 bits on the Conditional True,
   but Conditional True's CONST '32'h7fc00000' generates 32 bits.
@@ -204,270 +204,270 @@ Warning-WIDTHTRUNC: rtl/core/fp_converter.v:150:41:
   but Assign RHS's COND generates 64 bits.
 ```
 
-**Root Cause**:
-FPU modules designed to support both 32-bit (single) and 64-bit (double) precision, but conditional expressions don't properly handle width differences.
+**根因**：  
+FPU 模块同时支持 32 位（单精度）和 64 位（双精度），但是条件表达式没有正确处理不同位宽。
 
-**Impact**:
-- **Low** - Automatic width extension/truncation works correctly
-- May cause confusion in simulation waveforms
-- Clutters synthesis reports
+**影响**：
+- **低**：自动的扩展/截断行为目前是正确的
+- 会在波形和日志中造成一些困惑
+- 综合报告中增加噪声信息
 
-**Workaround**: None needed
+**变通办法**：不需要特别处理
 
-**Fix Required**:
-Add explicit width casting:
+**建议修复**：  
+添加显式位宽扩展：
 ```verilog
-// Current:
+// 当前：
 wire [FLEN-1:0] canonical_nan = (FLEN == 32) ? 32'h7FC00000 : 64'h7FF8000000000000;
 
-// Fixed:
+// 修复版：
 wire [FLEN-1:0] canonical_nan = (FLEN == 32) ?
                                  {{(FLEN-32){1'b0}}, 32'h7FC00000} :
                                  64'h7FF8000000000000;
 ```
 
-**Files Involved**:
+**相关文件**：
 - `rtl/core/fp_minmax.v`
 - `rtl/core/fp_converter.v`
 
-**Priority**: Low
+**优先级**：低
 
 ---
 
-### 5. Missing CSR/Decoder Ports (Legacy Warnings)
+### 5. 缺失的 CSR/解码器端口（遗留警告）
 
-**Status**: ✅ **RESOLVED - Legacy Warnings Only**
+**状态**: ✅ **已解决 - 仅遗留警告**
 
-**Component**: Core Pipeline Integration
+**组件**: 核心流水线集成
 
-**Description**:
-Some Verilator warnings may appear about missing CSR ports, but these are legacy warnings from earlier development phases.
+**描述**：  
+Verilator 可能仍然会报告某些缺失 CSR 端口的警告，但这些是早期开发阶段残留的警告。
 
-**Current Status**:
-- ✅ All CSRs fully implemented (M-mode + S-mode + delegation)
-- ✅ Privilege modes working (M/S/U modes)
-- ✅ Virtual memory connected (SATP, MMU, TLB)
-- ✅ All necessary ports wired in pipeline
+**当前状态**：
+- ✅ 所有 CSR 已完整实现（M 模式 + S 模式 + 委托）
+- ✅ 特权模式工作正常（M/S/U 模式）
+- ✅ 虚拟内存（SATP, MMU, TLB）已连接
+- ✅ 流水线中所有必要端口已接线
 
-**Impact**: None - warnings are cosmetic
+**影响**：无——这些警告只是外观问题
 
-**Priority**: Low (warnings only, no functional impact)
-
----
-
-## Resolved Issues
-
-### ✅ Icarus Verilog Simulation Hang with Compressed Instructions
-
-**Status**: ✅ **RESOLVED** (2025-10-12, Root cause fixed 2025-10-21)
-
-**Description**: Simulation would hang after first clock cycle when compressed instructions were present.
-
-**Initial Resolution**: Issue appeared resolved through FPU state machine fixes.
-
-**Actual Root Cause**: Bug #23 - RVC compressed instruction detection logic error (see above). The simulation wasn't actually hanging; it was looping infinitely due to incorrect PC increments.
-
-**Evidence**: test_rvc_minimal passes with correct execution after Bug #23 fix.
+**优先级**：低（仅警告，无功能影响）
 
 ---
 
-### ✅ FPU State Machine Mixed Assignments
+## 已解决问题
 
-**Status**: ✅ **RESOLVED** (2025-10-12)
+### ✅ Icarus Verilog 在压缩指令下的仿真卡死
 
-**Description**: Five FPU modules had mixed blocking/non-blocking assignments for state machine logic.
+**状态**: ✅ **已解决**（2025-10-12，根因于 2025-10-21 修复）
 
-**Resolution**: Fixed 70 lines across 5 files:
-- `rtl/core/fp_adder.v` (18 lines)
-- `rtl/core/fp_multiplier.v` (12 lines)
-- `rtl/core/fp_divider.v` (16 lines)
-- `rtl/core/fp_sqrt.v` (8 lines)
-- `rtl/core/fp_fma.v` (16 lines)
+**描述**：当存在压缩指令时，仿真会在第一个时钟周期后卡住。
 
-**Fix**: Separated combinational (blocking) and sequential (non-blocking) assignments.
+**最初解决办法**：看起来通过修复 FPU 状态机的问题已经解决。
 
----
+**实际根因**：Bug #23 —— RVC 压缩指令检测逻辑错误（见上文）。仿真其实并未真正“卡死”，而是在错误的 PC 增量下形成了无限循环。
 
-### ✅ Test Ebreak Exception Loop
-
-**Status**: ✅ **RESOLVED** (2025-10-12)
-
-**Description**: Tests appeared to fail because ebreak caused exception loop, overwriting correct results.
-
-**Resolution**: Implemented cycle-based test termination that checks results before exception loop.
-
-**Evidence**: test_rvc_minimal now passes cleanly.
+**证据**：在修复 Bug #23 后，`test_rvc_minimal` 正常通过并正确执行。
 
 ---
 
-## Limitations
+### ✅ FPU 状态机混用赋值方式
 
-### 1. Test Programs Require Careful Cycle Counting
+**状态**: ✅ **已解决**（2025-10-12）
 
-**Type**: Limitation
+**描述**：5 个 FPU 模块在状态机逻辑中混用了阻塞/非阻塞赋值。
 
-**Description**: Integration tests use cycle counting to terminate before exceptions. If pipeline timing changes, cycle counts must be updated.
+**解决**：跨 5 个文件修复约 70 行：
+- `rtl/core/fp_adder.v`（18 行）
+- `rtl/core/fp_multiplier.v`（12 行）
+- `rtl/core/fp_divider.v`（16 行）
+- `rtl/core/fp_sqrt.v`（8 行）
+- `rtl/core/fp_fma.v`（16 行）
 
-**Workaround**:
-- Document expected cycle count in test comments
-- Use generous cycle counts (e.g., +20 cycles beyond expected)
-- Can add dynamic detection of target register writes
-
-**Future Improvement**: Implement proper trap handlers in test programs
-
----
-
-### 2. No Exception Handlers in Test Programs
-
-**Type**: Limitation
-
-**Description**: Test programs don't have proper exception/trap handlers, so ebreak causes jump to address 0.
-
-**Impact**:
-- Tests must terminate before ebreak executes
-- Cannot test exception handling itself
-- Programs loop after ebreak
-
-**Workaround**: Cycle-based termination in testbenches
-
-**Future Improvement**:
-- Add minimal trap handler stubs
-- Set up mtvec CSR properly
-- Implement proper ebreak handling
+**修复方式**：将组合逻辑（阻塞赋值）与时序逻辑（非阻塞赋值）分离。
 
 ---
 
-### 3. FPU Conversion Testing Incomplete
+### ✅ 测试中 ebreak 异常循环
 
-**Type**: Limitation
+**状态**: ✅ **已解决**（2025-10-12）
 
-**Description**: FPU conversion instructions have critical bugs and very limited test coverage. We are at the **beginning** of FPU conversion testing, not near completion.
+**描述**：由于 ebreak 导致异常循环，测试看起来像是失败，并覆盖了正确结果。
 
-**Status**:
-- ✅ FPU infrastructure implemented (52 instructions)
-- ✅ Basic conversions for 1, 2 working
-- ✗ Conversion of -1 produces wrong result (exp=0xBF instead of 0x7F)
-- ⚠️ Conversion of 0 appears correct but needs verification
-- ❌ ~90% of conversion test cases not yet run
-- ❌ Official RISC-V F/D compliance tests not yet run
+**解决方案**：在异常循环前增加基于周期计数的测试终止逻辑，用于在进入异常循环前检查测试结果。
 
-**Current Test Coverage**: ~10-20%
-- 4 test values: 0, 1, 2, -1
-- 1 direction: INT32 → FLOAT32
-- 0 rounding modes tested
-- 0 unsigned conversions tested
-- 0 float→int conversions tested
-
-**Known Bugs**:
-- FCVT.S.W of -1 produces 0xDF800000 instead of 0xBF800000
-- Exponent calculation error (+64 bias error)
-
-**Remaining Work**:
-- Fix -1 conversion bug
-- Test FCVT.S.W comprehensively (100+ cases)
-- Test FCVT.S.WU (unsigned variants)
-- Test FCVT.W.S and FCVT.WU.S (float→int)
-- Test all 5 rounding modes
-- Test special values (NaN, Inf, denormals)
-- Run official compliance tests (rv32uf-p-fcvt, rv32uf-p-fcvt_w)
-
-**Detailed Status**: See [docs/FPU_CONVERSION_STATUS.md](docs/FPU_CONVERSION_STATUS.md)
-
-**Priority**: High - Core functionality broken
+**证据**：`test_rvc_minimal` 现在干净地通过。
 
 ---
 
-## Future Work (Not Issues)
+## 限制
 
-### Performance Enhancements
-- ✅ ~~CSR and Privilege Modes~~ (Complete)
-- ✅ ~~Virtual Memory (SATP, TLB)~~ (Complete)
-- Optimize atomic forwarding (reduce 6% overhead to 0.3%)
-- Branch prediction (2-bit saturating counters)
-- Cache hierarchy (I-cache, D-cache)
-- Larger TLB (16 → 64 entries)
+### 1. 测试程序需要精确的周期计数
 
-### Testing Improvements
-- Run official RISC-V F/D compliance tests
-- Add formal verification for critical paths
-- Performance benchmarking (Dhrystone, CoreMark)
-- Expand subnormal and rounding mode test coverage
-- **See [docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md](docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md) for detailed recommendations**
+**类型**: 限制
 
-### System Features
-- Interrupt controller (PLIC)
-- Timer (CLINT)
-- Debug module (JTAG, hardware breakpoints)
-- Performance counters
-- Physical memory protection (PMP)
+**描述**：集成测试使用周期计数提前终止，以避免进入异常循环。如果流水线时序变化，对应的周期计数需要更新。
 
-### Extensions
-- Bit manipulation (B/Zb* extensions)
-- Vector processing (V extension)
-- Hypervisor support (H extension)
+**变通办法**：
+- 在测试注释中记录期望的周期数
+- 使用更宽松的周期上限（例如比预期值多 20 个周期）
+- 可以增加“检测目标寄存器写入”的动态终止逻辑
+
+**未来改进**：在测试程序中实现真正的陷阱处理程序
 
 ---
 
-## Issue Tracking
+### 2. 测试程序中没有真正的异常处理程序
 
-### How to Report New Issues
+**类型**: 限制
 
-When discovering a new issue, document:
+**描述**：测试程序没有实际的异常/陷阱处理程序，因此 ebreak 会导致跳转到地址 0。
 
-1. **Component**: Which module/subsystem
-2. **Description**: Clear description of the problem
-3. **Evidence**: Error messages, test results, traces
-4. **Root Cause**: If known
-5. **Impact**: Severity and scope
-6. **Workaround**: If available
-7. **Files Involved**: Specific source files
-8. **Priority**: High/Medium/Low
+**影响**：
+- 测试必须在 ebreak 执行前终止
+- 无法真正测试异常处理逻辑本身
+- ebreak 之后程序会进入循环
 
-Add to this document and commit.
+**变通办法**：在测试平台中采用基于周期的终止逻辑
 
-### Priority Definitions
-
-- **High**: Blocks critical functionality or causes incorrect results
-- **Medium**: Limits functionality or affects quality
-- **Low**: Cosmetic, warnings, or future improvements
-
-### Status Definitions
-
-- 🔴 **ACTIVE**: Needs investigation and fix
-- 🟡 **DOCUMENTED**: Known, low priority, or has workaround
-- ✅ **RESOLVED**: Fixed and validated
+**未来改进**：
+- 添加最小化的陷阱处理 stub
+- 正确设置 mtvec CSR
+- 实现对 ebreak 的合理处理
 
 ---
 
-## Summary
+### 3. FPU 转换测试尚不完整
 
-### Performance Limitations: 1
-- Conservative atomic forwarding (6% overhead) - optimization opportunity
+**类型**: 限制
 
-### Critical Issues: 0
-All blocking issues have been resolved.
+**描述**：FPU 转换指令仍存在关键 Bug，且测试覆盖很有限。我们目前处于 **FPU 转换测试的起步阶段**，而非接近完成。
 
-### Active Issues: 0
-No active issues at this time.
+**状态**：
+- ✅ FPU 基础设施已实现（52 条指令）
+- ✅ 针对 1、2 的基础转换可工作
+- ✗ 对 -1 的转换结果错误（exp=0xBF 而非 0x7F）
+- ⚠️ 对 0 的转换看起来正确，但需要更多验证
+- ❌ 约 90% 的转换测试用例尚未运行
+- ❌ 官方 RISC-V F/D 兼容性测试尚未执行
 
-### Documented Issues: 3
-- FPU converter blocking assignments (Low priority)
-- FPU width mismatches (Low priority)
-- Legacy CSR port warnings (Low priority)
+**当前测试覆盖率**：约 10-20%
+- 测试值：0, 1, 2, -1 共 4 个
+- 方向：仅 INT32 → FLOAT32
+- 舍入模式：只测试默认模式
+- 无无符号转换测试
+- 无 float→int 转换测试
 
-### Limitations: 3
-- Test cycle counting requirement
-- No exception handlers in tests
-- FPU conversion testing incomplete (see docs/FPU_CONVERSION_STATUS.md)
+**已知 Bug**：
+- FCVT.S.W(-1) 产生 0xDF800000，而正确结果应为 0xBF800000
+- 指数计算存在偏差（+64 偏差）
 
-### Recently Resolved: 1
-- Bug #23: RVC compressed instruction detection (2025-10-21)
+**剩余工作**：
+- 修复 -1 的转换 Bug
+- 为 FCVT.S.W 建立全面测试（100+ 案例）
+- 测试 FCVT.S.WU（无符号版本）
+- 测试 FCVT.W.S 和 FCVT.WU.S（浮点→整数）
+- 测试全部 5 种舍入模式
+- 测试特殊值（NaN、Inf、次正规数）
+- 运行官方兼容性测试（rv32uf-p-fcvt, rv32uf-p-fcvt_w）
+
+**详细状态**：见 [docs/FPU_CONVERSION_STATUS.md](docs/FPU_CONVERSION_STATUS.md)
+
+**优先级**：高 - 核心功能存在缺陷
 
 ---
 
-**Last Updated**: 2025-10-21
-**Next Review**: Before FPGA synthesis or when new issues discovered
+## 未来工作（非问题）
+
+### 性能增强
+- ✅ ~~CSR 和特权模式~~（已完成）
+- ✅ ~~虚拟内存（SATP, TLB）~~（已完成）
+- 优化原子转发（将 6% 开销降至 0.3%）
+- 分支预测（2 位饱和计数器）
+- Cache 层级（I-cache, D-cache）
+- 更大的 TLB（16 → 64 项）
+
+### 测试改进
+- 运行官方 RISC-V F/D 兼容性测试
+- 对关键路径做形式化验证
+- 性能基准测试（Dhrystone, CoreMark）
+- 扩展次正规数和舍入模式测试覆盖
+- **详见 [docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md](docs/TEST_INFRASTRUCTURE_IMPROVEMENTS.md) 获取详细建议**
+
+### 系统特性
+- 中断控制器（PLIC）
+- 定时器（CLINT）
+- 调试模块（JTAG、硬件断点）
+- 性能计数器
+- 物理内存保护（PMP）
+
+### 扩展
+- 位操作扩展（B/Zb*）
+- 向量处理（V 扩展）
+- 虚拟化支持（H 扩展）
 
 ---
 
-*RV1 RISC-V CPU Core Project*
+## 问题跟踪
+
+### 如何记录新问题
+
+发现新问题时，请记录：
+
+1. **组件**：问题涉及哪个模块/子系统
+2. **描述**：清晰说明问题现象
+3. **证据**：错误信息、测试结果、波形/日志
+4. **根因**：若已知
+5. **影响**：严重性与影响范围
+6. **变通办法**：如有
+7. **相关文件**：具体源码文件
+8. **优先级**：高/中/低
+
+将对应内容添加到本文档并提交。
+
+### 优先级定义
+
+- **高**：阻塞关键功能或产生错误结果
+- **中**：限制功能或影响质量
+- **低**：外观问题、警告或未来优化
+
+### 状态定义
+
+- 🔴 **ACTIVE**：需要调查并修复
+- 🟡 **DOCUMENTED**：已知问题，优先级低或已有变通办法
+- ✅ **RESOLVED**：已修复并验证
+
+---
+
+## 总结
+
+### 性能限制：1
+- 保守的原子转发（6% 开销） - 优化机会
+
+### 关键问题：0
+所有阻塞性问题已解决。
+
+### 活跃问题：0
+当前没有活跃问题。
+
+### 已记录问题：3
+- FPU 转换器中的阻塞赋值（低优先级）
+- FPU 位宽不匹配（低优先级）
+- 遗留 CSR 端口警告（低优先级）
+
+### 限制：3
+- 测试对周期计数的依赖
+- 测试程序中缺少异常处理程序
+- FPU 转换测试不完整（见 docs/FPU_CONVERSION_STATUS.md）
+
+### 最近解决：1
+- Bug #23：RVC 压缩指令检测（2025-10-21）
+
+---
+
+**最后更新**: 2025-10-21  
+**下次审查**: FPGA 综合前或发现新问题时
+
+---
+
+*RV1 RISC-V CPU Core 项目*

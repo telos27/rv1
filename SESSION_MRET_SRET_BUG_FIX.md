@@ -1,291 +1,291 @@
-# Session Summary: MRET/SRET Privilege Violation Bug Fix (WIP)
+# 会话总结：MRET/SRET 特权违规缺陷修复（进行中）
 
-**Date**: 2025-10-23
-**Status**: 🔧 IN PROGRESS
-**Achievement**: RTL logic implemented, verification pending
-
----
-
-## 🎯 Objective
-
-Fix the privilege violation bug discovered in Phase 1 testing where MRET and SRET instructions don't trap when executed in insufficient privilege modes.
+**日期**: 2025-10-23  
+**状态**: 🔧 进行中  
+**成果**: RTL 逻辑已实现，验证尚未完成
 
 ---
 
-## 🐛 Bug Analysis
+## 🎯 目标
 
-### Root Cause
-The MRET and SRET instructions were correctly decoded but never checked for privilege violations. The exception_unit had no logic to detect when these instructions execute in insufficient privilege modes.
-
-### Expected Behavior
-- **MRET**: Only allowed in M-mode → should trap with illegal instruction in S-mode or U-mode
-- **SRET**: Only allowed in M-mode or S-mode → should trap with illegal instruction in U-mode
-
-### Actual Behavior (Before Fix)
-- MRET/SRET executed successfully in any privilege mode
-- No illegal instruction exception was raised
-- Security issue: U-mode code could potentially manipulate privilege state
+修复在阶段 1 测试中发现的缺陷：MRET 和 SRET 指令在以不足特权模式执行时不会触发陷阱。
 
 ---
 
-## 🔧 Implementation
+## 🐛 缺陷分析
 
-### Files Modified (3)
+### 根因
+MRET 和 SRET 指令在译码阶段能正确识别，但从未进行特权违规检查。exception_unit 没有任何逻辑去判断这些指令是否在错误特权级下执行。
+
+### 期望行为
+- **MRET**：仅允许在 M 模式执行 → 在 S 模式或 U 模式执行时应触发非法指令异常  
+- **SRET**：仅允许在 M 模式或 S 模式执行 → 在 U 模式执行时应触发非法指令异常  
+
+### 修复前的实际行为
+- MRET/SRET 在任意特权模式下都能执行成功  
+- 不会产生非法指令异常  
+- 安全问题：U 模式代码理论上可能操纵特权状态  
+
+---
+
+## 🔧 实现
+
+### 修改文件（3 个）
 
 #### 1. `rtl/core/exception_unit.v`
-**Changes**:
-- Added `id_mret` and `id_sret` input ports
-- Added privilege checking logic:
+**变更**：
+- 新增 `id_mret` 和 `id_sret` 输入端口  
+- 新增特权检查逻辑：
   ```verilog
   wire id_mret_violation = id_valid && id_mret && (current_priv != 2'b11);
   wire id_sret_violation = id_valid && id_sret && (current_priv == 2'b00);
   wire id_illegal_combined = id_illegal || id_mret_violation || id_sret_violation;
   ```
-- Updated exception priority encoder to use `id_illegal_combined`
-- Updated comments to reflect xRET privilege checking
+- 更新异常优先级编码逻辑，使用 `id_illegal_combined`  
+- 更新注释以反映 xRET 特权检查  
 
-**Lines Changed**: ~15 lines added/modified
+**修改行数**：约 15 行新增/修改  
 
 #### 2. `rtl/core/rv32i_core_pipelined.v`
-**Changes**:
-- Connected `id_mret` and `id_sret` signals to exception_unit:
+**变更**：
+- 将 `id_mret` 和 `id_sret` 信号连接到 exception_unit：
   ```verilog
   .id_mret(idex_is_mret && idex_valid),
   .id_sret(idex_is_sret && idex_valid),
   ```
-- Prevented illegal xRET propagation to MEM stage:
+- 阻止非法 xRET 传播到 MEM 阶段：
   ```verilog
   .is_mret_in(idex_is_mret && !(exception && (exception_code == 5'd2))),
   .is_sret_in(idex_is_sret && !(exception && (exception_code == 5'd2))),
   ```
-- Updated mret_flush/sret_flush to not trigger on exceptions:
+- 更新 mret_flush/sret_flush，避免异常发生时仍触发 flush：
   ```verilog
   assign mret_flush = exmem_is_mret && exmem_valid && !exception;
   assign sret_flush = exmem_is_sret && exmem_valid && !exception;
   ```
 
-**Lines Changed**: ~10 lines modified
+**修改行数**：约 10 行修改  
 
-#### 3. `tests/asm/test_mret_trap_simple.s` (NEW)
-**Purpose**: Test that MRET traps when executed in U-mode
+#### 3. `tests/asm/test_mret_trap_simple.s`（新）
+**目的**：测试在 U 模式执行 MRET 会陷阱
 
-**Test Flow**:
-1. Enter U-mode via MRET
-2. Attempt MRET from U-mode
-3. Should trap with mcause=2 (illegal instruction)
-4. Success if trap occurs
+**测试流程**：
+1. 通过 MRET 进入 U 模式  
+2. 在 U 模式再次执行 MRET  
+3. 应触发异常，mcause=2（非法指令）  
+4. 若陷阱发生则测试通过  
 
-**Status**: ⚠️ Test created but times out - needs debugging
-
----
-
-## ✅ Verification Results
-
-### Regression Tests
-```
-make test-quick: 14/14 PASSED ✅
-```
-- No regressions introduced
-- All existing functionality preserved
-
-### Phase 1 Tests
-```
-test_umode_entry_from_mmode:  PASSED ✅
-test_umode_entry_from_smode:  PASSED ✅
-test_umode_ecall:              PASSED ✅
-test_umode_csr_violation:      PASSED ✅
-test_umode_illegal_instr:      PASSED ✅
-```
-- All Phase 1 tests still passing
-- Legitimate MRET/SRET usage works correctly
-
-### New Privilege Tests
-```
-test_mret_trap_simple:  TIMEOUT ⚠️
-test_xret_privilege_trap:  TIMEOUT ⚠️
-```
-- Tests timeout instead of passing
-- Indicates issue with test or privilege state tracking
+**状态**：⚠️ 测试已编写但会超时，需要调试  
 
 ---
 
-## 🔍 Current Issue
+## ✅ 验证结果
 
-### Symptom
-Test `test_mret_trap_simple` times out with:
-- 49,999 cycles executed
-- 12,512 instructions (too many for simple test)
-- 12,496 flushes (25% - indicates looping)
-- x28 (t3) = 0x00000000 (neither PASS nor FAIL marker set)
+### 回归测试
+```
+make test-quick: 14/14 通过 ✅
+```
+- 未引入回归  
+- 所有现有功能保持正常  
 
-### Possible Causes
-1. **Privilege mode not set correctly**: `current_priv` may not be 2'b00 (U-mode) when expected
-2. **Exception not triggering**: MRET violation check may not be activating
-3. **Test flow issue**: Trap handler may not be reached or executed correctly
-4. **Signal timing**: Exception signals may have timing/propagation issues
+### 阶段 1 测试
+```
+test_umode_entry_from_mmode:    通过 ✅
+test_umode_entry_from_smode:    通过 ✅
+test_umode_ecall:               通过 ✅
+test_umode_csr_violation:       通过 ✅
+test_umode_illegal_instr:       通过 ✅
+```
+- 阶段 1 所有测试仍然通过  
+- 合法的 MRET/SRET 用法仍工作正确  
 
-### Debug Approach for Next Session
-1. Add waveform analysis to check `current_priv` signal
-2. Verify `id_mret_violation` signal goes high
-3. Check `exception` and `exception_code` signals
-4. Trace execution through trap handler
-5. Simplify test to minimal case
+### 新增特权测试
+```
+test_mret_trap_simple:      超时 ⚠️
+test_xret_privilege_trap:   超时 ⚠️
+```
+- 测试超时而非通过  
+- 表明测试或特权状态追踪存在问题  
 
 ---
 
-## 📊 Technical Details
+## 🔍 当前问题
 
-### Privilege Checking Logic
+### 症状
+测试 `test_mret_trap_simple` 超时，表现为：
+- 执行 49,999 个周期  
+- 执行 12,512 条指令（对简单测试来说过多）  
+- 发生 12,496 次 flush（25% - 表明存在循环）  
+- x28（t3）= 0x00000000（既未标记 PASS 也未标记 FAIL）  
+
+### 可能原因
+1. **特权模式未正确设置**：`current_priv` 可能在预期时并非 2'b00（U 模式）  
+2. **异常未触发**：MRET 违规检查可能未激活  
+3. **测试流程问题**：陷阱处理程序可能未被调用或未正确执行  
+4. **信号时序问题**：异常信号的时序/传播可能存在问题  
+
+### 下一次会话的调试思路
+1. 使用波形分析检查 `current_priv` 信号  
+2. 验证 `id_mret_violation` 信号是否拉高  
+3. 检查 `exception` 与 `exception_code` 信号  
+4. 追踪进入陷阱处理程序的执行路径  
+5. 将测试简化为更加极简的场景  
+
+---
+
+## 📊 技术细节
+
+### 特权检查逻辑
 ```verilog
-// MRET: Only allowed in M-mode (priv == 2'b11)
+// MRET：仅允许在 M 模式（priv == 2'b11）执行
 wire id_mret_violation = id_valid && id_mret && (current_priv != 2'b11);
 
-// SRET: Only allowed in M-mode or S-mode (priv >= 2'b01)
+// SRET：仅允许在 M 或 S 模式执行（priv >= 2'b01）
 wire id_sret_violation = id_valid && id_sret && (current_priv == 2'b00);
 ```
 
-### Exception Priority
-1. Instruction address misaligned (IF)
-2. EBREAK (ID)
-3. ECALL (ID)
-4. **Illegal instruction (ID) - includes MRET/SRET violations** ← NEW
-5. Load/Store page fault (MEM)
-6. Load address misaligned (MEM)
-7. Store address misaligned (MEM)
+### 异常优先级
+1. 指令地址未对齐（IF）  
+2. EBREAK（ID）  
+3. ECALL（ID）  
+4. **非法指令（ID）- 包含 MRET/SRET 违规** ← 新增  
+5. Load/Store 页故障（MEM）  
+6. Load 地址未对齐（MEM）  
+7. Store 地址未对齐（MEM）  
 
-### xRET Flush Control
+### xRET flush 控制
 ```verilog
-// Only flush on xRET if no exception
+// 仅在无异常时对 xRET 执行 flush
 assign mret_flush = exmem_is_mret && exmem_valid && !exception;
 assign sret_flush = exmem_is_sret && exmem_valid && !exception;
 
-// Prevent illegal xRET from propagating to MEM stage
+// 阻止非法 xRET 传播到 MEM 阶段
 .is_mret_in(idex_is_mret && !(exception && (exception_code == 5'd2)))
 .is_sret_in(idex_is_sret && !(exception && (exception_code == 5'd2)))
 ```
 
 ---
 
-## 📝 Test Infrastructure Created
+## 📝 已创建的测试基础设施
 
-### Test Files
-- `tests/asm/test_mret_trap_simple.s` - Simple MRET U-mode trap test
-- `tests/asm/test_xret_privilege_trap.s` - Comprehensive xRET trap test (3 test cases)
+### 测试文件
+- `tests/asm/test_mret_trap_simple.s` - 简单的 MRET U 模式陷阱测试  
+- `tests/asm/test_xret_privilege_trap.s` - 综合 xRET 陷阱测试（3 个测试场景）  
 
-### Test Coverage Planned
-1. ✅ SRET in U-mode → illegal instruction
-2. ✅ MRET in U-mode → illegal instruction
-3. ✅ MRET in S-mode → illegal instruction
-
----
-
-## 🎯 Next Session Tasks
-
-### High Priority
-1. **Debug test timeout issue**
-   - Use waveform viewer (gtkwave) to trace signals
-   - Check privilege mode transitions
-   - Verify exception triggering
-
-2. **Fix and verify tests**
-   - Get `test_mret_trap_simple` passing
-   - Run comprehensive `test_xret_privilege_trap`
-
-3. **Complete verification**
-   - Run full compliance suite
-   - Verify no regressions in official tests
-
-### Medium Priority
-4. **Update Phase 1 tests**
-   - Remove workarounds for MRET/SRET bug
-   - Add direct MRET/SRET privilege tests
-
-5. **Documentation**
-   - Update bug status in all docs
-   - Add technical notes on fix
+### 计划覆盖的测试点
+1. ✅ 在 U 模式执行 SRET → 非法指令  
+2. ✅ 在 U 模式执行 MRET → 非法指令  
+3. ✅ 在 S 模式执行 MRET → 非法指令  
 
 ---
 
-## 💡 Lessons Learned
+## 🎯 下一次会话任务
 
-### What Went Well
-1. ✅ Root cause identified quickly through systematic analysis
-2. ✅ Fix implementation was straightforward and clean
-3. ✅ No regressions - all existing tests still pass
-4. ✅ Good separation of concerns (exception_unit handles privilege checking)
+### 高优先级
+1. **调试测试超时问题**  
+   - 使用波形工具（gtkwave）查看信号  
+   - 检查特权模式切换  
+   - 确认异常是否触发  
 
-### Challenges
-1. ⚠️ Test verification taking longer than expected
-2. ⚠️ Privilege mode state tracking harder to debug
-3. ⚠️ Pipeline timing interactions complex
+2. **修复并验证测试**  
+   - 让 `test_mret_trap_simple` 通过  
+   - 运行综合测试 `test_xret_privilege_trap`  
 
-### Key Insights
-- Privilege checking must happen early (EX stage) to prevent propagation
-- xRET instructions need special handling - they modify PC but can also trap
-- Exception priority is critical - traps must block xRET execution
-- Test infrastructure needs better debugging support (signal traces, etc.)
+3. **完成验证**  
+   - 运行完整一致性测试集  
+   - 确认未对官方测试引入回归  
 
----
+### 中优先级
+4. **更新阶段 1 测试**  
+   - 移除针对 MRET/SRET 缺陷的变通方案  
+   - 增加直接验证 MRET/SRET 特权行为的测试  
 
-## 📈 Progress Metrics
-
-### Code Changes
-- Files Modified: 2 RTL files
-- Files Created: 2 test files
-- Lines Added: ~30 (RTL)
-- Lines Added: ~160 (tests)
-
-### Testing
-- Regression Tests: 14/14 passing ✅
-- Phase 1 Tests: 5/5 passing ✅
-- New Privilege Tests: 0/2 passing ⚠️
-
-### Time Spent
-- Bug Analysis: ~30 min
-- Implementation: ~45 min
-- Testing/Debug: ~45 min
-- **Total**: ~2 hours
+5. **文档更新**  
+   - 在所有相关文档中更新缺陷状态  
+   - 增加对本次修复的技术说明  
 
 ---
 
-## 🔗 References
+## 💡 经验总结
 
-- **RISC-V Privileged Spec**: Section 3.3.2 (Privilege Modes)
-- **Bug Discovery**: `SESSION_PHASE1_SUMMARY.md` - Bug #1
-- **Original Issue**: Documented in Phase 1 test `test_umode_illegal_instr.s` line 15-16
+### 做得好的方面
+1. ✅ 通过系统分析较快定位根因  
+2. ✅ 修复实现逻辑简洁清晰  
+3. ✅ 未引入回归，所有现有测试仍然通过  
+4. ✅ 职责分离良好（特权检查集中在 exception_unit）  
+
+### 挑战
+1. ⚠️ 测试验证耗时超出预期  
+2. ⚠️ 特权模式状态追踪调试难度偏高  
+3. ⚠️ 与流水线时序相关的交互较复杂  
+
+### 关键认识
+- 特权检查必须在流水线早期（EX 阶段）进行，以防错误指令继续传播  
+- xRET 指令需要特殊处理——既会修改 PC，又可能触发异常  
+- 异常优先级至关重要——异常必须阻止 xRET 的正常执行  
+- 测试基础设施需要更好的调试支持（信号跟踪等）  
 
 ---
 
-## 🚀 Commands for Next Session
+## 📈 进度指标
 
-### Quick Start
+### 代码变更
+- 修改 RTL 文件：2 个  
+- 新增测试文件：2 个  
+- 新增行数：约 30 行（RTL）  
+- 新增行数：约 160 行（测试）  
+
+### 测试
+- 回归测试：14/14 通过 ✅  
+- 阶段 1 测试：5/5 通过 ✅  
+- 新增特权测试：0/2 通过 ⚠️  
+
+### 时间投入
+- 缺陷分析：~30 分钟  
+- 实现：~45 分钟  
+- 测试/调试：~45 分钟  
+- **合计**：约 2 小时  
+
+---
+
+## 🔗 参考资料
+
+- **RISC-V 特权规格**：3.3.2 节（特权模式）  
+- **缺陷发现记录**：`SESSION_PHASE1_SUMMARY.md` - 缺陷 #1  
+- **原始问题**：记录在阶段 1 测试 `test_umode_illegal_instr.s` 第 15–16 行  
+
+---
+
+## 🚀 下一次会话命令
+
+### 快速开始
 ```bash
-# Check current status
+# 查看当前状态
 make test-quick
 
-# Run Phase 1 tests
+# 运行阶段 1 测试
 for test in test_umode_*; do
   env XLEN=32 ./tools/test_pipelined.sh $test
 done
 
-# Debug MRET trap test
+# 调试 MRET 陷阱测试
 env XLEN=32 ./tools/test_pipelined.sh test_mret_trap_simple
 
-# View waveform for debugging
+# 查看波形进行调试
 gtkwave sim/waves/core_pipelined.vcd
 
-# Check git status
+# 检查 git 状态
 git status
 ```
 
-### Debugging Checklist
-- [ ] Verify `current_priv` is 2'b00 when in U-mode
-- [ ] Check `id_mret_violation` signal activates
-- [ ] Verify `exception` signal goes high
-- [ ] Confirm `exception_code` = 5'd2
-- [ ] Trace trap handler execution
-- [ ] Check mepc/mcause CSRs
+### 调试检查清单
+- [ ] 确认在 U 模式时 `current_priv` 为 2'b00  
+- [ ] 检查 `id_mret_violation` 信号是否激活  
+- [ ] 验证 `exception` 信号是否拉高  
+- [ ] 确认 `exception_code` 是否为 5'd2  
+- [ ] 追踪陷阱处理程序的执行过程  
+- [ ] 检查 mepc/mcause CSR  
 
 ---
 
-**Status**: Ready for next session debugging 🔧
+**状态**：已准备好进行下一次调试会话 🔧
