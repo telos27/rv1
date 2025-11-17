@@ -1,61 +1,61 @@
-Phase 4 Debug: Fix exception re-triggering bug, identify CSR read bug
+阶段 4 调试：修复异常重复触发的 Bug，定位 CSR 读出 Bug
 
-This commit addresses critical bugs discovered during Phase 4 testing.
+本次提交修复了在阶段 4 测试中发现的关键 bug。
 
-## Bug #1: Exception Re-triggering (FIXED)
+## Bug #1：异常重复触发（已修复）
 
-**Problem**: Misaligned load/store exceptions triggered infinite loops
-- Exception unit continuously detected fault in MEM stage
-- Faulting instruction stayed in EX/MEM register with valid=1
-- Pipeline flush didn't invalidate EX/MEM stage
-- Result: Infinite trap handler entry loop
+问题：未对齐的读/写异常导致无限循环
+- 异常单元在 MEM 阶段持续检测到故障
+- 发生故障的指令在 EX/MEM 寄存器中保持 valid=1
+- 流水线冲刷没有使 EX/MEM 阶段失效
+- 结果：陷入陷阱处理程序的无限循环
 
-**Fix**: Track exception occurrence and invalidate EX/MEM on next cycle
-- Added exception_taken_r register to track previous exception
-- Invalidate EX/MEM stage when exception_taken_r=1
-- Allows trap handler to execute without re-triggering
+修复方式：跟踪异常发生并在下一周期使 EX/MEM 失效
+- 新增 exception_taken_r 寄存器用于跟踪上一周期的异常
+- 当 exception_taken_r=1 时使 EX/MEM 阶段失效
+- 允许陷阱处理程序执行而不会被再次触发
 
-**Files Changed**:
-- rtl/core/rv32i_core_pipelined.v:
-  - Lines 214-220: Added exception_taken_r register
-  - Line 583: Modified EX/MEM valid_in to gate on !exception_taken_r
+修改文件：
+- rtl/core/rv32i_core_pipelined.v：
+  - 第 214-220 行：新增 exception_taken_r 寄存器
+  - 第 583 行：修改 EX/MEM valid_in，使其在 !exception_taken_r 时才为真
 
-## Bug #2: CSR Read Returning Zero (NOT FIXED - DOCUMENTED)
+## Bug #2：CSR 读返回 0（未修复——仅记录）
 
-**Problem**: All CSR reads return 0 instead of actual CSR values
-- Example: csrr x2, mstatus → x2 = 0 (should be mstatus value)
-- Blocks all exception handling functionality
-- Pre-existing bug from Phase 4 Part 2 commit (af5a599)
+问题：所有 CSR 读操作都返回 0 而不是实际 CSR 值
+- 示例：csrr x2, mstatus → x2 = 0（应为 mstatus 的值）
+- 导致所有异常处理功能被阻塞
+- 来自阶段 4 第 2 部分提交（af5a599）的既有 bug
 
-**Status**: Identified but not fixed in this commit
-- CSR file outputs correctly (verified with unit test)
-- Bug is in pipeline integration (EX/MEM or MEM/WB registers)
-- See DEBUG_CSR_READ_BUG.md for investigation guide
+状态：已定位但未在此提交中修复
+- CSR 文件输出正确（通过单元测试验证）
+- Bug 出在流水线集成处（EX/MEM 或 MEM/WB 寄存器）
+- 调试指南参见 DEBUG_CSR_READ_BUG.md
 
-**Impact**: 
-- `ma_data` compliance test still fails (timeout)
-- Exception handlers cannot read mcause, mepc, mtval
-- Compliance remains at 40/42 (95%)
+影响：
+- `ma_data` 一致性测试仍然失败（超时）
+- 异常处理程序无法读取 mcause、mepc、mtval
+- 一致性测试结果保持在 40/42（95%）
 
-## Testing
+## 测试
 
-Created test programs:
-- tests/asm/test_misaligned_simple.s - Tests exception handling
-- /tmp/test_csr_read.s - Minimal CSR read test
+新建测试程序：
+- tests/asm/test_misaligned_simple.s —— 测试异常处理
+- /tmp/test_csr_read.s —— 最小 CSR 读测试
 
-## Next Steps
+## 后续步骤
 
-1. Fix CSR read bug (CRITICAL)
-2. Re-test exception handling with working CSR reads
-3. Target compliance: 41/42 (97%) with ma_data passing
+1. 修复 CSR 读 bug（关键）
+2. 在 CSR 读正常的情况下重新测试异常处理
+3. 目标一致性：41/42（97%），使 ma_data 通过
 
-## Documentation Added
+## 新增文档
 
-- NEXT_SESSION_PHASE4_PART3.md - Detailed next session guide
-- SESSION_SUMMARY_2025-10-10_phase4_part2_debug.md - Debug session summary
-- DEBUG_CSR_READ_BUG.md - CSR bug investigation guide
-- PHASES.md - Updated with current status
+- NEXT_SESSION_PHASE4_PART3.md —— 下一次调试会话的详细指南
+- SESSION_SUMMARY_2025-10-10_phase4_part2_debug.md —— 调试会话总结
+- DEBUG_CSR_READ_BUG.md —— CSR bug 调试指南
+- PHASES.md —— 更新当前阶段状态
 
-🤖 Generated with Claude Code (https://claude.com/claude-code)
+🤖 由 Claude Code 生成（https://claude.com/claude-code）
 
-Co-Authored-By: Claude <noreply@anthropic.com>
+联合作者：Claude <noreply@anthropic.com>

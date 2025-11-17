@@ -1,8 +1,8 @@
-// ptw.v - Page Table Walker (PTW)
-// Shared page table walker for both I-TLB and D-TLB
-// Implements RISC-V Sv32 (RV32) and Sv39 (RV64) page table walks
-// Author: RV1 Project
-// Date: 2025-11-08 (Session 125)
+// ptw.v - 页表遍历器 (PTW)
+// 共享的页表遍历单元，同时服务于 I-TLB 和 D-TLB
+// 实现 RISC-V Sv32 (RV32) 与 Sv39 (RV64) 页表遍历
+// 作者：RV1 项目组
+// 日期：2025-11-08 (Session 125)
 
 `include "config/rv_config.vh"
 
@@ -12,49 +12,49 @@ module ptw #(
   input  wire             clk,
   input  wire             reset_n,
 
-  // PTW request from TLB
-  input  wire             req_valid,         // PTW request valid
-  input  wire [XLEN-1:0]  req_vaddr,         // Virtual address
-  input  wire             req_is_store,      // 1=store, 0=load
-  input  wire             req_is_fetch,      // 1=instruction fetch, 0=data access
-  output reg              req_ready,         // PTW complete
-  output reg              req_page_fault,    // Page fault
-  output reg  [XLEN-1:0]  req_fault_vaddr,   // Faulting virtual address
+  // 来自 TLB 的 PTW 请求
+  input  wire             req_valid,         // PTW 请求有效
+  input  wire [XLEN-1:0]  req_vaddr,         // 虚拟地址
+  input  wire             req_is_store,      // 1=写存储(store)，0=读(load)
+  input  wire             req_is_fetch,      // 1=取指(fetch)，0=数据访问
+  output reg              req_ready,         // PTW 完成（单拍脉冲）
+  output reg              req_page_fault,    // 页错误
+  output reg  [XLEN-1:0]  req_fault_vaddr,   // 产生错误的虚拟地址
 
-  // PTW result for TLB update
-  output reg              result_valid,      // Result valid (update TLB)
-  output reg  [XLEN-1:0]  result_vpn,        // Virtual page number
-  output reg  [XLEN-1:0]  result_ppn,        // Physical page number
-  output reg  [7:0]       result_pte,        // PTE flags
-  output reg  [XLEN-1:0]  result_level,      // Page level
+  // 提供给 TLB 更新的 PTW 结果
+  output reg              result_valid,      // 结果有效（触发 TLB 更新）
+  output reg  [XLEN-1:0]  result_vpn,        // 虚拟页号
+  output reg  [XLEN-1:0]  result_ppn,        // 物理页号
+  output reg  [7:0]       result_pte,        // PTE 标志位
+  output reg  [XLEN-1:0]  result_level,      // 页级别
 
-  // Memory interface for page table walks
-  output reg              mem_req_valid,     // Memory request
-  output reg  [XLEN-1:0]  mem_req_addr,      // Physical address
-  input  wire             mem_req_ready,     // Memory ready
-  input  wire [XLEN-1:0]  mem_resp_data,     // PTE data
-  input  wire             mem_resp_valid,    // Response valid
+  // 页表遍历使用的内存接口
+  output reg              mem_req_valid,     // 读 PTE 的内存请求
+  output reg  [XLEN-1:0]  mem_req_addr,      // PTE 的物理地址
+  input  wire             mem_req_ready,     // 内存端准备好
+  input  wire [XLEN-1:0]  mem_resp_data,     // PTE 数据
+  input  wire             mem_resp_valid,    // PTE 响应有效
 
-  // CSR interface
-  input  wire [XLEN-1:0]  satp,              // SATP register
-  input  wire [1:0]       privilege_mode,    // Current privilege mode
-  input  wire             mstatus_sum,       // SUM bit
-  input  wire             mstatus_mxr        // MXR bit
+  // CSR 接口
+  input  wire [XLEN-1:0]  satp,              // SATP 寄存器
+  input  wire [1:0]       privilege_mode,    // 当前特权级
+  input  wire             mstatus_sum,       // SUM 位
+  input  wire             mstatus_mxr        // MXR 位
 );
 
   // =========================================================================
-  // RISC-V Virtual Memory Parameters
+  // RISC-V 虚拟内存参数
   // =========================================================================
 
-  localparam PAGE_SHIFT = 12;  // 4KB pages
+  localparam PAGE_SHIFT = 12;  // 4KB 页
 
-  // For Sv32 (RV32)
+  // Sv32 (RV32) 的页表层数
   localparam SV32_LEVELS = 2;
 
-  // For Sv39 (RV64)
+  // Sv39 (RV64) 的页表层数
   localparam SV39_LEVELS = 3;
 
-  // PTE bit fields
+  // PTE 位编码
   localparam PTE_V = 0;
   localparam PTE_R = 1;
   localparam PTE_W = 2;
@@ -65,7 +65,7 @@ module ptw #(
   localparam PTE_D = 7;
 
   // =========================================================================
-  // SATP Decoding
+  // SATP 解码
   // =========================================================================
 
   wire [XLEN-1:0] satp_ppn;
@@ -79,7 +79,7 @@ module ptw #(
   endgenerate
 
   // =========================================================================
-  // VPN Extraction
+  // VPN 提取
   // =========================================================================
 
   function [XLEN-1:0] extract_vpn;
@@ -117,7 +117,7 @@ module ptw #(
   endfunction
 
   // =========================================================================
-  // Permission Checking
+  // 权限检查
   // =========================================================================
 
   function check_permission;
@@ -163,7 +163,7 @@ module ptw #(
   endfunction
 
   // =========================================================================
-  // PTW State Machine
+  // PTW 状态机
   // =========================================================================
 
   localparam PTW_IDLE       = 3'b000;
@@ -212,7 +212,7 @@ module ptw #(
       result_pte <= 0;
       result_level <= 0;
     end else begin
-      // Default: clear single-cycle outputs
+      // 默认：单拍输出清零
       req_ready <= 0;
       req_page_fault <= 0;
       result_valid <= 0;
@@ -220,8 +220,8 @@ module ptw #(
       case (ptw_state)
         PTW_IDLE: begin
           if (req_valid) begin
-            // Start page table walk
-            $display("PTW: Starting walk for VA=0x%h (fetch=%b store=%b)",
+            // 开始一次新的页表遍历
+            $display("PTW: 开始页表遍历 VA=0x%h (fetch=%b store=%b)",
                      req_vaddr, req_is_fetch, req_is_store);
             ptw_vpn_save <= get_full_vpn(req_vaddr);
             ptw_vaddr_save <= req_vaddr;
@@ -232,7 +232,7 @@ module ptw #(
             ptw_mxr_save <= mstatus_mxr;
             ptw_level <= max_levels - 1;
 
-            // Calculate first PTE address
+            // 计算第一个 PTE 地址（顶层页表）
             if (XLEN == 32) begin
               ptw_pte_addr <= (satp_ppn << PAGE_SHIFT) +
                               (extract_vpn(req_vaddr, max_levels - 1) << 2);
@@ -241,7 +241,7 @@ module ptw #(
                               (extract_vpn(req_vaddr, max_levels - 1) << 3);
             end
 
-            // Go to appropriate level state
+            // 跳转到对应层的状态
             case (max_levels - 1)
               2: ptw_state <= PTW_LEVEL_2;
               1: ptw_state <= PTW_LEVEL_1;
@@ -251,48 +251,48 @@ module ptw #(
         end
 
         PTW_LEVEL_0, PTW_LEVEL_1, PTW_LEVEL_2: begin
-          // Issue memory request for PTE
+          // 发起 PTE 内存请求
           if (!mem_req_valid) begin
-            $display("PTW: Level %0d - reading PTE addr=0x%h", ptw_level, ptw_pte_addr);
+            $display("PTW: Level %0d - 读取 PTE 地址=0x%h", ptw_level, ptw_pte_addr);
             mem_req_valid <= 1;
             mem_req_addr <= ptw_pte_addr;
           end else if (mem_req_ready && mem_resp_valid) begin
-            // Got PTE response
-            $display("PTW: Level %0d - got PTE=0x%h V=%b R=%b W=%b X=%b U=%b",
+            // 收到 PTE 响应
+            $display("PTW: Level %0d - 收到 PTE=0x%h V=%b R=%b W=%b X=%b U=%b",
                      ptw_level, mem_resp_data, mem_resp_data[PTE_V],
                      mem_resp_data[PTE_R], mem_resp_data[PTE_W],
                      mem_resp_data[PTE_X], mem_resp_data[PTE_U]);
             ptw_pte_data <= mem_resp_data;
             mem_req_valid <= 0;
 
-            // Check if PTE is valid
+            // 检查 PTE 是否有效
             if (!mem_resp_data[PTE_V]) begin
-              $display("PTW: FAULT - Invalid PTE (V=0)");
+              $display("PTW: 错误 - 无效的 PTE (V=0)");
               ptw_state <= PTW_FAULT;
             end
-            // Check if leaf PTE
+            // 检查是否为叶子 PTE
             else if (mem_resp_data[PTE_R] || mem_resp_data[PTE_X]) begin
-              // Leaf PTE - check permissions
+              // 叶子 PTE - 检查权限
               if (check_permission(mem_resp_data[7:0], ptw_is_store_save, ptw_is_fetch_save,
                                    ptw_priv_save, ptw_sum_save, ptw_mxr_save)) begin
-                $display("PTW: Leaf PTE found, permission OK");
+                $display("PTW: 叶子 PTE 找到，权限检查通过");
                 ptw_state <= PTW_UPDATE_TLB;
               end else begin
-                $display("PTW: FAULT - Permission denied");
+                $display("PTW: 错误 - 权限被拒绝");
                 ptw_state <= PTW_FAULT;
               end
             end
-            // Non-leaf at level 0
+            // 在 level 0 遇到非叶子 PTE 视为错误
             else if (ptw_level == 0) begin
-              $display("PTW: FAULT - Non-leaf at level 0");
+              $display("PTW: 错误 - Level 0 遇到非叶子 PTE");
               ptw_state <= PTW_FAULT;
             end
-            // Non-leaf - go to next level
+            // 非叶子 PTE，继续向下一级页表
             else begin
-              $display("PTW: Non-leaf PTE, descending to level %0d", ptw_level - 1);
+              $display("PTW: 非叶子 PTE，下降到级别 %0d", ptw_level - 1);
               ptw_level <= ptw_level - 1;
 
-              // Calculate next PTE address
+              // 计算下一层 PTE 地址
               if (XLEN == 32) begin
                 ptw_pte_addr <= (mem_resp_data[31:10] << PAGE_SHIFT) +
                                 (extract_vpn(ptw_vaddr_save, ptw_level - 1) << 2);
@@ -301,7 +301,7 @@ module ptw #(
                                 (extract_vpn(ptw_vaddr_save, ptw_level - 1) << 3);
               end
 
-              // Next state
+              // 切换到下一层状态
               case (ptw_level)
                 2: ptw_state <= PTW_LEVEL_1;
                 1: ptw_state <= PTW_LEVEL_0;
@@ -309,13 +309,13 @@ module ptw #(
               endcase
             end
           end else begin
-            // Wait for response
+            // 等待内存响应，保持请求有效
             mem_req_valid <= 1;
           end
         end
 
         PTW_UPDATE_TLB: begin
-          // Send result to TLB for update
+          // 将结果发送给 TLB 做更新
           result_valid <= 1;
           result_vpn <= ptw_vpn_save;
           if (XLEN == 32) begin
@@ -325,26 +325,26 @@ module ptw #(
           end
           result_pte <= ptw_pte_data[7:0];
           result_level <= ptw_level;
-          $display("PTW: State PTW_UPDATE_TLB - sending result_valid");
+          $display("PTW: 状态 PTW_UPDATE_TLB - 发送 result_valid");
 
-          // Check permissions again for current access
+          // 再次基于当前访问类型做权限检查
           if (check_permission(ptw_pte_data[7:0], ptw_is_store_save, ptw_is_fetch_save,
                                ptw_priv_save, ptw_sum_save, ptw_mxr_save)) begin
-            $display("PTW: Complete - VA=0x%h translated successfully", ptw_vaddr_save);
+            $display("PTW: 完成 - VA=0x%h 翻译成功", ptw_vaddr_save);
             req_ready <= 1;
           end else begin
-            $display("PTW: Complete - Permission denied for VA=0x%h", ptw_vaddr_save);
+            $display("PTW: 错误 - 权限被拒绝 VA=0x%h", ptw_vaddr_save);
             req_page_fault <= 1;
             req_fault_vaddr <= ptw_vaddr_save;
             req_ready <= 1;
           end
 
           ptw_state <= PTW_IDLE;
-          $display("PTW: State PTW_UPDATE_TLB -> PTW_IDLE");
+          $display("PTW: 状态 PTW_UPDATE_TLB -> PTW_IDLE");
         end
 
         PTW_FAULT: begin
-          // Page fault - but still update TLB to cache faulting translation
+          // 页错误 - 如 PTE 仍然有效，可选地更新 TLB 以缓存错误翻译
           if (ptw_pte_data[PTE_V]) begin
             result_valid <= 1;
             result_vpn <= ptw_vpn_save;

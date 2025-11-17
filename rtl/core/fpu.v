@@ -1,63 +1,63 @@
-// Floating-Point Unit (FPU) - Top-Level Integration
-// Integrates all 10 FP arithmetic units for F/D extension
-// Implements IEEE 754-2008 single and double-precision operations
-// Author: RV1 Project
-// Date: 2025-10-10
+// 浮点运算单元 (FPU) - 顶层集成
+// 集成 F/D 扩展的全部 10 个浮点算术单元
+// 实现 IEEE 754-2008 单精度和双精度运算
+// 作者: RV1 项目
+// 日期: 2025-10-10
 //
-// FPU Operations:
-//   - Arithmetic: FADD, FSUB, FMUL, FDIV, FSQRT (multi-cycle)
-//   - FMA: FMADD, FMSUB, FNMSUB, FNMADD (multi-cycle, single rounding)
-//   - Sign Injection: FSGNJ, FSGNJN, FSGNJX (1 cycle)
-//   - Min/Max: FMIN, FMAX (1 cycle)
-//   - Compare: FEQ, FLT, FLE (1 cycle, writes to int register)
-//   - Classify: FCLASS (1 cycle, writes to int register)
-//   - Convert: INT↔FP, FLOAT↔DOUBLE (multi-cycle)
+// FPU 支持的操作:
+//   - 算术: FADD, FSUB, FMUL, FDIV, FSQRT (多周期)
+//   - FMA: FMADD, FMSUB, FNMSUB, FNMADD (多周期，单次舍入)
+//   - 符号注入: FSGNJ, FSGNJN, FSGNJX (1 周期)
+//   - 最小/最大: FMIN, FMAX (1 周期)
+//   - 比较: FEQ, FLT, FLE (1 周期，写入整数寄存器)
+//   - 分类: FCLASS (1 周期，写入整数寄存器)
+//   - 转换: 整数↔浮点，单精度↔双精度 (多周期)
 //
-// Multi-cycle operation handling:
-//   - FPU asserts 'busy' signal during multi-cycle operations
-//   - Pipeline must stall when FPU is busy
-//   - FPU asserts 'done' pulse when operation completes
+// 多周期操作处理:
+//   - 多周期操作期间 FPU 置位 busy 信号
+//   - 当 FPU busy 时流水线必须暂停
+//   - 操作完成时 FPU 产生 done 脉冲
 
 `include "config/rv_config.vh"
 
 module fpu #(
-  parameter FLEN = `FLEN,  // 32 for single-precision (F), 64 for double-precision (D)
-  parameter XLEN = `XLEN   // 32 for RV32, 64 for RV64
+  parameter FLEN = `FLEN,  // 对于单精度 (F) 为 32，对于双精度 (D) 为 64
+  parameter XLEN = `XLEN   // RV32 为 32，RV64 为 64
 ) (
   input  wire              clk,
   input  wire              reset_n,
 
-  // Control
-  input  wire              start,          // Start FP operation
-  input  wire [4:0]        fp_alu_op,      // FP operation (from control unit)
-  input  wire [2:0]        funct3,         // funct3 field (for compare ops: FEQ=010, FLT=001, FLE=000)
-  input  wire [4:0]        rs2,            // rs2 field (for FCVT: 00000=W, 00001=WU, 00010=L, 00011=LU)
-  input  wire [6:0]        funct7,         // funct7 field (for FCVT direction and format)
-  input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode (from frm CSR or instruction)
-  output wire              busy,           // FPU busy (multi-cycle operation in progress)
-  output wire              done,           // Operation complete (1 cycle pulse)
+  // 控制信号
+  input  wire              start,          // 启动浮点操作
+  input  wire [4:0]        fp_alu_op,      // 浮点操作码 (来自控制单元)
+  input  wire [2:0]        funct3,         // funct3 字段 (比较操作: FEQ=010, FLT=001, FLE=000)
+  input  wire [4:0]        rs2,            // rs2 字段 (FCVT: 00000=W, 00001=WU, 00010=L, 00011=LU)
+  input  wire [6:0]        funct7,         // funct7 字段 (用于 FCVT 方向和格式)
+  input  wire [2:0]        rounding_mode,  // IEEE 754 舍入模式 (来自 frm CSR 或指令)
+  output wire              busy,           // FPU 忙 (多周期操作进行中)
+  output wire              done,           // 操作完成 (1 周期脉冲)
 
-  // Operands (from FP register file)
-  input  wire [FLEN-1:0]   operand_a,      // rs1 (or multiplicand for FMA)
-  input  wire [FLEN-1:0]   operand_b,      // rs2 (or multiplier for FMA)
-  input  wire [FLEN-1:0]   operand_c,      // rs3 (for FMA only)
+  // 操作数 (来自浮点寄存器堆)
+  input  wire [FLEN-1:0]   operand_a,      // rs1 (或 FMA 的被乘数)
+  input  wire [FLEN-1:0]   operand_b,      // rs2 (或 FMA 的乘数)
+  input  wire [FLEN-1:0]   operand_c,      // rs3 (仅 FMA 使用)
 
-  // Integer operand (for INT→FP conversions)
+  // 整数操作数 (用于 INT→FP 转换)
   input  wire [XLEN-1:0]   int_operand,
 
-  // Results
-  output reg  [FLEN-1:0]   fp_result,      // FP result (to FP register file)
-  output reg  [XLEN-1:0]   int_result,     // Integer result (for FP→INT, compare, classify)
+  // 结果
+  output reg  [FLEN-1:0]   fp_result,      // 浮点结果 (写回浮点寄存器堆)
+  output reg  [XLEN-1:0]   int_result,     // 整数结果 (用于 FP→INT、比较、分类)
 
-  // Exception flags (accumulated into fflags CSR)
-  output reg               flag_nv,        // Invalid operation
-  output reg               flag_dz,        // Divide by zero
-  output reg               flag_of,        // Overflow
-  output reg               flag_uf,        // Underflow
-  output reg               flag_nx         // Inexact
+  // 异常标志 (累加到 fflags CSR)
+  output reg               flag_nv,        // 无效操作
+  output reg               flag_dz,        // 被零除
+  output reg               flag_of,        // 上溢
+  output reg               flag_uf,        // 下溢
+  output reg               flag_nx         // 不精确
 );
 
-  // FP operation encoding (matches control.v)
+  // 浮点操作编码 (与 control.v 保持一致)
   localparam FP_ADD    = 5'b00000;
   localparam FP_SUB    = 5'b00001;
   localparam FP_MUL    = 5'b00010;
@@ -75,15 +75,15 @@ module fpu #(
   localparam FP_FMSUB  = 5'b01110;
   localparam FP_FNMSUB = 5'b01111;
   localparam FP_FNMADD = 5'b10000;
-  localparam FP_MV_XW  = 5'b10001;  // FMV.X.W (bitcast FP→INT, 1 cycle)
-  localparam FP_MV_WX  = 5'b10010;  // FMV.W.X (bitcast INT→FP, 1 cycle)
+  localparam FP_MV_XW  = 5'b10001;  // FMV.X.W (位解释 FP→INT，1 周期)
+  localparam FP_MV_WX  = 5'b10010;  // FMV.W.X (位解释 INT→FP，1 周期)
 
-  // Extract format from funct7[1:0]: 00=single, 01=double
-  // For single-precision: fmt=0, for double-precision: fmt=1
-  wire fmt = funct7[0];  // Bit 0 distinguishes single (0) from double (1)
+  // 从 funct7[1:0] 提取格式: 00=单精度, 01=双精度
+  // 对于单精度: fmt=0，对于双精度: fmt=1
+  wire fmt = funct7[0];  // 第 0 位区分单精度 (0) 和双精度 (1)
 
   // ========================================
-  // FP Adder/Subtractor
+  // 浮点加/减单元
   // ========================================
   wire              adder_start;
   wire              adder_busy;
@@ -124,7 +124,7 @@ module fpu #(
   );
 
   // ========================================
-  // FP Multiplier
+  // 浮点乘法器
   // ========================================
   wire              mul_start;
   wire              mul_busy;
@@ -155,7 +155,7 @@ module fpu #(
   );
 
   // ========================================
-  // FP Divider
+  // 浮点除法器
   // ========================================
   wire              div_start;
   wire              div_busy;
@@ -188,7 +188,7 @@ module fpu #(
   );
 
   // ========================================
-  // FP Square Root
+  // 浮点开方
   // ========================================
   wire              sqrt_start;
   wire              sqrt_busy;
@@ -214,7 +214,7 @@ module fpu #(
   );
 
   // ========================================
-  // FP Fused Multiply-Add (FMA)
+  // 浮点融合乘加 (FMA)
   // ========================================
   wire              fma_start;
   wire [1:0]        fma_op_type;
@@ -229,7 +229,7 @@ module fpu #(
   assign fma_start = start && (fp_alu_op == FP_FMA || fp_alu_op == FP_FMSUB ||
                                 fp_alu_op == FP_FNMSUB || fp_alu_op == FP_FNMADD);
 
-  // Map FP_ALU_OP to FMA operation type
+  // 将 FP_ALU_OP 映射为 FMA 操作类型
   assign fma_op_type = (fp_alu_op == FP_FMA)    ? 2'b00 :
                        (fp_alu_op == FP_FMSUB)  ? 2'b01 :
                        (fp_alu_op == FP_FNMSUB) ? 2'b10 :
@@ -244,9 +244,9 @@ module fpu #(
     .rounding_mode  (rounding_mode),
     .busy           (fma_busy),
     .done           (fma_done),
-    .operand_a      (operand_a),  // rs1 (multiplicand)
-    .operand_b      (operand_b),  // rs2 (multiplier)
-    .operand_c      (operand_c),  // rs3 (addend)
+    .operand_a      (operand_a),  // rs1 (被乘数)
+    .operand_b      (operand_b),  // rs2 (乘数)
+    .operand_c      (operand_c),  // rs3 (加数)
     .result         (fma_result),
     .flag_nv        (fma_flag_nv),
     .flag_of        (fma_flag_of),
@@ -255,7 +255,7 @@ module fpu #(
   );
 
   // ========================================
-  // FP Sign Injection (combinational, 1 cycle)
+  // 浮点符号注入 (组合逻辑，1 周期)
   // ========================================
   wire [1:0]        sign_op;
   wire [FLEN-1:0]   sign_result;
@@ -273,7 +273,7 @@ module fpu #(
   );
 
   // ========================================
-  // FP Min/Max (combinational, 1 cycle)
+  // 浮点最小/最大 (组合逻辑，1 周期)
   // ========================================
   wire              minmax_is_max;
   wire [FLEN-1:0]   minmax_result;
@@ -291,20 +291,20 @@ module fpu #(
   );
 
   // ========================================
-  // FP Compare (combinational, 1 cycle)
+  // 浮点比较 (组合逻辑，1 周期)
   // ========================================
   wire [1:0]        cmp_op;
   wire [31:0]       cmp_result;
   wire              cmp_flag_nv;
 
-  // Decode compare operation from funct3
+  // 按 funct3 解码比较操作
   // FEQ: funct3=010 (2) -> cmp_op=00
   // FLT: funct3=001 (1) -> cmp_op=01
   // FLE: funct3=000 (0) -> cmp_op=10
   assign cmp_op = (funct3 == 3'b010) ? 2'b00 :  // FEQ
                   (funct3 == 3'b001) ? 2'b01 :  // FLT
                   (funct3 == 3'b000) ? 2'b10 :  // FLE
-                  2'b00;  // Default to FEQ
+                  2'b00;  // 默认: FEQ
 
   fp_compare #(.FLEN(FLEN)) u_fp_compare (
     .operand_a      (operand_a),
@@ -316,7 +316,7 @@ module fpu #(
   );
 
   // ========================================
-  // FP Classify (combinational, 1 cycle)
+  // 浮点分类 (组合逻辑，1 周期)
   // ========================================
   wire [31:0]       class_result;
 
@@ -335,7 +335,7 @@ module fpu #(
   `endif
 
   // ========================================
-  // FP Converter (multi-cycle, 2-3 cycles)
+  // 浮点转换器 (多周期，2-3 周期)
   // ========================================
   wire              cvt_start;
   wire [3:0]        cvt_op;
@@ -353,23 +353,23 @@ module fpu #(
   `ifdef DEBUG_FPU_CONVERTER
   always @(posedge clk) begin
     if (start && fp_alu_op == FP_CVT) begin
-      $display("[FPU] FCVT operation starting:");
+      $display("[FPU] FCVT 操作开始:");
       $display("[FPU]   funct7=%b, rs2=%b, cvt_op=%b", funct7, rs2, cvt_op);
       $display("[FPU]   int_operand=0x%h, fp_operand=0x%h", int_operand, operand_a);
     end
   end
   `endif
 
-  // Decode conversion operation from funct7 and rs2
-  // funct7[1:0]: 00=single, 01=double (format bits)
-  // funct7[3]: direction (0=FP→INT, 1=INT→FP) - BUG #17 FIX: was incorrectly using bit[6]
-  // rs2[1:0]: 00=W(signed int32), 01=WU(unsigned int32), 10=L(signed int64), 11=LU(unsigned int64)
-  // For FP↔FP: funct7 determines direction, rs2 determines source format
-  // Bug #52 continued: Check funct7[6], not funct7[5] to distinguish FP↔FP vs FP↔INT
+  // 根据 funct7 和 rs2 解码转换操作
+  // funct7[1:0]: 00=单精度, 01=双精度 (格式位)
+  // funct7[3]: 方向 (0=FP→INT, 1=INT→FP) - BUG #17 修复: 之前错误使用 bit[6]
+  // rs2[1:0]: 00=W(有符号 32 位整数), 01=WU(无符号 32 位整数), 10=L(有符号 64 位整数), 11=LU(无符号 64 位整数)
+  // 对于 FP↔FP: funct7 决定方向，rs2 决定源格式
+  // Bug #52 补充: 使用 funct7[6] 而不是 funct7[5] 区分 FP↔FP 与 FP↔INT
   assign cvt_op = funct7[6] ?
-                    // INT↔FP conversions (funct7 = 0x60-0x6F have bit 6 set)
+                    // INT↔FP 转换 (funct7 = 0x60-0x6F 有 bit 6 置位)
                     (funct7[3] ? {2'b01, rs2[1:0]} : {2'b00, rs2[1:0]}) :
-                    // FP↔FP conversions (FCVT.S.D = 1000, FCVT.D.S = 1001)
+                    // FP↔FP 转换 (FCVT.S.D = 1000, FCVT.D.S = 1001)
                     (funct7[0] ? 4'b1001 : 4'b1000);
 
   fp_converter #(.FLEN(FLEN), .XLEN(XLEN)) u_fp_converter (
@@ -392,13 +392,13 @@ module fpu #(
   );
 
   // ========================================
-  // Output Multiplexing
+  // 输出多路复用
   // ========================================
 
-  // Busy signal: OR of all multi-cycle unit busy signals
+  // busy 信号: 所有多周期单元 busy 信号的或
   assign busy = adder_busy | mul_busy | div_busy | sqrt_busy | fma_busy | cvt_busy;
 
-  // Done signal: OR of all unit done signals
+  // done 信号: 所有单元 done 信号的或
   assign done = adder_done | mul_done | div_done | sqrt_done | fma_done | cvt_done |
                 (start && (fp_alu_op == FP_SGNJ || fp_alu_op == FP_SGNJN || fp_alu_op == FP_SGNJX ||
                            fp_alu_op == FP_MIN || fp_alu_op == FP_MAX ||
@@ -410,19 +410,19 @@ module fpu #(
   initial prev_busy = 0;
 
   always @(posedge clk) begin
-    // Print when FPU receives start signal
+    // 打印 FPU 接收到 start 信号
     if (start) begin
       $display("[FPU_START] t=%0t op=%d", $time, fp_alu_op);
     end
 
-    // Print when overall busy changes
+    // 打印 busy 变化
     if (busy != prev_busy) begin
       $display("[FPU_BUSY_CHANGE] t=%0t busy: %b->%b [add=%b mul=%b div=%b sqrt=%b fma=%b cvt=%b]",
                $time, prev_busy, busy, adder_busy, mul_busy, div_busy, sqrt_busy, fma_busy, cvt_busy);
       prev_busy <= busy;
     end
 
-    // Print busy status periodically when stuck
+    // 打印长时间 busy 时的状态
     if (busy && ($time % 1000 == 0)) begin
       $display("[FPU_STUCK?] t=%0t busy=1 for extended time [add=%b mul=%b div=%b sqrt=%b fma=%b cvt=%b]",
                $time, adder_busy, mul_busy, div_busy, sqrt_busy, fma_busy, cvt_busy);
@@ -430,9 +430,9 @@ module fpu #(
   end
   `endif
 
-  // Result multiplexing
+  // 结果多路复用
   always @(*) begin
-    // Default values
+    // 默认值
     fp_result  = {FLEN{1'b0}};
     int_result = {XLEN{1'b0}};
     flag_nv = 1'b0;
@@ -492,7 +492,7 @@ module fpu #(
 
       FP_SGNJ, FP_SGNJN, FP_SGNJX: begin
         fp_result = sign_result;
-        // Sign injection never raises exceptions
+        // 符号注入不会产生异常
       end
 
       FP_MIN, FP_MAX: begin
@@ -501,13 +501,13 @@ module fpu #(
       end
 
       FP_CMP: begin
-        int_result = {{(XLEN-32){1'b0}}, cmp_result};  // Zero-extend to XLEN
+        int_result = {{(XLEN-32){1'b0}}, cmp_result};  // 零扩展到 XLEN
         flag_nv = cmp_flag_nv;
       end
 
       FP_CLASS: begin
-        int_result = {{(XLEN-32){1'b0}}, class_result};  // Zero-extend to XLEN
-        // FCLASS never raises exceptions
+        int_result = {{(XLEN-32){1'b0}}, class_result};  // 零扩展到 XLEN
+        // FCLASS 从不引发异常
       end
 
       FP_CVT: begin
@@ -520,42 +520,42 @@ module fpu #(
       end
 
       FP_MV_XW: begin
-        // Bitcast FP→INT (no conversion, just reinterpret bits)
-        // fmt=0: FMV.X.W (move 32-bit SP, sign-extend to XLEN)
-        // fmt=1: FMV.X.D (move 64-bit DP, only valid for RV64)
+        // 位解释 FP→INT (不做数值转换，只重解释位)
+        // fmt=0: FMV.X.W (移动 32 位单精度，符号扩展到 XLEN)
+        // fmt=1: FMV.X.D (移动 64 位双精度，仅 RV64 有效)
         if (fmt == 0) begin
-          // FMV.X.W: Sign-extend 32-bit value
+          // FMV.X.W: 符号扩展 32 位值
           int_result = {{(XLEN-32){operand_a[31]}}, operand_a[31:0]};
         end else begin
-          // FMV.X.D: Copy all 64 bits (only valid for RV64)
+          // FMV.X.D: 复制全部 64 位（仅适用于 RV64）
           int_result = operand_a[XLEN-1:0];
         end
-        // No exceptions
+        // 无异常
       end
 
       FP_MV_WX: begin
-        // Bitcast INT→FP (no conversion, just reinterpret bits)
-        // fmt=0: FMV.W.X (move lower 32 bits to FP reg, NaN-box to FLEN)
-        // fmt=1: FMV.D.X (move all 64 bits to FP reg, only valid for RV64)
+        // 位解释 INT→FP (不做数值转换，只重解释位)
+        // fmt=0: FMV.W.X (将低 32 位写入 FP 寄存器，高位 NaN-box)
+        // fmt=1: FMV.D.X (将全部 64 位写入 FP 寄存器，仅 RV64 有效)
         if (fmt == 0) begin
           // FMV.W.X: Move lower 32 bits, NaN-box to FLEN
           fp_result = {{(FLEN-32){1'b1}}, int_operand[31:0]};
         end else begin
-          // FMV.D.X: Copy all 64 bits (only valid for RV64 with FLEN=64)
+          // FMV.D.X: 复制全部 64 位（仅适用于 RV64 且 FLEN=64）
           fp_result = int_operand[FLEN-1:0];
         end
-        // No exceptions
+        // 无异常
       end
 
       default: begin
-        // Illegal operation - should never happen if control unit is correct
+        // 非法操作 - 若控制单元正确则不应发生
         fp_result  = {FLEN{1'b0}};
         int_result = {XLEN{1'b0}};
       end
     endcase
   end
 
-  // Debug output
+  // 调试输出
   `ifdef DEBUG_FPU
   always @(posedge clk) begin
     if (start) $display("[FPU] START: op=%0d a=%h b=%h c=%h", fp_alu_op, operand_a, operand_b, operand_c);

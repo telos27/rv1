@@ -1,8 +1,8 @@
-// CSR (Control and Status Register) File
-// Implements Machine-mode CSRs for RISC-V
-// Supports CSR instructions: CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
-// Supports trap handling: exception entry and MRET
-// Parameterized for RV32/RV64
+// CSR (控制与状态寄存器) 文件
+// 实现 RISC-V 中的机器模式 CSR
+// 支持 CSR 指令: CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
+// 支持陷入处理: 异常进入与 MRET
+// 为 RV32/RV64 参数化
 
 `include "config/rv_config.vh"
 `include "config/rv_csr_defines.vh"
@@ -13,85 +13,80 @@ module csr_file #(
   input  wire             clk,
   input  wire             reset_n,
 
-  // CSR read/write interface
-  input  wire [11:0]      csr_addr,       // CSR address
-  input  wire [XLEN-1:0]  csr_wdata,      // Write data (from rs1 or uimm)
-  input  wire [2:0]       csr_op,         // CSR operation (funct3)
-  input  wire             csr_we,         // CSR write enable
-  input  wire             csr_access,     // CSR instruction active (read or write)
-  output reg  [XLEN-1:0]  csr_rdata,      // Read data
+  // CSR 读/写接口
+  input  wire [11:0]      csr_addr,       // CSR 地址
+  input  wire [XLEN-1:0]  csr_wdata,      // 写入数据（来自 rs1 或 uimm）
+  input  wire [2:0]       csr_op,         // CSR 操作（funct3）
+  input  wire             csr_we,         // CSR 写使能
+  input  wire             csr_access,     // CSR 指令激活（读或写）
+  output reg  [XLEN-1:0]  csr_rdata,      // 读出数据
 
-  // Trap handling interface
-  input  wire             trap_entry,     // Trap is occurring
-  input  wire [XLEN-1:0]  trap_pc,        // PC to save in mepc
-  input  wire [4:0]       trap_cause,     // Exception/interrupt cause code
-  input  wire             trap_is_interrupt, // 1 if trap is an interrupt, 0 if exception
-  input  wire [XLEN-1:0]  trap_val,       // mtval value (bad address, instruction, etc.)
-  output wire [XLEN-1:0]  trap_vector,    // mtvec value (trap handler address)
+  // 陷入处理接口
+  input  wire             trap_entry,     // 发生陷入
+  input  wire [XLEN-1:0]  trap_pc,        // 保存到 mepc 的 PC
+  input  wire [4:0]       trap_cause,     // 异常/中断原因代码
+  input  wire             trap_is_interrupt, // 1 表示陷入为中断，0 表示异常
+  input  wire [XLEN-1:0]  trap_val,       // mtval 值（错误地址、指令等）
+  output wire [XLEN-1:0]  trap_vector,    // mtvec 值（陷入处理程序地址）
+  // MRET (陷入返回)
+  input  wire             mret,           // MRET 指令
+  output wire [XLEN-1:0]  mepc_out,       // mepc 返回值
 
-  // MRET (trap return)
-  input  wire             mret,           // MRET instruction
-  output wire [XLEN-1:0]  mepc_out,       // mepc for return
-
-  // SRET (supervisor trap return)
-  input  wire             sret,           // SRET instruction
-  output wire [XLEN-1:0]  sepc_out,       // sepc for return
-
+  // SRET (监督模式陷入返回)
+  input  wire             sret,           // SRET 指令
+  output wire [XLEN-1:0]  sepc_out,       // sepc 返回值
   // Status outputs
-  output wire             mstatus_mie,    // Global interrupt enable
-  output wire             mstatus_sie,    // Supervisor interrupt enable
-  output wire             mstatus_mpie,   // Machine previous interrupt enable
-  output wire             mstatus_spie,   // Supervisor previous interrupt enable
-  output wire             illegal_csr,    // Invalid CSR access
+  output wire             mstatus_mie,    // 全局中断使能
+  output wire             mstatus_sie,    // 监督模式中断使能
+  output wire             mstatus_mpie,   // 机器前一中断使能
+  output wire             mstatus_spie,   // 监督前一中断使能
+  output wire             illegal_csr,    // 非法 CSR 访问
 
-  // Privilege mode tracking (Phase 1)
-  input  wire [1:0]       current_priv,   // Current privilege mode (for CSR access checks)
-  input  wire [1:0]       actual_priv,    // Actual privilege mode (for trap delegation)
-  output wire [1:0]       trap_target_priv, // Target privilege for trap
-  output wire [1:0]       mpp_out,        // Machine Previous Privilege
-  output wire             spp_out,        // Supervisor Previous Privilege
-  output wire [XLEN-1:0]  medeleg_out,    // Machine exception delegation register
+  // 特权模式跟踪（阶段 1）
+  input  wire [1:0]       current_priv,   // 当前特权模式（用于 CSR 访问检查）
+  input  wire [1:0]       actual_priv,    // 实际特权模式（用于陷入委托）
+  output wire [1:0]       trap_target_priv, // 陷入目标特权模式
+  output wire [1:0]       mpp_out,        // 机器前一特权模式
+  output wire             spp_out,        // 监督前一特权模式
+  output wire [XLEN-1:0]  medeleg_out,    // 机器异常委托寄存器
+  // MMU 相关状态输出
+  output wire [XLEN-1:0]  satp_out,       // SATP 寄存器（用于 MMU）
+  output wire             mstatus_sum,    // SUM 位（用于 MMU）
+  output wire             mstatus_mxr,    // MXR 位（用于 MMU）
+  // 浮点单元状态
+  output wire [1:0]       mstatus_fs,     // FPU 状态 (00=关闭, 01=初始, 10=干净, 11=脏)
 
-  // MMU-related status outputs
-  output wire [XLEN-1:0]  satp_out,       // SATP register (for MMU)
-  output wire             mstatus_sum,    // SUM bit (for MMU)
-  output wire             mstatus_mxr,    // MXR bit (for MMU)
+  // 浮点 CSR 输出
+  output wire [2:0]       frm_out,        // 浮点舍入模式（用于 FPU）
+  output wire [4:0]       fflags_out,     // 浮点异常标志（用于读取）
 
-  // Floating-Point Unit status
-  output wire [1:0]       mstatus_fs,     // FPU status (00=Off, 01=Initial, 10=Clean, 11=Dirty)
+  // 浮点标志累积（来自 WB 阶段的 FPU）
+  input  wire             fflags_we,      // 浮点标志累积写使能
+  input  wire [4:0]       fflags_in,      // 来自 FPU 的异常标志
+  // 外部中断输入（来自 CLINT/PLIC）
+  input  wire             mtip_in,        // 机器定时器中断挂起
+  input  wire             msip_in,        // 机器软件中断挂起
+  input  wire             meip_in,        // 机器外部中断挂起（来自 PLIC）
+  input  wire             seip_in,        // 监督外部中断挂起（来自 PLIC）
 
-  // Floating-Point CSR outputs
-  output wire [2:0]       frm_out,        // FP rounding mode (for FPU)
-  output wire [4:0]       fflags_out,     // FP exception flags (for reading)
-
-  // Floating-Point flag accumulation (from FPU in WB stage)
-  input  wire             fflags_we,      // Write enable for flag accumulation
-  input  wire [4:0]       fflags_in,      // Exception flags from FPU
-
-  // External interrupt inputs (from CLINT/PLIC)
-  input  wire             mtip_in,        // Machine Timer Interrupt Pending
-  input  wire             msip_in,        // Machine Software Interrupt Pending
-  input  wire             meip_in,        // Machine External Interrupt Pending (from PLIC)
-  input  wire             seip_in,        // Supervisor External Interrupt Pending (from PLIC)
-
-  // Interrupt status outputs (for interrupt handling in core)
-  output wire [XLEN-1:0]  mip_out,        // Machine Interrupt Pending register
-  output wire [XLEN-1:0]  mie_out,        // Machine Interrupt Enable register
-  output wire [XLEN-1:0]  mideleg_out     // Machine Interrupt Delegation register
+  // 中断状态输出（来自核心中的中断处理）
+  output wire [XLEN-1:0]  mip_out,        // 机器中断挂起寄存器
+  output wire [XLEN-1:0]  mie_out,        // 机器中断使能寄存器
+  output wire [XLEN-1:0]  mideleg_out     // 机器中断委托寄存器
 );
 
   // =========================================================================
-  // CSR Registers
+  // CSR 寄存器
   // =========================================================================
-  // Note: CSR addresses and bit positions are defined in rv_csr_defines.vh
+  // 注意: CSR 地址和位位置定义在 rv_csr_defines.vh 中
 
-  // Machine Status Register - Single register storage
+  // 机器状态寄存器 - 单寄存器存储
   reg [XLEN-1:0] mstatus_r;
 
-  // Machine ISA Register (misa) - read-only
-  // RV32: [31:30] = 2'b01 (MXL=1), [25:0] = extensions
-  // RV64: [63:62] = 2'b10 (MXL=2), [25:0] = extensions
-  // Extensions: I(8), M(12), A(0), F(5), D(3) = 0x1129
+  // 机器 ISA 寄存器 (misa) - 只读
+  // RV32: [31:30] = 2'b01 (MXL=1), [25:0] = 扩展位
+  // RV64: [63:62] = 2'b10 (MXL=2), [25:0] = 扩展位
+  // 扩展: I(8), M(12), A(0), F(5), D(3) = 0x1129
   generate
     if (XLEN == 32) begin : gen_misa_rv32
       wire [31:0] misa = {2'b01, 4'b0, 26'b00000000000001000100101001};
@@ -100,78 +95,77 @@ module csr_file #(
     end
   endgenerate
 
-  // Machine Interrupt Enable (mie) - not fully implemented yet
+  // 机器中断使能寄存器 (mie) - 尚未完全实现
   reg [XLEN-1:0] mie_r;
 
-  // Machine Trap-Vector Base Address (mtvec)
+  // 机器陷入基址 (mtvec)
   reg [XLEN-1:0] mtvec_r;
 
-  // Machine Scratch Register (mscratch) - software use
+  // 机器暂存寄存器 (mscratch) - 供软件使用
   reg [XLEN-1:0] mscratch_r;
 
-  // Machine Exception Program Counter (mepc)
+  // 机器异常程序计数器 (mepc)
   reg [XLEN-1:0] mepc_r;
 
-  // Machine Cause Register (mcause)
-  // [XLEN-1] = interrupt flag, [XLEN-2:0] = exception code
+  // 机器陷入原因 (mcause)
+  // [XLEN-1] = 中断标志, [XLEN-2:0] = 异常码
   reg [XLEN-1:0] mcause_r;
 
-  // Machine Trap Value (mtval)
+  // 机器陷入值 (mtval)
   reg [XLEN-1:0] mtval_r;
 
-  // Machine Interrupt Pending (mip)
-  // Bits 11 (MEIP), 9 (SEIP), 7 (MTIP), 3 (MSIP) are read-only and driven by external hardware (CLINT/PLIC)
-  // Other bits are software-writable
+  // 机器中断挂起寄存器 (mip)
+  // 位 11 (MEIP), 9 (SEIP), 7 (MTIP), 3 (MSIP) 为只读, 由外部硬件 (CLINT/PLIC) 驱动
+  // 其他位可由软件写
   reg [XLEN-1:0] mip_r;
 
-  // Combine hardware interrupt inputs with software-writable bits
-  // Bit layout: [XLEN-1:12] | MEIP(11) | [10] | SEIP(9) | [8] | MTIP(7) | [6:4] | MSIP(3) | [2:0]
+  // 将硬件中断输入与软件可写位组合
+  // 位布局: [XLEN-1:12] | MEIP(11) | [10] | SEIP(9) | [8] | MTIP(7) | [6:4] | MSIP(3) | [2:0]
   wire [XLEN-1:0] mip_value;
   assign mip_value = {mip_r[XLEN-1:12], meip_in, mip_r[10], seip_in, mip_r[8], mtip_in, mip_r[6:4], msip_in, mip_r[2:0]};
 
 
-  // Floating-Point CSRs
-  reg [4:0] fflags_r;  // Floating-point exception flags: [4] NV, [3] DZ, [2] OF, [1] UF, [0] NX
-  reg [2:0] frm_r;     // Floating-point rounding mode
+  // 浮点 CSR
+  reg [4:0] fflags_r;  // 浮点异常标志: [4] NV, [3] DZ, [2] OF, [1] UF, [0] NX
+  reg [2:0] frm_r;     // 浮点舍入模式
 
-  // Supervisor Address Translation and Protection (SATP)
+  // 监督级地址转换与保护 (SATP)
   reg [XLEN-1:0] satp_r;
 
-  // Supervisor Trap Handling Registers
-  reg [XLEN-1:0] stvec_r;      // Supervisor trap vector
-  reg [XLEN-1:0] sscratch_r;   // Supervisor scratch register
-  reg [XLEN-1:0] sepc_r;       // Supervisor exception PC
-  reg [XLEN-1:0] scause_r;     // Supervisor exception cause
-  reg [XLEN-1:0] stval_r;      // Supervisor trap value
+  // 监督陷入处理寄存器
+  reg [XLEN-1:0] stvec_r;      // 监督陷入向量
+  reg [XLEN-1:0] sscratch_r;   // 监督暂存寄存器
+  reg [XLEN-1:0] sepc_r;       // 监督异常程序计数器
+  reg [XLEN-1:0] scause_r;     // 监督异常原因
+  reg [XLEN-1:0] stval_r;      // 监督陷入值
+  // 机器陷入委托寄存器
+  reg [XLEN-1:0] medeleg_r;    // 机器异常委托寄存器
+  reg [XLEN-1:0] mideleg_r;    // 机器中断委托寄存器
 
-  // Machine Trap Delegation Registers
-  reg [XLEN-1:0] medeleg_r;    // Machine exception delegation to S-mode
-  reg [XLEN-1:0] mideleg_r;    // Machine interrupt delegation to S-mode
-
-  // Trap handling state
-  reg trap_taken_r;            // Flag to prevent multiple trap entries in same cycle
+  // 陷入处理状态
+  reg trap_taken_r;            // 标志位，用于防止在同一个周期内多次进入陷入
 
   // =========================================================================
-  // Read-Only CSRs (hardwired)
+  // 只读 CSR (硬连线)
   // =========================================================================
 
-  // Vendor ID: 0 = not implemented
+  // 供应商 ID: 0 = 未实现
   wire [XLEN-1:0] mvendorid = {XLEN{1'b0}};
 
-  // Architecture ID: 0 = not implemented
+  // 架构 ID: 0 = 未实现
   wire [XLEN-1:0] marchid = {XLEN{1'b0}};
 
-  // Implementation ID: 1 = RV1 implementation
+  // 实现 ID: 1 = RV1 实现
   wire [XLEN-1:0] mimpid = {{(XLEN-1){1'b0}}, 1'b1};
 
-  // Hardware Thread ID: 0 = single-threaded
+  // 硬件线程 ID: 0 = 单线程
   wire [XLEN-1:0] mhartid = {XLEN{1'b0}};
 
   // =========================================================================
-  // CSR Read Logic
+  // CSR 读逻辑
   // =========================================================================
 
-  // Extract mstatus fields as wires for internal use
+  // 从 mstatus 中提取字段, 供内部使用
   wire mstatus_sie_w  = mstatus_r[MSTATUS_SIE_BIT];
   wire mstatus_mie_w  = mstatus_r[MSTATUS_MIE_BIT];
   wire mstatus_spie_w = mstatus_r[MSTATUS_SPIE_BIT];
@@ -182,25 +176,25 @@ module csr_file #(
   wire mstatus_sum_w  = mstatus_r[MSTATUS_SUM_BIT];
   wire mstatus_mxr_w  = mstatus_r[MSTATUS_MXR_BIT];
 
-  // Read mstatus directly from register
+  // 直接从寄存器读取 mstatus
   wire [XLEN-1:0] mstatus_value = mstatus_r;
 
-  // Construct sstatus as read-only subset of mstatus
-  // SSTATUS provides restricted view: only S-mode relevant fields visible
-  // Mask out M-mode only fields (MPP, MPIE, MIE)
-  // Visible bits: SIE(1), SPIE(5), UBE(6), SPP(8), SUM(18), MXR(19)
+  // 构造 sstatus 为 mstatus 的只读子集
+  // SSTATUS 仅提供 S 模式相关字段
+  // 屏蔽 M 模式字段 (MPP, MPIE, MIE)
+  // 可见位: SIE(1), SPIE(5), UBE(6), SPP(8), SUM(18), MXR(19)
   wire [XLEN-1:0] sstatus_mask = {{(XLEN-20){1'b0}}, 2'b11, 9'b000000000, 1'b1, 1'b0, 2'b11, 3'b000, 1'b1, 1'b0};
   wire [XLEN-1:0] sstatus_value = mstatus_r & sstatus_mask;
 
-  // SIE and SIP are subsets of MIE and MIP
-  // Supervisor-level interrupts use bits: SEIP(9), STIP(5), SSIP(1)
+  // SIE 和 SIP 是 MIE 和 MIP 的子集
+  // 监督级中断使用位: SEIP(9), STIP(5), SSIP(1)
   wire [XLEN-1:0] sie_value = mie_r & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
-  // SIP is a view into MIP, showing only supervisor-level interrupt bits [9,5,1]
-  wire [XLEN-1:0] sip_value = mip_value & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // Mask bits [9,5,1]
+  // SIP 是 MIP 的一个视图，仅显示监督级中断位 [9,5,1]
+  wire [XLEN-1:0] sip_value = mip_value & {{(XLEN-10){1'b0}}, 1'b1, 3'b0, 1'b1, 3'b0, 1'b1, 1'b0};  // 掩码位 [9,5,1]
 
-  // CSR read multiplexer
-  // Note: mstatus_value and sstatus_value are now assigned directly above
-  // misa still needs separate wire
+  // CSR 读多路选择
+  // 注意: mstatus_value 与 sstatus_value 已在上面赋值
+  // misa 仍需单独 wire
   wire [XLEN-1:0] misa_value;
   generate
     if (XLEN == 32) begin : gen_csr_access
@@ -212,7 +206,7 @@ module csr_file #(
 
   always @(*) begin
     case (csr_addr)
-      // Machine-mode CSRs
+      // 机器模式 CSR
       CSR_MSTATUS: begin
         csr_rdata = mstatus_value;
       end
@@ -230,12 +224,12 @@ module csr_file #(
         `endif
       end
       CSR_MTVAL:     csr_rdata = mtval_r;
-      CSR_MIP:       csr_rdata = mip_value;  // Read combined software + hardware interrupt bits
-      CSR_MVENDORID: csr_rdata = {{(XLEN-32){1'b0}}, mvendorid};  // Zero-extend to XLEN
-      CSR_MARCHID:   csr_rdata = {{(XLEN-32){1'b0}}, marchid};    // Zero-extend to XLEN
-      CSR_MIMPID:    csr_rdata = {{(XLEN-32){1'b0}}, mimpid};     // Zero-extend to XLEN
-      CSR_MHARTID:   csr_rdata = {{(XLEN-32){1'b0}}, mhartid};    // Zero-extend to XLEN
-      // Supervisor-mode CSRs
+      CSR_MIP:       csr_rdata = mip_value;  // 读取组合的软件 + 硬件中断位
+      CSR_MVENDORID: csr_rdata = {{(XLEN-32){1'b0}}, mvendorid};  // 零扩展到 XLEN
+      CSR_MARCHID:   csr_rdata = {{(XLEN-32){1'b0}}, marchid};    // 零扩展到 XLEN
+      CSR_MIMPID:    csr_rdata = {{(XLEN-32){1'b0}}, mimpid};     // 零扩展到 XLEN
+      CSR_MHARTID:   csr_rdata = {{(XLEN-32){1'b0}}, mhartid};    // 零扩展到 XLEN
+      // 监督模式 CSRs
       CSR_SSTATUS:   csr_rdata = sstatus_value;
       CSR_SIE:       csr_rdata = sie_value;
       CSR_STVEC:     csr_rdata = stvec_r;
@@ -245,42 +239,42 @@ module csr_file #(
       CSR_STVAL:     csr_rdata = stval_r;
       CSR_SIP:       csr_rdata = sip_value;
       CSR_SATP:      csr_rdata = satp_r;
-      // Floating-point CSRs
+      // 浮点 CSRs
       CSR_FFLAGS:    begin
-        // Forward new flags if being accumulated in same cycle (WB stage hazard)
+        // 若同周期在累加标志 (WB 阶段冒险), 则前推新标志
         csr_rdata = {{(XLEN-5){1'b0}}, (fflags_we ? (fflags_r | fflags_in) : fflags_r)};
         `ifdef DEBUG_FPU
-        $display("[CSR] Read FFLAGS: fflags_r=%05b fflags_in=%05b fflags_we=%b, rdata=%h",
+        $display("[CSR] 读取 FFLAGS: fflags_r=%05b fflags_in=%05b fflags_we=%b, rdata=%h",
                  fflags_r, fflags_in, fflags_we, {{(XLEN-5){1'b0}}, (fflags_we ? (fflags_r | fflags_in) : fflags_r)});
         `endif
       end
-      CSR_FRM:       csr_rdata = {{(XLEN-3){1'b0}}, frm_r};       // Zero-extend to XLEN
+      CSR_FRM:       csr_rdata = {{(XLEN-3){1'b0}}, frm_r};       // 零扩展到 XLEN
       CSR_FCSR:      begin
-        // Forward new flags if being accumulated in same cycle (WB stage hazard)
+        // 若同周期在累加标志 (WB 阶段冒险), 则前推新标志
         csr_rdata = {{(XLEN-8){1'b0}}, frm_r, (fflags_we ? (fflags_r | fflags_in) : fflags_r)};
       end
-      default:       csr_rdata = {XLEN{1'b0}};  // Return 0 for unknown CSRs
+      default:       csr_rdata = {XLEN{1'b0}};  // 未知 CSR 返回 0
     endcase
   end
 
   // =========================================================================
-  // CSR Write Logic
+  // CSR 写逻辑
   // =========================================================================
 
   // =========================================================================
-  // CSR Privilege Checking (Phase 2)
+  // CSR 特权检查 (阶段 2)
   // =========================================================================
-  // CSR address encoding: [11:10] = read-only flag, [9:8] = privilege level
-  // 00 = User, 01 = Supervisor, 10 = Reserved, 11 = Machine
+  // CSR 地址编码: [11:10] = 只读标志, [9:8] = 特权级
+  // 00 = 用户, 01 = 监督, 10 = 保留, 11 = 机器
 
-  wire [1:0] csr_priv_level = csr_addr[9:8];  // Extract privilege level from address
-  wire       csr_read_only_bit = (csr_addr[11:10] == 2'b11);  // Read-only if top 2 bits are 11
+  wire [1:0] csr_priv_level = csr_addr[9:8];  // 从地址中提取特权级
+  wire       csr_read_only_bit = (csr_addr[11:10] == 2'b11);  // 如果高2位是11，则只读
 
-  // Check if current privilege can access this CSR
-  // Rule: Current privilege must be >= CSR privilege level
+  // 检查当前特权级是否可访问该 CSR
+  // 规则: 当前特权级 >= CSR 特权级
   wire csr_priv_ok = (current_priv >= csr_priv_level);
 
-  // Determine if CSR is read-only (either by address encoding or specific CSR)
+  // 判断 CSR 是否只读 (通过地址编码或特定 CSR)
   wire csr_read_only = csr_read_only_bit ||
                        (csr_addr == CSR_MISA) ||
                        (csr_addr == CSR_MVENDORID) ||
@@ -288,12 +282,12 @@ module csr_file #(
                        (csr_addr == CSR_MIMPID) ||
                        (csr_addr == CSR_MHARTID);
 
-  // Test/Debug CSRs (used by some test frameworks for output)
-  // Addresses 0x700-0x7FF are sometimes used for test output
-  wire csr_is_test = (csr_addr[11:8] == 4'b0111);  // 0x700-0x7FF range
+  // 测试/调试 CSR (部分测试框架用于输出)
+  // 地址 0x700-0x7FF 有时用于测试输出
+  wire csr_is_test = (csr_addr[11:8] == 4'b0111);  // 0x700-0x7FF 范围
 
-  // Determine if CSR exists (is valid)
-  // Check if CSR is in our implemented set
+  // 判断 CSR 是否存在 (有效)
+  // 检查是否在已实现的 CSR 集中
   wire csr_exists = (csr_addr == CSR_MSTATUS) ||
                     (csr_addr == CSR_MISA) ||
                     (csr_addr == CSR_MEDELEG) ||
@@ -321,139 +315,139 @@ module csr_file #(
                     (csr_addr == CSR_FFLAGS) ||
                     (csr_addr == CSR_FRM) ||
                     (csr_addr == CSR_FCSR) ||
-                    csr_is_test;  // Accept test CSRs
+                    csr_is_test;  // 接受测试 CSR
 
-  // Illegal CSR access conditions:
-  // 1. CSR doesn't exist
-  // 2. Privilege level too low to access CSR
-  // 3. Attempting to write to read-only CSR
+  // 非法 CSR 访问条件:
+  // 1. CSR 不存在
+  // 2. 特权级不足以访问该 CSR
+  // 3. 写只读 CSR
   //
-  // Note: Privilege and existence checks apply to both reads and writes (csr_access).
-  // Read-only check only applies to writes (csr_we).
+  // 注意: 特权与存在检查对读写都会检查 (csr_access)。
+  // 只读检查仅对写操作 (csr_we) 生效。
   assign illegal_csr = csr_access && ((!csr_exists) || (!csr_priv_ok) || (csr_we && csr_read_only));
 
   `ifdef DEBUG_CSR
   always @(posedge clk) begin
     if (csr_access) begin
-      $display("[CSR] Time=%0t addr=0x%03x op=%0d access=%b we=%b priv=%b priv_lvl=%b priv_ok=%b exists=%b ro=%b illegal=%b wdata=0x%08x mstatus_fs=%b",
+      $display("[CSR] 时间=%0t 地址=0x%03x 操作=%0d 访问=%b 写使能=%b 当前特权=%b CSR特权级=%b 特权检查=%b 存在=%b 只读=%b 非法=%b 写入数据=0x%08x mstatus_fs=%b",
                $time, csr_addr, csr_op, csr_access, csr_we, current_priv, csr_priv_level, csr_priv_ok, csr_exists, csr_read_only, illegal_csr, csr_wdata, mstatus_fs_w);
       if (csr_addr == CSR_MSTATUS && csr_we) begin
-        $display("[CSR-MSTATUS-WRITE] op=%0d wdata=0x%08x rdata=0x%08x write_value=0x%08x", csr_op, csr_wdata, csr_rdata, csr_write_value);
+        $display("[CSR-MSTATUS-WRITE] 操作=%0d wdata=0x%08x rdata=0x%08x 写入值=0x%08x", csr_op, csr_wdata, csr_rdata, csr_write_value);
       end
       if (illegal_csr) begin
-        $display("[CSR] *** ILLEGAL CSR ACCESS DETECTED ***");
+        $display("[CSR] *** 非法 CSR 访问检测 ***");
       end
     end
-    // Debug MSTATUS.FS on reset
-    // Disabled - causes excessive spam
+    // 调试 MSTATUS.FS 在复位时
+    // 禁用 - 会导致过多的输出
     // if ($time < 100) begin
-    //   $display("[CSR-INIT] Time=%0t mstatus_r=0x%08x mstatus_fs=%b", $time, mstatus_r, mstatus_fs_w);
+    //   $display("[CSR-INIT] 时间=%0t mstatus_r=0x%08x mstatus_fs=%b", $time, mstatus_r, mstatus_fs_w);
     // end
     if (sret) begin
-      $display("[CSR] Time=%0t SRET: SIE=%b->%b SPIE=%b->1 SPP=%b->0 mstatus_r=0x%08x",
+      $display("[CSR] 时间=%0t SRET: SIE=%b->%b SPIE=%b->1 SPP=%b->0 mstatus_r=0x%08x",
                $time, mstatus_r[MSTATUS_SIE_BIT], mstatus_spie_w, mstatus_r[MSTATUS_SPIE_BIT],
                mstatus_r[MSTATUS_SPP_BIT], mstatus_r);
     end
   end
   `endif
 
-  // Compute CSR write value based on operation
+  // 计算 CSR 写入值
   reg [XLEN-1:0] csr_write_value;
   always @(*) begin
     case (csr_op)
-      CSR_RW, CSR_RWI: csr_write_value = csr_wdata;                    // Write
-      CSR_RS, CSR_RSI: csr_write_value = csr_rdata | csr_wdata;        // Set bits
-      CSR_RC, CSR_RCI: csr_write_value = csr_rdata & ~csr_wdata;       // Clear bits
-      default:         csr_write_value = csr_rdata;                    // No change
+      CSR_RW, CSR_RWI: csr_write_value = csr_wdata;               // 写入新值
+      CSR_RS, CSR_RSI: csr_write_value = csr_rdata | csr_wdata;   // 置位位
+      CSR_RC, CSR_RCI: csr_write_value = csr_rdata & ~csr_wdata;  // 清除位
+      default:         csr_write_value = csr_rdata;               // 无变化
     endcase
   end
 
-  // CSR write (synchronous)
+  // CSR 写 (同步)
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      // Reset all CSRs
-      // Initialize mstatus with MPP=11 (M-mode), FS=11 (FPU enabled/dirty), all other fields = 0
+      // 复位所有 CSR
+      // 初始化 mstatus: MPP=11 (M 模式), FS=11 (FPU 已启用/脏), 其它字段为 0
       mstatus_r      <= {{(XLEN-15){1'b0}}, 2'b11, 2'b11, {11{1'b0}}}; // FS[14:13]=11, MPP[12:11]=11, rest=0
       mie_r          <= {XLEN{1'b0}};
-      mtvec_r        <= {XLEN{1'b0}};   // Trap vector at address 0
+      mtvec_r        <= {XLEN{1'b0}};   // 陷阱向量地址 0
       mscratch_r     <= {XLEN{1'b0}};
       mepc_r         <= {XLEN{1'b0}};
       mcause_r       <= {XLEN{1'b0}};
       mtval_r        <= {XLEN{1'b0}};
       mip_r          <= {XLEN{1'b0}};
-      satp_r         <= {XLEN{1'b0}};   // No translation (bare mode)
-      // Reset floating-point CSRs
-      fflags_r       <= 5'b0;            // No exceptions
-      frm_r          <= 3'b000;          // RNE (Round to Nearest, ties to Even)
-      // Reset supervisor CSRs
-      stvec_r        <= {XLEN{1'b0}};   // Supervisor trap vector at address 0
+      satp_r         <= {XLEN{1'b0}};   // 无地址转换 (裸模式)
+      // 复位浮点 CSR
+      fflags_r       <= 5'b0;            // 无异常
+      frm_r          <= 3'b000;          // RNE (四舍六入)
+      // 复位监督 CSR
+      stvec_r        <= {XLEN{1'b0}};   // 监督陷阱向量地址 0
       sscratch_r     <= {XLEN{1'b0}};
       sepc_r         <= {XLEN{1'b0}};
       scause_r       <= {XLEN{1'b0}};
       stval_r        <= {XLEN{1'b0}};
-      // Reset trap delegation registers
-      medeleg_r      <= {XLEN{1'b0}};   // No delegation by default
-      mideleg_r      <= {XLEN{1'b0}};   // No delegation by default
-      trap_taken_r   <= 1'b0;            // No trap taken initially
+      // 复位陷入委托寄存器
+      medeleg_r      <= {XLEN{1'b0}};   // 默认无委托
+      mideleg_r      <= {XLEN{1'b0}};   // 默认无委托
+      trap_taken_r   <= 1'b0;            // 初始无陷入
     end else begin
-      // Trap entry has priority over CSR writes and SRET/MRET
-      // trap_entry is a one-shot signal from the top level (pulses for exactly one cycle)
+      // 陷入进入优先于 CSR 写和 SRET/MRET
+      // trap_entry 为顶层发出的单周期脉冲
       if (trap_entry) begin
         `ifdef DEBUG_EXCEPTION
-        $display("[CSR_TRAP] Trap entry: target_priv=%b cause=%0d PC=%h", trap_target_priv, trap_cause, trap_pc);
+        $display("[CSR_TRAP] 陷入进入: target_priv=%b cause=%0d PC=%h", trap_target_priv, trap_cause, trap_pc);
         `endif
-        // Determine target privilege level
+        // 决定陷入目标特权级
         if (trap_target_priv == 2'b11) begin
-          // Machine-mode trap
+          // 机器模式陷入
           mepc_r  <= trap_pc;
-          // Set mcause: MSB = interrupt bit, lower bits = cause code
+          // 设置 mcause: MSB = interrupt bit, lower bits = cause code
           mcause_r <= {trap_is_interrupt, {(XLEN-6){1'b0}}, trap_cause};
           mtval_r  <= trap_val;
           `ifdef DEBUG_EXCEPTION
-          $display("[CSR_TRAP] Writing mcause=%0d (interrupt=%b) mepc=%h", trap_cause, trap_is_interrupt, trap_pc);
+          $display("[CSR_TRAP] 写入 mcause=%0d (interrupt=%b) mepc=%h", trap_cause, trap_is_interrupt, trap_pc);
           `endif
           `ifdef DEBUG_CSR
-          $display("[CSR_TRAP_M] Disabling interrupts: MIE=%b -> MPIE, setting MIE=0, cause=%0d PC=%h",
+          $display("[CSR_TRAP_M] 禁用中断: MIE=%b -> MPIE, 设置 MIE=0, cause=%0d PC=%h",
                    mstatus_mie_w, trap_cause, trap_pc);
           `endif
-          mstatus_r[MSTATUS_MPIE_BIT] <= mstatus_mie_w;         // Save current MIE
-          mstatus_r[MSTATUS_MIE_BIT]  <= 1'b0;                  // Disable interrupts
-          mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= current_priv; // Save current privilege
+          mstatus_r[MSTATUS_MPIE_BIT] <= mstatus_mie_w;         // 保存当前 MIE
+          mstatus_r[MSTATUS_MIE_BIT]  <= 1'b0;                  // 禁用中断
+          mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= current_priv; // 保存当前特权级
         end else if (trap_target_priv == 2'b01) begin
-          // Supervisor-mode trap
+          // 监督模式陷入
           sepc_r  <= trap_pc;
-          // Set scause: MSB = interrupt bit, lower bits = cause code
+          // 设置 scause: MSB = 中断位, 低位 = 原因代码
           scause_r <= {trap_is_interrupt, {(XLEN-6){1'b0}}, trap_cause};
           stval_r  <= trap_val;
-          mstatus_r[MSTATUS_SPIE_BIT] <= mstatus_sie_w;         // Save current SIE
-          mstatus_r[MSTATUS_SIE_BIT]  <= 1'b0;                  // Disable supervisor interrupts
-          mstatus_r[MSTATUS_SPP_BIT]  <= current_priv[0];       // Save current privilege (0=U, 1=S)
+          mstatus_r[MSTATUS_SPIE_BIT] <= mstatus_sie_w;         // 保存当前 SIE
+          mstatus_r[MSTATUS_SIE_BIT]  <= 1'b0;                  // 禁用监督模式中断
+          mstatus_r[MSTATUS_SPP_BIT]  <= current_priv[0];       // 保存当前特权级 (0=U, 1=S)
         end
       end else if (mret) begin
-        // MRET: Return from machine-mode trap
+        // MRET: 从机器模式陷入返回
         `ifdef DEBUG_CSR_FORWARD
-        $display("[CSR_MRET] Time=%0t Executing MRET: MPIE=%b -> MIE, mstatus_before=%h",
+        $display("[CSR_MRET] 时间=%0t 执行 MRET: MPIE=%b -> MIE, mstatus_before=%h",
                  $time, mstatus_mpie_w, mstatus_r);
         `endif
         `ifdef DEBUG_CSR
-        $display("[CSR_MRET] Restoring MIE: MPIE=%b -> MIE, MPP=%b (was M-mode, now restoring)",
+        $display("[CSR_MRET] 恢复 MIE: MPIE=%b -> MIE, MPP=%b (was M-mode, now restoring)",
                  mstatus_mpie_w, mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB]);
         `endif
-        mstatus_r[MSTATUS_MIE_BIT]  <= mstatus_mpie_w;  // Restore interrupt enable
-        mstatus_r[MSTATUS_MPIE_BIT] <= 1'b1;          // Set MPIE to 1
-        // Per RISC-V spec: MPP is set to least privileged mode (U if implemented, else M)
-        // This implementation supports U-mode, so set MPP to U-mode (2'b00)
-        mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= 2'b00; // Set MPP to U-mode
-      end else if (sret) begin
-        // SRET: Return from supervisor-mode trap
-        mstatus_r[MSTATUS_SIE_BIT]  <= mstatus_spie_w;  // Restore supervisor interrupt enable
-        mstatus_r[MSTATUS_SPIE_BIT] <= 1'b1;          // Set SPIE to 1
-        mstatus_r[MSTATUS_SPP_BIT]  <= 1'b0;          // Set SPP to U-mode
+        mstatus_r[MSTATUS_MIE_BIT]  <= mstatus_mpie_w;  // 恢复中断使能
+        mstatus_r[MSTATUS_MPIE_BIT] <= 1'b1;            // 将 MPIE 置为 1
+        // 根据 RISC-V 规范: MPP 需要被设置为最低特权级 (若实现 U 模式则为 U，否则为 M)
+        // 当前实现支持 U 模式，因此将 MPP 置为 U 模式 (2'b00)
+        mstatus_r[MSTATUS_MPP_MSB:MSTATUS_MPP_LSB] <= 2'b00; // 将 MPP 设置为 U 模式
+            end else if (sret) begin
+        // SRET: 从监督模式陷入返回
+        mstatus_r[MSTATUS_SIE_BIT]  <= mstatus_spie_w;  // 恢复监督模式中断使能
+        mstatus_r[MSTATUS_SPIE_BIT] <= 1'b1;            // 将 SPIE 置为 1
+        mstatus_r[MSTATUS_SPP_BIT]  <= 1'b0;            // 将 SPP 设置为 U 模式
       end else if (csr_we && !csr_read_only) begin
-        // Normal CSR write
+        // 正常 CSR 写
         case (csr_addr)
           CSR_MSTATUS: begin
-            // Write individual fields
+            // 写各个字段
             mstatus_r[MSTATUS_SIE_BIT]  <= csr_write_value[MSTATUS_SIE_BIT];
             mstatus_r[MSTATUS_MIE_BIT]  <= csr_write_value[MSTATUS_MIE_BIT];
             mstatus_r[MSTATUS_SPIE_BIT] <= csr_write_value[MSTATUS_SPIE_BIT];
@@ -465,31 +459,31 @@ module csr_file #(
             mstatus_r[MSTATUS_MXR_BIT]  <= csr_write_value[MSTATUS_MXR_BIT];
           end
           CSR_MIE:      mie_r      <= csr_write_value;
-          // MTVEC alignment: 2-byte with C ext, 4-byte without
+          // MTVEC 对齐: 开启 C 扩展时 2 字节对齐, 否则 4 字节
           `ifdef ENABLE_C_EXT
-          CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C ext)
+          CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:1], 1'b0};   // 对齐到 2 字节 (C 扩展)
           `else
-          CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          CSR_MTVEC:    mtvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // 对齐到 4 字节
           `endif
           CSR_MSCRATCH: mscratch_r <= csr_write_value;
-          CSR_MEPC:     mepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C extension)
+          CSR_MEPC:     mepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // 对齐到 2 字节 (C 扩展)
           CSR_MCAUSE:   mcause_r   <= csr_write_value;
           CSR_MTVAL:    mtval_r    <= csr_write_value;
           CSR_MIP: begin
-            // MIP: Mask out read-only bits (MEIP=11, SEIP=9, MTIP=7, MSIP=3) - these are driven by hardware
-            // Mask format: bit 11, bit 9, bit 7, bit 3 = 1 (read-only)
+            // MIP: 屏蔽只读位 (MEIP=11, SEIP=9, MTIP=7, MSIP=3) - 这些由硬件驱动
+            // 掩码格式: 位 11, 9, 7, 3 = 1 (只读)
             mip_r      <= csr_write_value & ~({{(XLEN-12){1'b0}}, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 3'b0, 1'b1, 3'b0});
           end
           CSR_SATP: begin
             satp_r <= csr_write_value;
-            $display("[CSR] SATP write: 0x%h priv=%b at time %0t", csr_write_value, current_priv, $time);
+            $display("[CSR] SATP 写入: 0x%h priv=%b at time %0t", csr_write_value, current_priv, $time);
           end
           CSR_MEDELEG:  medeleg_r  <= csr_write_value;
           CSR_MIDELEG:  mideleg_r  <= csr_write_value;
-          // Supervisor CSRs
+          // 监督模式 CSR
           CSR_SSTATUS: begin
-            // SSTATUS is a restricted view of MSTATUS
-            // Only allow writes to S-mode visible fields
+            // SSTATUS 是 MSTATUS 的受限视图
+            // 仅允许写 S 模式可见的字段
             mstatus_r[MSTATUS_SIE_BIT]  <= csr_write_value[MSTATUS_SIE_BIT];
             mstatus_r[MSTATUS_SPIE_BIT] <= csr_write_value[MSTATUS_SPIE_BIT];
             mstatus_r[MSTATUS_SPP_BIT]  <= csr_write_value[MSTATUS_SPP_BIT];
@@ -497,47 +491,47 @@ module csr_file #(
             mstatus_r[MSTATUS_MXR_BIT]  <= csr_write_value[MSTATUS_MXR_BIT];
           end
           CSR_SIE: begin
-            // SIE is a subset of MIE - only write S-mode interrupt bits [9,5,1]
+            // SIE 是 MIE 的子集 - 仅写 S 模式中断位 [9,5,1]
             mie_r[9] <= csr_write_value[9];  // SEIE
             mie_r[5] <= csr_write_value[5];  // STIE
             mie_r[1] <= csr_write_value[1];  // SSIE
           end
-          // STVEC alignment: 2-byte with C ext, 4-byte without
+          // STVEC 对齐: 2 字节对齐 (C 扩展), 4 字节对齐 (无 C 扩展)
           `ifdef ENABLE_C_EXT
-          CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C ext)
+          CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:1], 1'b0};   // 对齐到 2 字节 (C 扩展)
           `else
-          CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // Align to 4 bytes
+          CSR_STVEC:    stvec_r    <= {csr_write_value[XLEN-1:2], 2'b00};  // 对齐到 4 字节
           `endif
           CSR_SSCRATCH: sscratch_r <= csr_write_value;
-          CSR_SEPC:     sepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // Align to 2 bytes (C extension)
+          CSR_SEPC:     sepc_r     <= {csr_write_value[XLEN-1:1], 1'b0};   // 对齐到 2 字节 (C 扩展)
           CSR_SCAUSE:   scause_r   <= csr_write_value;
           CSR_STVAL:    stval_r    <= csr_write_value;
           CSR_SIP: begin
-            // SIP is a subset of MIP - only write S-mode interrupt bits [9,5,1]
-            // Note: typically only SSIP (bit 1) is writable from software
-            mip_r[1] <= csr_write_value[1];  // SSIP (software interrupt)
+            // SIP 是 MIP 的子集 - 仅写 S 模式中断位 [9,5,1]
+            // 注意: 通常只有 SSIP (bit 1) 允许被软件写
+            mip_r[1] <= csr_write_value[1];  // SSIP (软件中断)
           end
-          // Floating-point CSRs
+          // 浮点 CSR
           CSR_FFLAGS: begin
-            fflags_r   <= csr_write_value[4:0];  // Write exception flags
+            fflags_r   <= csr_write_value[4:0];  // 写异常标志
             `ifdef DEBUG_FPU
-            $display("[CSR] Write FFLAGS: value=%05b (clearing flags)", csr_write_value[4:0]);
+            $display("[CSR] 写入 FFLAGS: 值=%05b (清除标志)", csr_write_value[4:0]);
             `endif
           end
-          CSR_FRM:      frm_r      <= csr_write_value[2:0];  // Write rounding mode
+          CSR_FRM:      frm_r      <= csr_write_value[2:0];  // 写舍入模式
           CSR_FCSR: begin
-            frm_r    <= csr_write_value[7:5];  // Upper 3 bits = rounding mode
-            fflags_r <= csr_write_value[4:0];  // Lower 5 bits = exception flags
+            frm_r    <= csr_write_value[7:5];  // 高 3 位 = 舍入模式
+            fflags_r <= csr_write_value[4:0];  // 低 5 位 = 异常标志
             `ifdef DEBUG_FPU
-            $display("[CSR] Write FCSR: frm=%03b fflags=%05b", csr_write_value[7:5], csr_write_value[4:0]);
+            $display("[CSR] 写入 FCSR: frm=%03b fflags=%05b", csr_write_value[7:5], csr_write_value[4:0]);
             `endif
           end
           default: begin
-            // No write for unknown or read-only CSRs
+            // 未知或只读 CSR: 不写
           end
         endcase
 
-        // Debug CSR interrupt-related writes
+        // CSR 中断相关写调试
         `ifdef DEBUG_CSR
         if (csr_addr == CSR_MSTATUS) begin
           $display("[CSR_WRITE] MSTATUS: op=%h wdata=%h rdata=%h -> write_val=%h MIE=%b->%b",
@@ -559,15 +553,15 @@ module csr_file #(
         `endif
       end
 
-      // Floating-point flag accumulation (OR operation)
-      // This allows FPU to accumulate exception flags without a CSR instruction
-      // Flags are sticky - once set, they remain until explicitly cleared via CSR write
-      // IMPORTANT: CSR writes to FFLAGS/FCSR take priority over accumulation
-      // Only accumulate if there's NO CSR write targeting fflags in this cycle
+      // 浮点标志累加 (按位或)
+      // 允许 FPU 在无 CSR 指令情况下累加异常标志
+      // 标志为“黏性”: 一旦置位, 直到通过 CSR 写显式清除
+      // 重要: 若本周期有对 FFLAGS/FCSR 的 CSR 写, 则 CSR 写优先于累加
+      // 仅当本周期没有针对 fflags 的 CSR 写时才累加
       if (fflags_we && !(csr_we && (csr_addr == CSR_FFLAGS || csr_addr == CSR_FCSR))) begin
-        fflags_r <= fflags_r | fflags_in;  // Accumulate (bitwise OR)
+        fflags_r <= fflags_r | fflags_in;  // 累加 (按位或)
         `ifdef DEBUG_FPU
-        $display("[CSR] FFlags accumulate: old=%05b new=%05b result=%05b",
+        $display("[CSR] FFlags 累加: old=%05b new=%05b result=%05b",
                  fflags_r, fflags_in, fflags_r | fflags_in);
         `endif
       end
@@ -575,13 +569,13 @@ module csr_file #(
   end
 
   // =========================================================================
-  // Trap Target Privilege Determination (Phase 2)
+  // 陷入目标特权判断 (阶段 2)
   // =========================================================================
-  // Determine trap target privilege based on delegation and current privilege
-  // Logic:
-  // 1. If current privilege is M-mode, trap goes to M-mode (no delegation)
-  // 2. If exception is delegated (medeleg bit set) and privilege < M-mode, trap goes to S-mode
-  // 3. Otherwise, trap goes to M-mode
+  // 根据委托寄存器与当前特权级确定陷入目标特权:
+  // 逻辑:
+  // 1. 若当前特权为 M, 陷入一定进入 M (不委托)
+  // 2. 若异常被委托 (medeleg 对应 bit 置 1) 且特权 < M, 则进入 S
+  // 3. 否则进入 M
 
   function [1:0] get_trap_target_priv;
     input [4:0] cause;
@@ -589,42 +583,42 @@ module csr_file #(
     input [XLEN-1:0] medeleg;
     begin
       `ifdef DEBUG_EXCEPTION
-      $display("[CSR_DELEG] get_trap_target_priv: cause=%0d curr_priv=%b medeleg=%h medeleg[cause]=%b",
+      $display("[CSR_DELEG] get_trap_target_priv: 原因=%0d curr_priv=%b medeleg=%h medeleg[cause]=%b",
                cause, curr_priv, medeleg, medeleg[cause]);
       `endif
-      // M-mode traps never delegate
+      // M-mode 陷入永远不委托
       if (curr_priv == 2'b11) begin
         get_trap_target_priv = 2'b11;  // M-mode
         `ifdef DEBUG_EXCEPTION
         $display("[CSR_DELEG] -> M-mode (curr_priv==M)");
         `endif
       end
-      // Check if exception is delegated to S-mode
+      // 检查异常是否委托给 监督模式
       else if (medeleg[cause] && (curr_priv <= 2'b01)) begin
-        get_trap_target_priv = 2'b01;  // S-mode
+        get_trap_target_priv = 2'b01;  // 监督模式
         `ifdef DEBUG_EXCEPTION
-        $display("[CSR_DELEG] -> S-mode (delegated)");
+        $display("[CSR_DELEG] -> 监督模式 (delegated)");
         `endif
       end
       else begin
-        get_trap_target_priv = 2'b11;  // M-mode (default)
+        get_trap_target_priv = 2'b11;  // M-mode (默认)
         `ifdef DEBUG_EXCEPTION
-        $display("[CSR_DELEG] -> M-mode (no delegation)");
+        $display("[CSR_DELEG] -> M-mode (无委托)");
         `endif
       end
     end
   endfunction
 
-  // Use actual_priv for trap delegation (not forwarded effective privilege)
-  // The trap delegation decision must be based on the ACTUAL current privilege
-  // at the time of the exception, not the forwarded privilege from a pending xRET.
+  // 使用 actual_priv 做陷入委托判断 (而非转发后的 effective_priv)
+  // 陷入委托决策必须基于异常发生时的真实特权级,
+  // 而不是来自待执行 xRET 的转发特权级。
   assign trap_target_priv = get_trap_target_priv(trap_cause, actual_priv, medeleg_r);
 
   // =========================================================================
-  // Output Assignments
+  // 输出分配
   // =========================================================================
 
-  // Select trap vector based on target privilege
+  // 选择陷入向量基于目标特权
   assign trap_vector = (trap_target_priv == 2'b01) ? stvec_r : mtvec_r;
   assign mepc_out    = mepc_r;
   assign sepc_out    = sepc_r;
@@ -633,25 +627,25 @@ module csr_file #(
   assign mstatus_mpie = mstatus_mpie_w;
   assign mstatus_spie = mstatus_spie_w;
 
-  // Privilege mode outputs
+  // 特权模式输出
   assign mpp_out     = mstatus_mpp_w;
   assign spp_out     = mstatus_spp_w;
   assign medeleg_out = medeleg_r;
 
-  // Interrupt register outputs
-  assign mip_out     = mip_value;     // Current interrupt pending (includes hardware inputs)
-  assign mie_out     = mie_r;         // Interrupt enable register
-  assign mideleg_out = mideleg_r;     // Interrupt delegation register
+  // 中断寄存器输出
+  assign mip_out     = mip_value;     // 当前中断挂起 (包括硬件输入)
+  assign mie_out     = mie_r;         // 中断使能寄存器
+  assign mideleg_out = mideleg_r;     // 中断委托寄存器
 
-  // MMU-related outputs
+  // MMU 相关输出
   assign satp_out    = satp_r;
   assign mstatus_sum = mstatus_sum_w;
   assign mstatus_mxr = mstatus_mxr_w;
 
-  // FPU status output
+  // FPU 状态输出
   assign mstatus_fs  = mstatus_fs_w;
 
-  // Floating-point CSR outputs
+  // 浮点 CSR 输出
   assign frm_out     = frm_r;
   assign fflags_out  = fflags_r;
 

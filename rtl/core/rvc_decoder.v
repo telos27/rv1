@@ -1,57 +1,56 @@
-// RVC Decoder - RISC-V Compressed Instruction Decompressor
-// Converts 16-bit compressed instructions to 32-bit standard instructions
+// RVC 解码器 - RISC-V 压缩指令解压器
+// 将 16 位压缩指令转换为 32 位标准指令
 //
-// This module implements the RISC-V C (Compressed) extension decoder.
-// It takes a 16-bit compressed instruction and expands it to the equivalent
-// 32-bit instruction that the rest of the pipeline can execute.
+// 本模块实现了 RISC-V C（Compressed，压缩）扩展的解码逻辑。
+// 它接收一条 16 位压缩指令，并将其展开为等价的 32 位指令，供后续流水线执行。
 //
-// Key features:
-// - Supports RV32C and RV64C
-// - All quadrants (Q0, Q1, Q2) supported
-// - Combinational logic (single-cycle decompression)
-// - Illegal instruction detection
+// 主要特性：
+// - 支持 RV32C 和 RV64C
+// - 支持所有象限（Q0、Q1、Q2）
+// - 组合逻辑实现（单周期解压）
+// - 非法指令检测
 
 `include "config/rv_config.vh"
 
 module rvc_decoder #(
   parameter XLEN = `XLEN
 ) (
-  input  wire [15:0] compressed_instr,     // 16-bit compressed instruction
-  input  wire        is_rv64,              // 1 = RV64 mode, 0 = RV32 mode
-  output reg  [31:0] decompressed_instr,   // 32-bit expanded instruction
-  output reg         illegal_instr,        // Illegal compressed instruction flag
-  output wire        is_compressed_out     // Pass-through of compression detection
+  input  wire [15:0] compressed_instr,     // 16 位压缩指令
+  input  wire        is_rv64,              // 1 = RV64 模式, 0 = RV32 模式
+  output reg  [31:0] decompressed_instr,   // 32 位展开指令
+  output reg         illegal_instr,        // 非法压缩指令标志
+  output wire        is_compressed_out     // 压缩检测的直通信号
 );
 
-  // Detect if instruction is compressed (opcode != 11)
+  // 检测指令是否为压缩指令（opcode != 11）
   wire [1:0] opcode = compressed_instr[1:0];
   assign is_compressed_out = (opcode != 2'b11);
 
-  // Extract common fields
+  // 提取公共字段
   wire [2:0] funct3 = compressed_instr[15:13];
   wire [1:0] funct2 = compressed_instr[6:5];
 
-  // Register fields
+  // 寄存器字段
   wire [4:0] rd     = compressed_instr[11:7];
   wire [4:0] rs1    = compressed_instr[11:7];
   wire [4:0] rs2    = compressed_instr[6:2];
 
-  // Compressed register fields (3-bit -> map to x8-x15)
+  // 压缩寄存器字段（3 位 -> 映射到 x8-x15）
   wire [2:0] rd_p   = compressed_instr[4:2];
   wire [2:0] rs1_p  = compressed_instr[9:7];
   wire [2:0] rs2_p  = compressed_instr[4:2];
 
-  // Expanded compressed registers (add 8 to get x8-x15)
+  // 展开后的压缩寄存器（加 8 得到 x8-x15）
   wire [4:0] rd_exp  = {2'b01, rd_p};
   wire [4:0] rs1_exp = {2'b01, rs1_p};
   wire [4:0] rs2_exp = {2'b01, rs2_p};
 
-  // Special registers
-  wire [4:0] x0 = 5'd0;   // Zero register
-  wire [4:0] x1 = 5'd1;   // Return address
-  wire [4:0] x2 = 5'd2;   // Stack pointer
+  // 特殊寄存器
+  wire [4:0] x0 = 5'd0;   // 零寄存器
+  wire [4:0] x1 = 5'd1;   // 返回地址
+  wire [4:0] x2 = 5'd2;   // 栈指针
 
-  // RISC-V base instruction opcodes
+  // RISC-V 基础指令操作码
   localparam OP_IMM    = 7'b0010011;
   localparam OP        = 7'b0110011;
   localparam OP_IMM_32 = 7'b0011011;
@@ -67,7 +66,7 @@ module rvc_decoder #(
   localparam LOAD_FP   = 7'b0000111;  // FLW, FLD
   localparam STORE_FP  = 7'b0100111;  // FSW, FSD
 
-  // funct3 codes
+  // funct3 编码
   localparam F3_ADD  = 3'b000;
   localparam F3_SLL  = 3'b001;
   localparam F3_SLT  = 3'b010;
@@ -84,25 +83,25 @@ module rvc_decoder #(
   localparam F3_LD   = 3'b011;
   localparam F3_SW   = 3'b010;
   localparam F3_SD   = 3'b011;
-  localparam F3_FLW  = 3'b010;  // Single-precision FP load
-  localparam F3_FLD  = 3'b011;  // Double-precision FP load
-  localparam F3_FSW  = 3'b010;  // Single-precision FP store
-  localparam F3_FSD  = 3'b011;  // Double-precision FP store
+  localparam F3_FLW  = 3'b010;  // 单精度浮点加载
+  localparam F3_FLD  = 3'b011;  // 双精度浮点加载
+  localparam F3_FSW  = 3'b010;  // 单精度浮点存储
+  localparam F3_FSD  = 3'b011;  // 双精度浮点存储
 
-  // Immediate extraction functions
-  // Note: Immediates are scrambled in compressed format for hardware efficiency
+  // 立即数提取函数
+  // 注意：立即数在压缩格式中被打乱，以提高硬件效率
 
   // C.ADDI4SPN: nzuimm[9:2]
-  // Format: 000 nzuimm[5:4|9:6|2|3] rd' 00
+  // 格式: 000 nzuimm[5:4|9:6|2|3] rd' 00
   // inst[12:11] = nzuimm[5:4], inst[10:7] = nzuimm[9:6], inst[6] = nzuimm[2], inst[5] = nzuimm[3]
-  // Reassemble: nzuimm = {nzuimm[9:6], nzuimm[5:4], nzuimm[3], nzuimm[2], 2'b00}
+  // 重新组装为: nzuimm = {nzuimm[9:6], nzuimm[5:4], nzuimm[3], nzuimm[2], 2'b00}
   wire [9:0] imm_addi4spn = {compressed_instr[10:7], compressed_instr[12:11],
                               compressed_instr[5], compressed_instr[6], 2'b00};
 
   // C.LW: offset[6:2]
-  // Format: 010 offset[5:3] rs1' offset[2|6] rd' 00
+  // 格式: 010 offset[5:3] rs1' offset[2|6] rd' 00
   // inst[12:10] = offset[5:3], inst[6] = offset[2], inst[5] = offset[6]
-  // Reassemble as: {offset[6], offset[5:3], offset[2], 2'b00}
+  // 重新组装为: {offset[6], offset[5:3], offset[2], 2'b00}
   wire [6:0] imm_lw = {compressed_instr[5], compressed_instr[12:10],
                         compressed_instr[6], 2'b00};
 
@@ -110,30 +109,30 @@ module rvc_decoder #(
   wire [7:0] imm_ld = {2'b0, compressed_instr[6:5], compressed_instr[12:10], 3'b0};
 
   // C.LWSP: offset[7:2]
-  // Format: imm[5] in bit 12, imm[4:2|7:6] in bits [6:2]
-  // bits [6:4] = uimm[4:2], bits [3:2] = uimm[7:6], bit [12] = uimm[5]
+  // 格式: imm[5] 在位 12，中 imm[4:2|7:6] 在位 [6:2]
+  // 位 [6:4] = uimm[4:2]，位 [3:2] = uimm[7:6]，位 [12] = uimm[5]
   wire [7:0] imm_lwsp = {compressed_instr[3:2], compressed_instr[12],
                           compressed_instr[6:4], 2'b00};
 
   // C.LDSP: offset[8:3] (RV64)
-  // bits [6:5] = uimm[4:3], bits [4:2] = uimm[8:6], bit [12] = uimm[5]
+  // 位 [6:5] = uimm[4:3]，位 [4:2] = uimm[8:6]，位 [12] = uimm[5]
   wire [8:0] imm_ldsp = {compressed_instr[4:2], compressed_instr[12],
                           compressed_instr[6:5], 3'b0};
 
   // C.SWSP: offset[7:2]
-  // Format: 110 offset[5:2|7:6] rs2 10
-  // inst[12:9] = offset[5:2], inst[8:7] = offset[7:6]
-  // Store format needs: imm[11:5] | rs2 | rs1 | 010 | imm[4:0] | 0100011
-  // offset[7:2] needs to be placed in imm[7:2], with imm[1:0] = 00
-  // Reassemble as: {offset[7:6], offset[5:2], 2'b00}
+  // 格式: 110 offset[5:2|7:6] rs2 10
+  // inst[12:9] = offset[5:2]，inst[8:7] = offset[7:6]
+  // 存储格式需要: imm[11:5] | rs2 | rs1 | 010 | imm[4:0] | 0100011
+  // offset[7:2] 需要放在 imm[7:2]，其中 imm[1:0] = 00
+  // 重新组装为: {offset[7:6], offset[5:2], 2'b00}
   wire [7:0] imm_swsp = {compressed_instr[8:7], compressed_instr[12:9], 2'b00};
 
   // C.SDSP: offset[8:3] (RV64)
-  // Format: 111 offset[5:3|8:6] rs2 10
-  // inst[12:10] = offset[5:3], inst[9:7] = offset[8:6]
-  // Store format needs: imm[11:5] | rs2 | rs1 | 011 | imm[4:0] | 0100011
-  // offset[8:3] needs to be placed in imm[8:3], with imm[2:0] = 000
-  // Reassemble as: {offset[8:6], offset[5:3], 3'b000}
+  // 格式: 111 offset[5:3|8:6] rs2 10
+  // inst[12:10] = offset[5:3]，inst[9:7] = offset[8:6]
+  // 存储格式需要: imm[11:5] | rs2 | rs1 | 011 | imm[4:0] | 0100011
+  // offset[8:3] 需要放在 imm[8:3]，其中 imm[2:0] = 000
+  // 重新组装为: {offset[8:6], offset[5:3], 3'b000}
   wire [8:0] imm_sdsp = {compressed_instr[9:7], compressed_instr[12:10], 3'b000};
 
   // C.ADDI/C.LI: imm[5:0]
@@ -141,10 +140,10 @@ module rvc_decoder #(
                            compressed_instr[6:2]};
 
   // C.ADDI16SP: nzimm[9:4]
-  // Format: 011 nzimm[9] 00010 nzimm[4|6|8:7|5] 01
+  // 格式: 011 nzimm[9] 00010 nzimm[4|6|8:7|5] 01
   // inst[12] = nzimm[9], inst[6] = nzimm[4], inst[5] = nzimm[6],
   // inst[4:3] = nzimm[8:7], inst[2] = nzimm[5]
-  // Reassemble as: {nzimm[9], nzimm[8:7], nzimm[6], nzimm[5], nzimm[4], 4'b0000}
+  // 重新组装为: {nzimm[9], nzimm[8:7], nzimm[6], nzimm[5], nzimm[4], 4'b0000}
   // = {inst[12], inst[4:3], inst[5], inst[2], inst[6], 4'b0000}
   wire [11:0] imm_addi16sp = {{3{compressed_instr[12]}}, compressed_instr[12],
                                compressed_instr[4:3], compressed_instr[5],
@@ -164,12 +163,12 @@ module rvc_decoder #(
   wire [6:0] shamt = is_rv64 ? shamt_64 : {1'b0, shamt_32};
 
   // C.J/C.JAL: offset[11:1]
-  // Format: 101 offset[11|4|9:8|10|6|7|3:1|5] 01
+  // 格式: 101 offset[11|4|9:8|10|6|7|3:1|5] 01
   // inst[12] = offset[11], inst[11] = offset[4], inst[10:9] = offset[9:8],
   // inst[8] = offset[10], inst[7] = offset[6], inst[6] = offset[7],
   // inst[5:3] = offset[3:1], inst[2] = offset[5]
-  // JAL format needs: imm[20|10:1|11|19:12]
-  // Reassemble offset as: {offset[11], offset[10], offset[9:8], offset[7], offset[6], offset[5], offset[4], offset[3:1], 1'b0}
+  // JAL 格式需要: imm[20|10:1|11|19:12]
+  // 重新组装为: {offset[11], offset[10], offset[9:8], offset[7], offset[6], offset[5], offset[4], offset[3:1], 1'b0}
   wire [20:0] imm_j = {{9{compressed_instr[12]}}, compressed_instr[12],
                         compressed_instr[8], compressed_instr[10:9],
                         compressed_instr[6], compressed_instr[7],
@@ -177,25 +176,25 @@ module rvc_decoder #(
                         compressed_instr[5:3], 1'b0};
 
   // C.BEQZ/C.BNEZ: offset[8:1]
-  // Format: 110/111 offset[8|4:3] rs1' offset[7:6|2:1|5] 01
+  // 格式: 110/111 offset[8|4:3] rs1' offset[7:6|2:1|5] 01
   // inst[12] = offset[8], inst[11:10] = offset[4:3], inst[6:5] = offset[7:6],
   // inst[4:3] = offset[2:1], inst[2] = offset[5]
-  // Branch format needs: imm[12|10:5|4:1|11]
-  // Reassemble: {offset[8], offset[7:6], offset[5], offset[4:3], offset[2:1], 1'b0}
-  // For branch encoding: {imm[12], imm[10:5], imm[4:1], imm[11]}
+  // Branch 格式需要: imm[12|10:5|4:1|11]
+  // 重新组装为: {offset[8], offset[7:6], offset[5], offset[4:3], offset[2:1], 1'b0}
+  // 对于分支编码: {imm[12], imm[10:5], imm[4:1], imm[11]}
   // offset[12:1] maps to imm[12:1], so imm[11] = offset[11]
   wire [12:0] imm_b = {{4{compressed_instr[12]}}, compressed_instr[12],
                         compressed_instr[6:5], compressed_instr[2],
                         compressed_instr[11:10], compressed_instr[4:3], 1'b0};
 
-  // Decompression logic
+  // 解压缩逻辑
   always @(*) begin
     illegal_instr = 1'b0;
-    decompressed_instr = 32'h00000013;  // Default: ADDI x0, x0, 0 (NOP)
+    decompressed_instr = 32'h00000013;  // 默认: ADDI x0, x0, 0 (NOP)
 
     case (opcode)
       // ================================================================
-      // Quadrant 0 (op = 00)
+      // 象限 0 (op = 00)
       // ================================================================
       2'b00: begin
         case (funct3)
@@ -218,15 +217,15 @@ module rvc_decoder #(
               // LD rd', offset(rs1')
               decompressed_instr = {4'b0, imm_ld[7:0], rs1_exp, F3_LD, rd_exp, LOAD};
             end else begin
-              // C.FLW not implemented (requires F extension)
+              // C.FLW 未实现 (需要 F 扩展)
               illegal_instr = 1'b1;
             end
           end
 
           3'b110: begin  // C.SW
             // SW rs2', offset(rs1')
-            // Use same offset encoding as C.LW
-            // Store format: imm[11:5] | rs2 | rs1 | 010 | imm[4:0] | 0100011
+            // 使用与 C.LW 相同的偏移编码
+            // 存储格式: imm[11:5] | rs2 | rs1 | 010 | imm[4:0] | 0100011
             decompressed_instr = {5'b0, imm_lw[6:5], rs2_exp, rs1_exp, F3_SW,
                                    imm_lw[4:0], STORE};
           end
@@ -234,12 +233,12 @@ module rvc_decoder #(
           3'b111: begin  // C.SD (RV64) / C.FSW (RV32+F)
             if (is_rv64) begin
               // SD rs2', offset(rs1')
-              // Use same offset encoding as C.LD
+              // 使用与 C.LD 相同的偏移编码
               // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
               decompressed_instr = {4'b0, imm_ld[7:5], rs2_exp, rs1_exp, F3_SD,
                                      imm_ld[4:0], STORE};
             end else begin
-              // C.FSW not implemented (requires F extension)
+              // C.FSW 未实现 (需要 F 扩展)
               illegal_instr = 1'b1;
             end
           end
@@ -249,7 +248,7 @@ module rvc_decoder #(
       end
 
       // ================================================================
-      // Quadrant 1 (op = 01)
+      // 象限 1 (op = 01)
       // ================================================================
       2'b01: begin
         case (funct3)
@@ -261,7 +260,7 @@ module rvc_decoder #(
               // C.ADDI: ADDI rd, rd, imm
               decompressed_instr = {imm_addi, rd, F3_ADD, rd, OP_IMM};
             end else begin
-              // Reserved (rd=x0, imm!=0)
+              // 保留 (rd=x0, imm!=0)
               illegal_instr = 1'b1;
             end
           end
@@ -272,7 +271,7 @@ module rvc_decoder #(
               if (rd != x0) begin
                 decompressed_instr = {imm_addi, rd, F3_ADD, rd, OP_IMM_32};
               end else begin
-                illegal_instr = 1'b1;  // rd must be non-zero
+                illegal_instr = 1'b1;  // rd 必须非零
               end
             end else begin
               // C.JAL: JAL x1, offset
@@ -295,27 +294,27 @@ module rvc_decoder #(
             if (rd == x2) begin
               // C.ADDI16SP: ADDI x2, x2, nzimm
               if (imm_addi16sp == 12'b0) begin
-                illegal_instr = 1'b1;  // nzimm must be non-zero
+                illegal_instr = 1'b1;  // nzimm 必须非零
               end else begin
                 decompressed_instr = {imm_addi16sp, x2, F3_ADD, x2, OP_IMM};
               end
             end else if (rd != x0) begin
               // C.LUI: LUI rd, nzimm
               if (imm_lui == 32'b0) begin
-                illegal_instr = 1'b1;  // nzimm must be non-zero
+                illegal_instr = 1'b1;  // nzimm 必须非零
               end else begin
                 decompressed_instr = {imm_lui[31:12], rd, LUI};
               end
             end else begin
-              illegal_instr = 1'b1;  // Reserved
+              illegal_instr = 1'b1;  // 保留
             end
           end
 
-          3'b100: begin  // Arithmetic/shift operations
+          3'b100: begin  // 算术/移位操作
             case (compressed_instr[11:10])
               2'b00: begin  // C.SRLI
                 if (shamt[6] && !is_rv64) begin
-                  illegal_instr = 1'b1;  // shamt[5] must be 0 in RV32
+                  illegal_instr = 1'b1;  // shamt[5] 在 RV32 中必须为 0
                 end else begin
                   // SRLI rd', rd', shamt (rd' is at bits [9:7])
                   decompressed_instr = {1'b0, shamt[5:0], rs1_exp, F3_SR, rs1_exp, OP_IMM};
@@ -327,7 +326,7 @@ module rvc_decoder #(
                   illegal_instr = 1'b1;  // shamt[5] must be 0 in RV32
                 end else begin
                   // SRAI rd', rd', shamt (rd' is at bits [9:7])
-                  // Need funct7 = 0100000 for SRAI
+                  // 需要 funct7 = 0100000 用于 SRAI
                   decompressed_instr = {7'b0100000, shamt[4:0], rs1_exp, F3_SR, rs1_exp, OP_IMM};
                 end
               end
@@ -337,7 +336,7 @@ module rvc_decoder #(
                 decompressed_instr = {imm_andi, rs1_exp, F3_AND, rs1_exp, OP_IMM};
               end
 
-              2'b11: begin  // Register-register ops
+              2'b11: begin  // 寄存器-寄存器操作
                 case ({compressed_instr[12], funct2})
                   3'b000: begin  // C.SUB
                     // SUB rd', rd', rs2' (rd'/rs1' at [9:7], rs2' at [4:2])
@@ -410,14 +409,14 @@ module rvc_decoder #(
       end
 
       // ================================================================
-      // Quadrant 2 (op = 10)
+      // 象限 2 (op = 10)
       // ================================================================
       2'b10: begin
         case (funct3)
           3'b000: begin  // C.SLLI
             if (rd != x0) begin
               if (shamt[6] && !is_rv64) begin
-                illegal_instr = 1'b1;  // shamt[5] must be 0 in RV32
+                illegal_instr = 1'b1;  // shamt[5] 在 RV32 中必须为 0
               end else begin
                 // SLLI rd, rd, shamt
                 decompressed_instr = {1'b0, shamt[5:0], rd, F3_SLL, rd, OP_IMM};
@@ -433,17 +432,17 @@ module rvc_decoder #(
               // LW rd, offset(x2)
               decompressed_instr = {4'b0, imm_lwsp[7:0], x2, F3_LW, rd, LOAD};
             end else begin
-              illegal_instr = 1'b1;  // rd must be non-zero
+              illegal_instr = 1'b1;  // rd 必须非零
             end
           end
 
           3'b001: begin  // C.FLDSP (RV32DC/RV64DC)
             // FLD rd, offset(x2)
-            // Load double-precision FP from stack
+            // 从堆栈加载双精度浮点数
             if (rd != x0) begin
               decompressed_instr = {3'b0, imm_ldsp[8:0], x2, F3_FLD, rd, LOAD_FP};
             end else begin
-              illegal_instr = 1'b1;  // rd must be non-zero
+              illegal_instr = 1'b1;  // rd 必须非零
             end
           end
 
@@ -453,15 +452,15 @@ module rvc_decoder #(
                 // LD rd, offset(x2)
                 decompressed_instr = {3'b0, imm_ldsp[8:0], x2, F3_LD, rd, LOAD};
               end else begin
-                illegal_instr = 1'b1;  // rd must be non-zero
+                illegal_instr = 1'b1;  // rd 必须非零
               end
             end else begin
               // C.FLWSP - FLW rd, offset(x2)
-              // Load single-precision FP from stack
+              // 从堆栈加载单精度浮点数
               if (rd != x0) begin
                 decompressed_instr = {4'b0, imm_lwsp[7:0], x2, F3_FLW, rd, LOAD_FP};
               end else begin
-                illegal_instr = 1'b1;  // rd must be non-zero
+                illegal_instr = 1'b1;  // rd 必须非零
               end
             end
           end
@@ -474,10 +473,10 @@ module rvc_decoder #(
                   // JALR x0, 0(rs1)
                   decompressed_instr = {12'b0, rs1, F3_ADD, x0, JALR};
                 end else begin
-                  illegal_instr = 1'b1;  // rs1 must be non-zero
+                  illegal_instr = 1'b1;  // rs1 必须非零
                 end
               end else begin
-                // C.MV: should expand to ADDI rd, rs2, 0 (not ADD rd, x0, rs2)
+                // C.MV：应当展开为 ADDI rd, rs2, 0（而不是 ADD rd, x0, rs2）
                 if (rd != x0) begin
                   // ADDI rd, rs2, 0
                   decompressed_instr = {12'b0, rs2, F3_ADD, rd, OP_IMM};
@@ -511,7 +510,7 @@ module rvc_decoder #(
 
           3'b101: begin  // C.FSDSP (RV32DC/RV64DC)
             // FSD rs2, offset(x2)
-            // Store double-precision FP to stack
+            // 存储双精度浮点数到堆栈
             // S-type: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
             decompressed_instr = {3'b0, imm_sdsp[8:5], rs2, x2, F3_FSD,
                                    imm_sdsp[4:0], STORE_FP};
@@ -532,7 +531,7 @@ module rvc_decoder #(
                                      imm_sdsp[4:0], STORE};
             end else begin
               // C.FSWSP - FSW rs2, offset(x2)
-              // Store single-precision FP to stack
+              // 存储单精度浮点数到堆栈
               decompressed_instr = {4'b0, imm_swsp[7:5], rs2, x2, F3_FSW,
                                      imm_swsp[4:0], STORE_FP};
             end
@@ -543,14 +542,14 @@ module rvc_decoder #(
       end
 
       // ================================================================
-      // Quadrant 3 (op = 11) - Not compressed (32-bit instruction)
+      // 象限 3 (op = 11) - 非压缩（32 位指令）
       // ================================================================
       2'b11: begin
-        // This is a 32-bit instruction, not compressed
-        // Not illegal - just not a compressed instruction
-        // Caller should check is_compressed_out before using decompressed output
+        // 这是一个 32 位指令，不是压缩指令
+        // 不是非法指令 - 只是非压缩指令
+        // 调用者应在使用解压缩输出之前检查 is_compressed_out
         illegal_instr = 1'b0;
-        decompressed_instr = 32'h00000013;  // Output NOP (not used for 32-bit instructions)
+        decompressed_instr = 32'h00000013;  // 输出 NOP（不用于 32 位指令）
       end
     endcase
   end

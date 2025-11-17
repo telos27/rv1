@@ -1,46 +1,46 @@
-// Floating-Point Fused Multiply-Add Unit
-// Implements FMADD.S/D, FMSUB.S/D, FNMSUB.S/D, FNMADD.S/D instructions
-// IEEE 754-2008 compliant with single rounding step (key advantage over separate ops)
-// Multi-cycle execution: 4-5 cycles
+// 浮点融合乘加单元
+// 实现 FMADD.S/D、FMSUB.S/D、FNMSUB.S/D、FNMADD.S/D 指令
+// 符合 IEEE 754-2008，仅进行一次舍入（相对分步运算的关键优势）
+// 多周期执行：4-5 个周期
 
 `include "config/rv_config.vh"
 
 module fp_fma #(
-  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32：单精度，64：双精度
 ) (
   input  wire              clk,
   input  wire              reset_n,
 
-  // Control
-  input  wire              start,          // Start operation
-  input  wire              fmt,            // Format: 0=single, 1=double
+  // 控制信号
+  input  wire              start,          // 启动运算
+  input  wire              fmt,            // 格式：0=单精度，1=双精度
   input  wire [1:0]        fma_op,         // 00: FMADD, 01: FMSUB, 10: FNMSUB, 11: FNMADD
-  input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
-  output reg               busy,           // Operation in progress
-  output reg               done,           // Operation complete (1 cycle pulse)
+  input  wire [2:0]        rounding_mode,  // IEEE 754 舍入模式
+  output reg               busy,           // 运算进行中
+  output reg               done,           // 运算完成（1 个周期脉冲）
 
-  // Operands: (rs1 * rs2) ± rs3
-  input  wire [FLEN-1:0]   operand_a,      // rs1 (multiplicand)
-  input  wire [FLEN-1:0]   operand_b,      // rs2 (multiplier)
-  input  wire [FLEN-1:0]   operand_c,      // rs3 (addend)
+  // 操作数：(rs1 * rs2) ± rs3
+  input  wire [FLEN-1:0]   operand_a,      // rs1（被乘数）
+  input  wire [FLEN-1:0]   operand_b,      // rs2（乘数）
+  input  wire [FLEN-1:0]   operand_c,      // rs3（加数）
 
-  // Result
+  // 结果
   output reg  [FLEN-1:0]   result,
 
-  // Exception flags
-  output reg               flag_nv,        // Invalid operation
-  output reg               flag_of,        // Overflow
-  output reg               flag_uf,        // Underflow
-  output reg               flag_nx         // Inexact
+  // 异常标志
+  output reg               flag_nv,        // 非法操作
+  output reg               flag_of,        // 上溢
+  output reg               flag_uf,        // 下溢
+  output reg               flag_nx         // 不精确
 );
 
-  // IEEE 754 format parameters
+  // IEEE 754 格式参数
   localparam EXP_WIDTH = (FLEN == 32) ? 8 : 11;
   localparam MAN_WIDTH = (FLEN == 32) ? 23 : 52;
   localparam BIAS = (FLEN == 32) ? 127 : 1023;
   localparam MAX_EXP = (FLEN == 32) ? 255 : 2047;
 
-  // State machine
+  // 状态机
   localparam IDLE      = 3'b000;
   localparam UNPACK    = 3'b001;
   localparam MULTIPLY  = 3'b010;
@@ -51,54 +51,54 @@ module fp_fma #(
 
   reg [2:0] state, next_state;
 
-  // Unpacked operands
+  // 反规范化后的操作数
   reg sign_a, sign_b, sign_c, sign_prod, sign_result;
   reg [EXP_WIDTH-1:0] exp_a, exp_b, exp_c;
   reg [MAN_WIDTH:0] man_a, man_b, man_c;
 
-  // Special value flags
+  // 特殊值标志
   reg is_nan_a, is_nan_b, is_nan_c;
   reg is_inf_a, is_inf_b, is_inf_c;
   reg is_zero_a, is_zero_b, is_zero_c;
 
-  // Format latching
+  // 格式锁存
   reg fmt_latched;
 
-  // Format-aware BIAS for exponent arithmetic
+  // 与格式相关的 BIAS，用于指数运算
   wire [10:0] bias_val;
   assign bias_val = (FLEN == 64 && !fmt_latched) ? 11'd127 : 11'd1023;
 
-  // Computation
-  reg [EXP_WIDTH+1:0] exp_prod;               // Product exponent
-  reg [(2*MAN_WIDTH+3):0] product;            // Product mantissa (double width)
-  reg [(2*MAN_WIDTH+5):0] aligned_c;          // Aligned addend
-  reg [(2*MAN_WIDTH+6):0] product_positioned; // Product positioned for addition
-  reg [(2*MAN_WIDTH+6):0] sum;                // Sum result
-  reg [EXP_WIDTH+1:0] exp_diff;               // Exponent difference
+  // 计算
+  reg [EXP_WIDTH+1:0] exp_prod;               // 乘积指数
+  reg [(2*MAN_WIDTH+3):0] product;            // 乘积尾数（双宽）
+  reg [(2*MAN_WIDTH+5):0] aligned_c;          // 对齐后的加数
+  reg [(2*MAN_WIDTH+6):0] product_positioned; // 定位后的乘积，用于相加
+  reg [(2*MAN_WIDTH+6):0] sum;                // 求和结果
+  reg [EXP_WIDTH+1:0] exp_diff;               // 指数差
   reg [EXP_WIDTH-1:0] exp_result;
 
-  // Rounding
+  // 舍入相关
   reg guard, round, sticky;
   reg round_up;
 
-  // Format-aware LSB for RNE rounding (tie-breaking)
-  // For single-precision in FLEN=64, mantissa is in upper bits, LSB is at sum[MAN_WIDTH+5+29]
-  // For double-precision, LSB is at sum[3] (mantissa at [54:3])
+  // 与格式相关的 LSB，用于 RNE 平分舍入
+  // FLEN=64 且单精度时，尾数在高位，LSB 位于 sum[MAN_WIDTH+5+29]
+  // 双精度：LSB 位于 sum[3]（尾数在 [54:3]）
   wire lsb_bit_fma;
   assign lsb_bit_fma = (FLEN == 64 && !fmt_latched) ? sum[MAN_WIDTH+5+29] : sum[3];
 
-  // Compute round_up combinationally for use in same cycle
+  // 组合逻辑计算 round_up，用于同一周期
   wire round_up_comb;
-  assign round_up_comb = (rounding_mode == 3'b000) ? (guard && (round || sticky || lsb_bit_fma)) :  // RNE
-                         (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :   // RDN
-                         (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :  // RUP
-                         (rounding_mode == 3'b100) ? guard : 1'b0;                                   // RMM or RTZ
+  assign round_up_comb = (rounding_mode == 3'b000) ? (guard && (round || sticky || lsb_bit_fma)) :  // RNE：最近偶数
+                         (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :   // RDN：向 -∞
+                         (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :  // RUP：向 +∞
+                         (rounding_mode == 3'b100) ? guard : 1'b0;                                   // RMM 或 RTZ
 
-  // FMA operation decode
-  wire negate_product = fma_op[1];  // FNMSUB, FNMADD negate product
-  wire subtract_addend = fma_op[0]; // FMSUB, FNMADD subtract addend
+  // FMA 操作译码
+  wire negate_product = fma_op[1];  // FNMSUB、FNMADD 取反乘积
+  wire subtract_addend = fma_op[0]; // FMSUB、FNMADD 减加数
 
-  // State machine
+  // 状态机
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
       state <= IDLE;
@@ -106,7 +106,7 @@ module fp_fma #(
       state <= next_state;
   end
 
-  // Next state logic
+  // 次态逻辑
   always @(*) begin
     case (state)
       IDLE:      next_state = start ? UNPACK : IDLE;
@@ -120,13 +120,13 @@ module fp_fma #(
     endcase
   end
 
-  // Busy and done signals
+  // busy 和 done 信号
   always @(*) begin
     busy = (state != IDLE) && (state != DONE);
     done = (state == DONE);
   end
 
-  // Main datapath
+  // 主数据通路
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       result <= {FLEN{1'b0}};
@@ -134,7 +134,7 @@ module fp_fma #(
       flag_of <= 1'b0;
       flag_uf <= 1'b0;
       flag_nx <= 1'b0;
-      // Initialize working registers to prevent X propagation
+      // 初始化工作寄存器以避免 X 传播
       sign_a <= 1'b0;
       sign_b <= 1'b0;
       sign_c <= 1'b0;
@@ -169,17 +169,17 @@ module fp_fma #(
       case (state)
 
         // ============================================================
-        // UNPACK: Extract sign, exponent, mantissa from all 3 operands
+        // UNPACK：从 3 个操作数中提取符号、指数和尾数
         // ============================================================
         UNPACK: begin
-          // Latch format for entire operation
+          // 为整个操作锁存格式
           fmt_latched <= fmt;
 
-          // Format-aware extraction for FLEN=64
+          // 针对 FLEN=64 的格式相关提取
           if (FLEN == 64) begin
             if (fmt) begin
-              // Double-precision: use bits [63:0]
-              // Operand A (rs1)
+              // 双精度：使用 [63:0] 位
+              // 操作数 A (rs1)
               sign_a <= operand_a[63];
               exp_a <= operand_a[62:52];
               man_a <= (operand_a[62:52] == 0) ?
@@ -189,7 +189,7 @@ module fp_fma #(
               is_inf_a <= (operand_a[62:52] == 11'h7FF) && (operand_a[51:0] == 0);
               is_zero_a <= (operand_a[62:0] == 0);
 
-              // Operand B (rs2)
+              // 操作数 B (rs2)
               sign_b <= operand_b[63];
               exp_b <= operand_b[62:52];
               man_b <= (operand_b[62:52] == 0) ?
@@ -199,7 +199,7 @@ module fp_fma #(
               is_inf_b <= (operand_b[62:52] == 11'h7FF) && (operand_b[51:0] == 0);
               is_zero_b <= (operand_b[62:0] == 0);
 
-              // Operand C (rs3)
+              // 操作数 C (rs3)
               sign_c <= operand_c[63] ^ subtract_addend;
               exp_c <= operand_c[62:52];
               man_c <= (operand_c[62:52] == 0) ?
@@ -209,8 +209,8 @@ module fp_fma #(
               is_inf_c <= (operand_c[62:52] == 11'h7FF) && (operand_c[51:0] == 0);
               is_zero_c <= (operand_c[62:0] == 0);
             end else begin
-              // Single-precision: use bits [31:0] (NaN-boxed in [63:32])
-              // Operand A (rs1)
+              // 单精度：使用 [31:0] 位（NaN 被包装在 [63:32] 中）
+              // 操作数 A (rs1)
               sign_a <= operand_a[31];
               exp_a <= {3'b000, operand_a[30:23]};
               man_a <= (operand_a[30:23] == 0) ?
@@ -220,7 +220,7 @@ module fp_fma #(
               is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
               is_zero_a <= (operand_a[30:0] == 0);
 
-              // Operand B (rs2)
+              // 操作数 B (rs2)
               sign_b <= operand_b[31];
               exp_b <= {3'b000, operand_b[30:23]};
               man_b <= (operand_b[30:23] == 0) ?
@@ -230,7 +230,7 @@ module fp_fma #(
               is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
               is_zero_b <= (operand_b[30:0] == 0);
 
-              // Operand C (rs3)
+              // 操作数 C (rs3)
               sign_c <= operand_c[31] ^ subtract_addend;
               exp_c <= {3'b000, operand_c[30:23]};
               man_c <= (operand_c[30:23] == 0) ?
@@ -241,8 +241,8 @@ module fp_fma #(
               is_zero_c <= (operand_c[30:0] == 0);
             end
           end else begin
-            // FLEN=32: always single-precision
-            // Operand A (rs1)
+            // FLEN=32：始终为单精度
+            // 操作数 A (rs1)
             sign_a <= operand_a[31];
             exp_a <= {3'b000, operand_a[30:23]};
             man_a <= (operand_a[30:23] == 0) ?
@@ -252,7 +252,7 @@ module fp_fma #(
             is_inf_a <= (operand_a[30:23] == 8'hFF) && (operand_a[22:0] == 0);
             is_zero_a <= (operand_a[30:0] == 0);
 
-            // Operand B (rs2)
+            // 操作数 B (rs2)
             sign_b <= operand_b[31];
             exp_b <= {3'b000, operand_b[30:23]};
             man_b <= (operand_b[30:23] == 0) ?
@@ -262,7 +262,7 @@ module fp_fma #(
             is_inf_b <= (operand_b[30:23] == 8'hFF) && (operand_b[22:0] == 0);
             is_zero_b <= (operand_b[30:0] == 0);
 
-            // Operand C (rs3)
+            // 操作数 C (rs3)
             sign_c <= operand_c[31] ^ subtract_addend;
             exp_c <= {3'b000, operand_c[30:23]};
             man_c <= (operand_c[30:23] == 0) ?
@@ -275,12 +275,12 @@ module fp_fma #(
         end
 
         // ============================================================
-        // MULTIPLY: Compute product (rs1 * rs2)
+        // MULTIPLY：计算乘积 (rs1 * rs2)
         // ============================================================
         MULTIPLY: begin
-          // Handle special cases
+          // 处理特殊情况
           if (is_nan_a || is_nan_b || is_nan_c) begin
-            // NaN propagation
+            // NaN 传播
             if (FLEN == 64 && !fmt_latched)
               result <= {32'hFFFFFFFF, 32'h7FC00000};
             else if (FLEN == 64 && fmt_latched)
@@ -290,7 +290,7 @@ module fp_fma #(
             flag_nv <= 1'b1;
             state <= DONE;
           end else if ((is_inf_a && is_zero_b) || (is_zero_a && is_inf_b)) begin
-            // 0 × ∞: Invalid
+            // 0 × ∞：非法
             if (FLEN == 64 && !fmt_latched)
               result <= {32'hFFFFFFFF, 32'h7FC00000};
             else if (FLEN == 64 && fmt_latched)
@@ -301,7 +301,7 @@ module fp_fma #(
             state <= DONE;
           end else if ((is_inf_a || is_inf_b) && is_inf_c &&
                        ((sign_a ^ sign_b ^ negate_product) != sign_c)) begin
-            // ∞ + (-∞): Invalid
+            // ∞ + (-∞)：非法
             if (FLEN == 64 && !fmt_latched)
               result <= {32'hFFFFFFFF, 32'h7FC00000};
             else if (FLEN == 64 && fmt_latched)
@@ -311,7 +311,7 @@ module fp_fma #(
             flag_nv <= 1'b1;
             state <= DONE;
           end else if (is_inf_a || is_inf_b || is_inf_c) begin
-            // Result is ±∞
+            // 结果为 ±∞
             if (is_inf_c)
               sign_result <= sign_c;
             else
@@ -334,7 +334,7 @@ module fp_fma #(
               result <= {sign_result, 31'h0};
             state <= DONE;
           end else if (is_zero_a || is_zero_b) begin
-            // Product is 0, return addend
+            // 乘积为 0，返回加数
             `ifdef DEBUG_FPU
             $display("[FMA_SPECIAL] Product is zero, returning addend: sign_c=%b exp_c=%h man_c=%h", sign_c, exp_c, man_c);
             `endif
@@ -346,25 +346,25 @@ module fp_fma #(
               result <= {sign_c, exp_c[7:0], man_c[51:29]};
             state <= DONE;
           end else if (is_zero_c) begin
-            // Addend is 0, return product
+            // 加数为 0，仅返回乘积
             `ifdef DEBUG_FPU
             $display("[FMA_SPECIAL] Addend is zero, computing product only");
             `endif
             sign_prod <= sign_a ^ sign_b ^ negate_product;
             exp_prod <= exp_a + exp_b - bias_val;
-            // Store 48-bit product directly - we'll position it during ADD
+            // 仅存储 48 位乘积——在 ADD 阶段再定位
             product <= man_a * man_b;
           end else begin
-            // Normal multiplication
+            // 正常乘法
             sign_prod <= sign_a ^ sign_b ^ negate_product;
-            // Store 48-bit product directly - we'll position it during ADD
+            // 仅存储 48 位乘积——在 ADD 阶段再定位
             product <= man_a * man_b;
             exp_prod <= exp_a + exp_b - bias_val;
           end
         end
 
         // ============================================================
-        // ADD: Add product and addend (single rounding point!)
+        // ADD：对乘积与加数相加（单一舍入点）
         // ============================================================
         ADD: begin
           `ifdef DEBUG_FPU
@@ -372,100 +372,100 @@ module fp_fma #(
                    exp_prod, exp_c, man_c, product);
           `endif
 
-          // Align operands by exponent
-          // Product is 48 bits (from man_a * man_b)
-          // man_c is 24 bits
-          // Strategy: Position both in 53-bit sum register, aligned by their exponents
+          // 按指数对齐操作数
+          // product 为 48 位（man_a * man_b）
+          // man_c 为 24 位
+          // 策略：将两者都放入 53 位加法寄存器中，并按各自指数对齐
           //
-          // Key insight: product and addend must be aligned so that equal exponents
-          // have their leading 1's at the SAME bit position in the sum register.
-          // When exponents differ, the smaller one is shifted right.
+          // 关键要点：乘积和加数必须对齐，使得在指数相等时，
+          // 它们的隐藏 1 位在 sum 寄存器中的位置相同。
+          // 当指数不同，较小指数一方右移对齐。
           //
-          // Use blocking assignments (=) for intermediate computations
+          // 中间计算使用阻塞赋值（=）
           //
-          // For FLEN=64: man_c is 53 bits with leading bit at position 52
-          // After product positioning (>>53), product has leading bit at ~51
-          // So man_c also needs to be positioned with leading bit at ~51
+          // 对于 FLEN=64：man_c 为 53 位，最高有效位在位置 52
+          // 在对乘积做 (>>53) 定位后，乘积的最高有效位大约在位置 51
+          // 因此 man_c 也需要被定位，使其最高有效位大约在位置 51
           //
-          // Strategy: Position man_c similarly - shift LEFT to bit 51, then apply exp_diff
+          // 策略：以相似方式定位 man_c —— 先左移到 bit 51，然后再应用 exp_diff
 
           if (exp_prod >= exp_c) begin
             exp_result = exp_prod;
             exp_diff = exp_prod - exp_c;
 
-            // Product has larger exponent, so it sets the reference position
-            // man_c needs to be positioned at same reference, then shifted right by exp_diff
+            // 乘积具有更大的指数，因此它设置了参考位置
+            // man_c 需要在相同的参考位置对齐，然后根据 exp_diff 右移
             if (exp_diff > (2*MAN_WIDTH + 6))
-              aligned_c = {1'b0, {(2*MAN_WIDTH+5){1'b0}}, 1'b1};  // Sticky bit only
+              aligned_c = {1'b0, {(2*MAN_WIDTH+5){1'b0}}, 1'b1};  // 仅保留粘滞位
             else begin
-              // For FLEN=64:
-              // - Double-precision: man_c[52] is leading bit, but product leading bit is at 55 after positioning
-              //   So we need to shift man_c LEFT by 3, then RIGHT by exp_diff: net = shift left by (3-exp_diff)
-              //   Actually simpler: position man_c to match product's position, then shift by exp_diff
-              //   Product positioned with leading bit at [~55], so man_c needs same positioning
-              // - Single-precision: man_c[52] has padding, product at 51 → shift by exp_diff+1
+              // 对于 FLEN=64：
+              // - 双精度：man_c[52] 是最高位，但乘积在定位后最高位在 55
+              //   因此我们需要将 man_c 左移 3 位，然后右移 exp_diff：净效果是左移 (3-exp_diff)
+              //   实际上更简单：将 man_c 定位与乘积的定位相同，然后右移 exp_diff
+              //   乘积定位后最高位在 [~55]，因此 man_c 需要相同的定位
+              // - 单精度：man_c[52] 有填充，乘积在 51 → 左移 exp_diff+1
               if (FLEN == 64) begin
                 if (fmt_latched)
-                  aligned_c = ({man_c, 3'b0} >> exp_diff);  // Double-precision: shift left by 3 to align, then right by exp_diff
+                  aligned_c = ({man_c, 3'b0} >> exp_diff);  // 双精度：先左移 3 位对齐，然后右移 exp_diff
                 else
-                  aligned_c = (man_c >> (exp_diff + 1));  // Single-precision: product 1 bit lower
+                  aligned_c = (man_c >> (exp_diff + 1));  // 单精度：乘积低 1 位
               end else
-                aligned_c = ({man_c[MAN_WIDTH:0], 28'b0} >> exp_diff);  // FLEN=32 case
+                aligned_c = ({man_c[MAN_WIDTH:0], 28'b0} >> exp_diff);  // FLEN=32 情况
             end
           end else begin
             exp_result = exp_c;
             exp_diff = exp_c - exp_prod;
 
-            // Addend has larger exponent
-            // Shift product right by exp_diff relative to addend position
+            // 加数具有更大的指数
+            // 相对于加数位置，右移乘积 exp_diff 位
             if (exp_diff > (2*MAN_WIDTH + 6))
-              product = {1'b0, {(2*MAN_WIDTH+3){1'b0}}, 1'b1};  // Sticky bit only
+              product = {1'b0, {(2*MAN_WIDTH+3){1'b0}}, 1'b1};  // 仅保留粘滞位
             else
               product = product >> exp_diff;
 
-            // Position man_c to match product positioning
+            // 将 man_c 定位到与乘积对齐
             if (FLEN == 64) begin
               if (fmt_latched)
-                aligned_c = {man_c, 3'b0};  // Double-precision: shift left by 3 to match product position at [55]
+                aligned_c = {man_c, 3'b0};  // 双精度：左移 3 位以匹配乘积在 [55] 的位置
               else
-                aligned_c = man_c;  // Single-precision: already aligned
+                aligned_c = man_c;  // 单精度：已对齐
             end else
               aligned_c = {man_c, 28'b0};
           end
 
-          // Perform addition/subtraction
-          // Position product to have leading bit at correct sum position
+          // 执行加/减
+          // 将乘积定位到和寄存器期望的最高位位置
           //
-          // Product is (MAN_WIDTH+1) × (MAN_WIDTH+1) = 106 bits for FLEN=64
-          // Leading bit is at position 104 for products >= 2.0, or 103 for products < 2.0
+          // 当 FLEN=64 时，乘积宽度为 (MAN_WIDTH+1) × (MAN_WIDTH+1) = 106 位
+          // 对于乘积 >= 2.0 时，其最高有效位在 104 位；对于乘积 < 2.0 时，在 103 位
           //
-          // For double-precision: Need leading bit at [52] to extract 52-bit mantissa from [51:0]
-          // For single-precision with FLEN=64: Need leading bit at [51] to extract 23-bit mantissa from [50:28]
+          // 对于双精度：需要把最高有效位对齐到 [52]，以便从 [51:0] 提取 52 位尾数
+          // 对于 FLEN=64 的单精度：需要把最高有效位对齐到 [51]，以便从 [50:28] 提取 23 位尾数
           //
-          // Note: For single-precision with FLEN=64, mantissas have 29-bit padding,
-          // but the multiplication result still has leading bit at position 104-105.
+          // 注意：对于单精度与 FLEN=64，尾数有 29 位填充，
+          // 但乘法结果的最高位仍在 104-105 位置。
 
           if (FLEN == 64) begin
             if (fmt_latched) begin
-              // Double-precision: Shift product right by 49 to position leading bit at [55]
-              // This leaves room for 52-bit mantissa at [54:3] and GRS bits at [2:0]
+              // 双精度：右移 49 位以将最高位定位到 [55]
+              // 这为 [54:3] 提供了 52 位尾数的空间，[2:0] 为 GRS 位
               product_positioned = product >> 49;
             end else begin
-              // Single-precision: Shift product right by 53 to position leading bit at [51]
+              // 单精度：右移 53 位以将最高位定位到 [51]
               product_positioned = product >> 53;
             end
           end else begin
-            // FLEN=32: product is 48 bits (24×24), leading bit at position 46
-            // Shift LEFT by 5 to position at [51]
+            // FLEN=32：乘积为 48 位（24×24），最高位在 46 位置
+            // 左移 5 位以将其定位到 [51]
             product_positioned = product << 5;
           end
 
           if (sign_prod == sign_c) begin
-            // Same sign: add magnitudes
+            // 符号相同：相加幅度
             sum <= product_positioned + aligned_c;
             sign_result <= sign_prod;
           end else begin
-            // Different signs: subtract magnitudes
+            // 符号不同：相减幅度
             if (product_positioned >= aligned_c) begin
               sum <= product_positioned - aligned_c;
               sign_result <= sign_prod;
@@ -487,10 +487,10 @@ module fp_fma #(
         end
 
         // ============================================================
-        // NORMALIZE: Shift result to normalized form
+        // NORMALIZE：将结果规格化
         // ============================================================
         NORMALIZE: begin
-          // Check for zero result
+          // 零结果检查
           if (sum == 0) begin
             if (FLEN == 64 && !fmt_latched)
               result <= {32'hFFFFFFFF, sign_result, 31'h0};
@@ -500,26 +500,26 @@ module fp_fma #(
               result <= {sign_result, 31'h0};
             state <= DONE;
           end
-          // Check for overflow (carry out beyond normalized position)
-          // For double-precision: normalized at 52, overflow at 53
-          // For single-precision: normalized at 51, overflow at 52
+          // 溢出检测：若在规格化位置以外产生进位
+          // 双精度：规格化位为 52，对应 sum[55] 为 1
+          // 单精度：规格化位为 51
           else if (FLEN == 64 && fmt_latched && sum[56]) begin
-            // Double-precision overflow
+            // 双精度溢出
             sum <= sum >> 1;
             exp_result <= exp_result + 1;
-            // After shift, leading bit at [55], mantissa at [54:3], GRS at [2:0]
+            // 移位后，最高位在 [55]，尾数在 [54:3]，[2:0] 为 GRS 位
             guard <= sum[2];
             round <= sum[1];
             sticky <= sum[0];
           end else if (FLEN == 64 && !fmt_latched && sum[52]) begin
-            // Single-precision overflow
+            // 单精度溢出
             sum <= sum >> 1;
             exp_result <= exp_result + 1;
-            guard <= sum[29];  // After shift, guard at bit 29 for single-precision
+            guard <= sum[29];  // 移位后，单精度的守卫位在 29 位
             round <= sum[28];
             sticky <= |sum[27:0];
           end
-          // For FLEN=32: Check overflow at old position
+          // 对于 FLEN=32：检查旧位置的溢出
           else if (FLEN == 32 && sum[(2*MAN_WIDTH+6)]) begin
             sum <= sum >> 1;
             exp_result <= exp_result + 1;
@@ -527,40 +527,40 @@ module fp_fma #(
             round <= 1'b0;
             sticky <= 1'b0;
           end
-          // Check if leading 1 is at normalized position
-          // Double-precision: leading bit at 52
-          // Single-precision: leading bit at 51
+          // 检查最高位是否在规格化位置
+          // 双精度：最高位在 52
+          // 单精度：最高位在 51
           else if (FLEN == 64 && fmt_latched && sum[55]) begin
-            // Double-precision already normalized - leading 1 at bit 55
-            // Mantissa is at [54:3], GRS at [2:0]
+            // 双精度已规格化 - 最高位在 55 位
+            // 尾数在 [54:3]，GRS 在 [2:0] 位
             guard <= sum[2];
             round <= sum[1];
             sticky <= sum[0];
             state <= ROUND;
           end else if (FLEN == 64 && !fmt_latched && sum[51]) begin
-            // Single-precision already normalized - leading 1 at bit 51
-            // Sum[50:28] contains the 23-bit mantissa
-            // GRS at bits [27:25]
+            // 单精度已规格化 - 最高位在 51 位
+            // sum[50:28] 包含 23 位尾数
+            // GRS 在 [27:25] 位
             guard <= sum[27];
             round <= sum[26];
             sticky <= |sum[25:0];
             state <= ROUND;
           end
-          // For FLEN=32: Check normalized position at bit (2*MAN_WIDTH+5)
+          // 对于 FLEN=32：检查在 (2*MAN_WIDTH+5) 位的规格化位置
           else if (FLEN == 32 && sum[(2*MAN_WIDTH+5)]) begin
-            // FLEN=32 normalized case
+            // FLEN=32 规格化情况
             guard <= sum[MAN_WIDTH+4];
             round <= sum[MAN_WIDTH+3];
             sticky <= |sum[MAN_WIDTH+2:0];
           end
-          // Leading 1 is below normalized position - need to shift left (can happen after subtraction)
+          // 最高位低于规格化位置，则左移（减法后可能发生）
           else begin
             sum <= sum << 1;
             exp_result <= exp_result - 1;
-            // Stay in NORMALIZE state to continue shifting if needed
+            // 保持在 NORMALIZE 状态以便继续移位（如有必要）
           end
 
-          // Check for overflow
+          // 检查溢出
           if (exp_result >= MAX_EXP) begin
             flag_of <= 1'b1;
             flag_nx <= 1'b1;
@@ -575,10 +575,10 @@ module fp_fma #(
         end
 
         // ============================================================
-        // ROUND: Apply rounding mode (SINGLE ROUNDING - key advantage!)
+        // ROUND：应用舍入模式（单次舍入——关键优势）
         // ============================================================
         ROUND: begin
-          // Store round_up decision for debug (registered version)
+          // 保存 round_up 的寄存版本，便于调试
           round_up <= round_up_comb;
 
           `ifdef DEBUG_FPU
@@ -595,14 +595,14 @@ module fp_fma #(
                    guard, round, sticky, rounding_mode, round_up_comb);
           `endif
 
-          // Apply rounding using combinational value
-          // Extract mantissa bits based on format
-          // Double-precision: leading bit at 52, mantissa at [51:0]
-          // Single-precision: leading bit at 51, mantissa is at sum[50:28]
+          // 使用组合计算的 round_up 进行舍入
+          // 按格式提取尾数位
+          // 双精度：最高位在 52，尾数在 [51:0]
+          // 单精度：最高位在 51，尾数在 sum[50:28]
           if (FLEN == 64 && !fmt_latched) begin
-            // Single-precision in 64-bit register (NaN-boxed)
-            // Extract 23-bit mantissa from sum[50:28]
-            // Leading bit is implicit 1 at position 51
+            // 单精度在 64 位寄存器中（NaN 被包装）
+            // 从 sum[50:28] 中提取 23 位尾数
+            // 最高位在 51 位置隐含 1
             if (round_up_comb) begin
               result <= {32'hFFFFFFFF, sign_result, exp_result[7:0],
                          sum[50:28] + 1'b1};
@@ -611,17 +611,17 @@ module fp_fma #(
                          sum[50:28]};
             end
           end else if (FLEN == 64 && fmt_latched) begin
-            // Double-precision in 64-bit register
-            // Extract 52-bit mantissa from sum[54:3]
-            // Leading bit is implicit 1 at position 55
+            // 双精度在 64 位寄存器中
+            // 从 sum[54:3] 中提取 52 位尾数
+            // 最高位在 55 位置隐含 1
             if (round_up_comb) begin
               result <= {sign_result, exp_result[10:0], sum[54:3] + 1'b1};
             end else begin
               result <= {sign_result, exp_result[10:0], sum[54:3]};
             end
           end else begin
-            // FLEN=32: single-precision in 32-bit register
-            // Extract 23-bit mantissa
+            // FLEN=32：单精度在 32 位寄存器中
+            // 提取 23 位尾数
             if (round_up_comb) begin
               result <= {sign_result, exp_result[7:0],
                          sum[25:3] + 1'b1};
@@ -631,15 +631,15 @@ module fp_fma #(
             end
           end
 
-          // Set inexact flag
+          // 置不精确标志
           flag_nx <= guard || round || sticky;
         end
 
         // ============================================================
-        // DONE: Hold result for 1 cycle
+        // DONE：保持结果 1 个周期
         // ============================================================
         DONE: begin
-          // Just hold result
+          // 仅保持结果
         end
 
       endcase

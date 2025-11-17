@@ -1,50 +1,50 @@
-# Official RISC-V Compliance Testing - Quick Start Guide
+# 官方 RISC-V 兼容性测试 - 快速上手指南
 
 ## TL;DR
 
 ```bash
-# 1. Build all tests (one time)
+# 1. 构建所有测试（一次性）
 ./tools/build_riscv_tests.sh
 
-# 2. Run tests
-./tools/run_official_tests.sh i        # RV32I tests
-./tools/run_official_tests.sh m        # M extension
-./tools/run_official_tests.sh a        # A extension
-./tools/run_official_tests.sh f        # F extension
-./tools/run_official_tests.sh d        # D extension
-./tools/run_official_tests.sh c        # C extension
-./tools/run_official_tests.sh all      # All extensions
+# 2. 运行测试
+./tools/run_official_tests.sh i        # RV32I 测试
+./tools/run_official_tests.sh m        # M 扩展
+./tools/run_official_tests.sh a        # A 扩展
+./tools/run_official_tests.sh f        # F 扩展
+./tools/run_official_tests.sh d        # D 扩展
+./tools/run_official_tests.sh c        # C 扩展
+./tools/run_official_tests.sh all      # 所有扩展
 ```
 
-## What's Available
+## 可用内容
 
-✅ **81 official RISC-V tests** ready to run:
-- 42 RV32I (Base Integer)
-- 8 RV32M (Multiply/Divide)
-- 10 RV32A (Atomic)
-- 11 RV32F (Single-Precision FP)
-- 9 RV32D (Double-Precision FP)
-- 1 RV32C (Compressed)
+✅ **81 个官方 RISC-V 测试** 可直接运行：
+- 42 个 RV32I（基础整数）
+- 8 个 RV32M（乘除）
+- 10 个 RV32A（原子）
+- 11 个 RV32F（单精度浮点）
+- 9 个 RV32D（双精度浮点）
+- 1 个 RV32C（压缩）
 
-## Quick Examples
+## 快速示例
 
 ```bash
-# Test one specific instruction
+# 测试某一条具体指令
 ./tools/run_official_tests.sh i add
 
-# Test all base integer instructions
+# 测试全部基础整数指令
 ./tools/run_official_tests.sh i
 
-# Test multiply/divide
+# 测试乘除扩展
 ./tools/run_official_tests.sh m
 
-# Run EVERYTHING
+# 运行所有测试
 ./tools/run_official_tests.sh all
 ```
 
-## What You'll See
+## 输出示例
 
-### Successful Test
+### 测试成功
 ```
 ==========================================
 RV1 Official RISC-V Compliance Tests
@@ -63,53 +63,53 @@ Failed: 0
 Pass rate: 100%
 ```
 
-### Failed Test
+### 测试失败
 ```
   rv32ui-p-add...                FAILED (gp=6)
 ```
-(gp value indicates which test number failed)
+（gp 的值表示第几个子测试失败）
 
-### Timeout
+### 超时
 ```
   rv32ui-p-add...                TIMEOUT/ERROR
 ```
-(Check `sim/official-compliance/rv32ui-p-add.log` for details)
+（查看 `sim/official-compliance/rv32ui-p-add.log` 获取详情）
 
-## Where Things Are
+## 文件位置
 
 ```
-riscv-tests/isa/              # Test binaries (ELF format)
-tests/official-compliance/    # Converted hex files
-sim/official-compliance/      # Simulation logs and results
-tools/                        # Scripts
-docs/OFFICIAL_COMPLIANCE_TESTING.md  # Full documentation
+riscv-tests/isa/              # 测试二进制（ELF 格式）
+tests/official-compliance/    # 转换后的 hex 文件
+sim/official-compliance/      # 仿真日志与结果
+tools/                        # 脚本
+docs/OFFICIAL_COMPLIANCE_TESTING.md  # 完整文档
 ```
 
-## Current Status
+## 当前状态
 
-**Infrastructure**: ✅ Complete (100%)
-**Tests Built**: ✅ 81/81 tests
-**Tests Passing**: ⚠️ Debugging needed
+**基础设施**：✅ 完成 (100%)  
+**已构建测试**：✅ 81/81 个  
+**通过测试数**：⚠️ 仍需调试
 
-Some tests currently timeout due to possible CSR/trap handling differences. See full documentation for debugging steps.
+部分测试目前会超时，可能由于 CSR/陷入处理行为差异。调试步骤见完整文档。
 
-## Get Help
+## 获取帮助
 
-- **Full Documentation**: `docs/OFFICIAL_COMPLIANCE_TESTING.md`
-- **Check logs**: `sim/official-compliance/<test>.log`
-- **Enable debug**: Edit `tb/integration/tb_core_pipelined.v` line 88
+- **完整文档**：`docs/OFFICIAL_COMPLIANCE_TESTING.md`
+- **查看日志**：`sim/official-compliance/<test>.log`
+- **启用调试**：编辑 `tb/integration/tb_core_pipelined.v` 第 88 行
 
-## Next Steps
+## 接下来做什么
 
-The infrastructure is ready! Next phase is debugging why tests hang:
+基础设施已经就绪！下一阶段是调试测试卡死的原因：
 
-1. Enable verbose PC tracing
-2. Check CSR register implementation
-3. Add PMP stub registers
-4. Verify trap handling
+1. 启用详细 PC 跟踪
+2. 检查 CSR 寄存器实现
+3. 添加 PMP 占位寄存器
+4. 验证陷入处理
 
-See `docs/OFFICIAL_COMPLIANCE_TESTING.md` for detailed debugging guide.
+详见 `docs/OFFICIAL_COMPLIANCE_TESTING.md` 中的详细调试指南。
 
 ---
-**Created**: 2025-10-12
-**Status**: Infrastructure Complete, Debugging Phase
+**创建时间**：2025-10-12  
+**状态**：基础设施完成，进入调试阶段

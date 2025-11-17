@@ -1,7 +1,7 @@
-// dmem_bus_adapter.v - Bus Adapter for Data Memory
-// Adapts the data_memory module to the simple_bus interface
-// Author: RV1 Project
-// Date: 2025-10-27
+// dmem_bus_adapter.v - 数据存储器总线适配器
+// 将 data_memory 模块适配到 simple_bus 接口
+// 作者: RV1 项目组
+// 日期: 2025-10-27
 
 `include "config/rv_config.vh"
 
@@ -14,7 +14,7 @@ module dmem_bus_adapter #(
   input  wire             clk,
   input  wire             reset_n,
 
-  // Bus slave interface
+  // 总线从设备接口
   input  wire             req_valid,
   input  wire [XLEN-1:0]  req_addr,
   input  wire [63:0]      req_wdata,
@@ -24,16 +24,16 @@ module dmem_bus_adapter #(
   output wire [63:0]      req_rdata
 );
 
-  // Session 114: Registered memory has 1-cycle read latency
-  // - Writes: Complete in 0 cycles (ready immediately)
-  // - Reads: Complete in 1 cycle (ready next cycle after request accepted)
-  // This matches FPGA BRAM behavior with registered outputs
+  // Session 114：寄存器化存储器具有 1 个周期的读延迟
+  // - 写：0 周期完成（立即 ready）
+  // - 读：1 周期完成（请求被接受的下一个周期 ready）
+  // 这与 FPGA BRAM 带寄存器输出的行为一致
   //
-  // Protocol:
-  // Cycle N:   req_valid=1, req_we=0 (read request) → req_ready=0 (not ready yet)
-  // Cycle N+1: req_valid=1 (still requesting) → req_ready=1 (data now ready)
+  // 协议：
+  // 周期 N:   req_valid=1, req_we=0（读请求） → req_ready=0（尚未准备好）
+  // 周期 N+1: req_valid=1（仍在请求） → req_ready=1（数据已经准备好）
   //
-  // The CPU will stall for one cycle when req_ready=0, then proceed when req_ready=1
+  // 当 req_ready=0 时，CPU 会停顿一个周期，在 req_ready=1 时继续
 
   reg read_in_progress_r;
 
@@ -41,24 +41,24 @@ module dmem_bus_adapter #(
     if (!reset_n) begin
       read_in_progress_r <= 1'b0;
     end else begin
-      // Set when we accept a read request, clear when ready
+      // 在接受一个读请求时置位，在数据准备好时清零
       if (req_valid && !req_we && !read_in_progress_r) begin
-        // New read request - will take 1 cycle
+        // 新的读请求——将会花费 1 个周期
         read_in_progress_r <= 1'b1;
       end else if (read_in_progress_r) begin
-        // Read completes after 1 cycle
+        // 读在 1 个周期后完成
         read_in_progress_r <= 1'b0;
       end
     end
   end
 
-  // Ready signal:
-  // - Writes: Always ready immediately (0-cycle latency)
-  // - Reads: NOT ready on first cycle (req_valid && !req_we && !read_in_progress)
-  //          Ready on second cycle (read_in_progress_r)
+  // ready 信号：
+  // - 写：总是立即 ready（0 周期延迟）
+  // - 读：在第一个周期不 ready（req_valid && !req_we && !read_in_progress）
+  //        在第二个周期 ready（read_in_progress_r 为 1）
   assign req_ready = req_we || read_in_progress_r;
 
-  // Instantiate data memory
+  // 实例化数据存储器
   data_memory #(
     .XLEN(XLEN),
     .FLEN(FLEN),

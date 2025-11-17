@@ -1,120 +1,120 @@
-# Session Summary: Privilege Mode Testing Framework
+# 会话总结：特权模式测试框架
 
-**Session Date**: 2025-10-23
-**Duration**: ~2.5 hours
-**Status**: ✅ Complete - Ready for Implementation
-
----
-
-## 🎯 Session Goals (Achieved)
-
-1. ✅ Analyze current privilege mode test coverage
-2. ✅ Identify critical gaps in M/S/U mode testing
-3. ✅ Design comprehensive test suite
-4. ✅ Create privilege test macro library
-5. ✅ Document complete implementation plan
-6. ✅ Prepare for next session
+**会话日期**: 2025-10-23  
+**时长**: ~2.5 小时  
+**状态**: ✅ 完成 - 已准备好实施
 
 ---
 
-## 📦 Deliverables
+## 🎯 会话目标（已完成）
 
-### 1. Documentation (4 comprehensive documents)
-
-**PRIVILEGE_TEST_ANALYSIS.md** (5,000+ words)
-- Gap analysis of current privilege mode testing
-- Identified 18 existing tests (basic M/S coverage)
-- Found critical gaps:
-  - U-mode: Almost zero testing (HIGHEST PRIORITY)
-  - Interrupts: mideleg completely untested
-  - State machine: MPIE/SPIE transitions incomplete
-  - Exception coverage: Only 2/15 cause codes tested
-  - CSR constraints: WARL semantics not verified
-- Designed 7-phase, 34-test comprehensive suite
-
-**PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md** (15,000+ words)
-- Complete implementation plan with code examples
-- Phase-by-phase breakdown:
-  - Phase 1: U-Mode Fundamentals (6 tests) - CRITICAL
-  - Phase 2: Status State Machine (5 tests) - HIGH
-  - Phase 3: Interrupt Handling (6 tests) - HIGH
-  - Phase 4: Exception Coverage (8 tests) - MEDIUM
-  - Phase 5: CSR Edge Cases (4 tests) - MEDIUM
-  - Phase 6: Delegation Edge Cases (3 tests) - LOW
-  - Phase 7: Stress & Regression (2 tests) - LOW
-- Detailed test specifications with assembly templates
-- Validation strategies and success criteria
-- Debugging guides and troubleshooting tips
-- Session planning with time estimates (10-15 hours total)
-
-**PRIVILEGE_MACRO_LIBRARY.md** (3,000+ words)
-- Overview of macro library capabilities
-- Before/after code comparisons showing 88% reduction
-- Usage examples for all macro categories
-- Benefits and impact analysis
-- File locations and next steps
-
-**PRIVILEGE_TEST_CHECKLIST.md** (2,000+ words)
-- Session-by-session implementation tracker
-- Phase-by-phase progress monitoring
-- Issue/bug tracking template
-- Quality gates and validation checklists
-- Session planning template
-- Final validation checklist
-
-**NEXT_SESSION_START_HERE.md** (Quick Start Guide)
-- Everything needed to start Phase 1 immediately
-- 5-minute environment check
-- Test templates ready to copy
-- Macro quick reference
-- Debugging tips
-- Clear workflow
-
-### 2. Test Infrastructure
-
-**Privilege Test Macro Library** (`tests/asm/include/priv_test_macros.s`)
-- **520+ lines** of reusable assembly macros
-- **50+ macros** covering:
-  - Privilege mode transitions (M ↔ S ↔ U)
-  - Trap vector setup (direct/vectored)
-  - MSTATUS manipulation (MPP, SPP, MIE, SIE, SUM, MXR)
-  - Trap delegation (medeleg/mideleg)
-  - CSR verification (EXPECT_CSR, EXPECT_BITS_SET, etc.)
-  - Interrupt handling (enable/disable/pending)
-  - Test result marking (PASS/FAIL/STAGE)
-  - Debugging helpers (SAVE_ALL_CSRS, etc.)
-
-**Macro Documentation** (`tests/asm/include/README.md`)
-- Quick reference guide for all 50+ macros
-- Usage examples for common patterns
-- Constants defined (privilege levels, exception causes, mstatus bits)
-- Before/after code comparisons
-
-**Demo Test** (`tests/asm/test_priv_macros_demo.s`)
-- Working example showing macro usage
-- 10-stage test demonstrating:
-  - M→S privilege transitions
-  - Exception delegation
-  - Trap handling
-  - CSR access verification
-  - Multi-mode operation
-
-### 3. Project Documentation Updates
-
-**CLAUDE.md**
-- Added "Privilege Mode Test Suite (In Progress)" section
-- Updated testing strategy to include privilege testing
-- Documented 7-phase plan with priorities
-- Added benefits and time estimates
+1. ✅ 分析当前特权模式测试覆盖率  
+2. ✅ 识别 M/S/U 模式测试中的关键缺口  
+3. ✅ 设计全面的测试套件  
+4. ✅ 创建特权测试宏库  
+5. ✅ 编写完整的实现计划文档  
+6. ✅ 为下一次会话做准备  
 
 ---
 
-## 📊 Impact Analysis
+## 📦 交付物
 
-### Code Efficiency
-**Before (Manual Assembly)**:
+### 1. 文档（4 份综合文档）
+
+**PRIVILEGE_TEST_ANALYSIS.md**（5,000+ 字）  
+- 当前特权模式测试的缺口分析  
+- 已识别 18 个现有测试（基础 M/S 覆盖）  
+- 发现关键缺口：  
+  - U 模式：几乎没有测试（最高优先级）  
+  - 中断：mideleg 完全未测试  
+  - 状态机：MPIE/SPIE 状态切换不完整  
+  - 异常覆盖：15 个异常编码中仅测试了 2 个  
+  - CSR 约束：未验证 WARL 语义  
+- 设计了 7 个阶段、34 个测试的完整套件  
+
+**PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md**（15,000+ 字）  
+- 带代码示例的完整实施计划  
+- 按阶段细分：  
+  - 阶段 1：U 模式基础（6 个测试）- 关键  
+  - 阶段 2：状态状态机（5 个测试）- 高  
+  - 阶段 3：中断处理（6 个测试）- 高  
+  - 阶段 4：异常覆盖（8 个测试）- 中  
+  - 阶段 5：CSR 边界情况（4 个测试）- 中  
+  - 阶段 6：委托边界情况（3 个测试）- 低  
+  - 阶段 7：压力与回归（2 个测试）- 低  
+- 各阶段详细测试规格和汇编模板  
+- 验证策略与通过标准  
+- 调试指南和故障排除技巧  
+- 会话规划与时间估算（总计 10–15 小时）  
+
+**PRIVILEGE_MACRO_LIBRARY.md**（3,000+ 字）  
+- 宏库能力概述  
+- 使用前/后代码对比，显示 88% 的代码量减少  
+- 所有宏类别的使用示例  
+- 效益与影响分析  
+- 文件位置与后续步骤  
+
+**PRIVILEGE_TEST_CHECKLIST.md**（2,000+ 字）  
+- 按会话的实施跟踪表  
+- 按阶段的进度监控  
+- 问题/缺陷跟踪模板  
+- 质量关卡与验证检查表  
+- 会话计划模板  
+- 最终验证检查表  
+
+**NEXT_SESSION_START_HERE.md**（快速开始指南）  
+- 开始阶段 1 所需的一切  
+- 5 分钟环境检查  
+- 可直接复制的测试模板  
+- 宏快速参考  
+- 调试提示  
+- 清晰的工作流  
+
+### 2. 测试基础设施
+
+**特权测试宏库**（`tests/asm/include/priv_test_macros.s`）  
+- **520+ 行**可复用汇编宏  
+- **50+ 个宏**，覆盖：  
+  - 特权模式切换（M ↔ S ↔ U）  
+  - 陷阱向量设置（直接/向量）  
+  - MSTATUS 操作（MPP、SPP、MIE、SIE、SUM、MXR）  
+  - 陷阱委托（medeleg/mideleg）  
+  - CSR 校验（EXPECT_CSR、EXPECT_BITS_SET 等）  
+  - 中断处理（使能/关闭/置 pending）  
+  - 测试结果标记（PASS/FAIL/STAGE）  
+  - 调试辅助（SAVE_ALL_CSRS 等）
+
+**宏文档**（`tests/asm/include/README.md`）  
+- 所有 50+ 个宏的快速参考  
+- 常用模式的使用示例  
+- 已定义常量（特权级别、异常原因、mstatus 位）  
+- 使用前/后代码对比  
+
+**演示测试**（`tests/asm/test_priv_macros_demo.s`）  
+- 展示宏用法的工作示例  
+- 10 阶段测试，演示：  
+  - M→S 特权切换  
+  - 异常委托  
+  - 陷阱处理  
+  - CSR 访问校验  
+  - 多模式运行  
+
+### 3. 项目文档更新
+
+**CLAUDE.md**  
+- 增加“特权模式测试套件（进行中）”章节  
+- 更新测试策略以包含特权测试  
+- 记录 7 阶段计划及优先级  
+- 增加收益和时间估算  
+
+---
+
+## 📊 影响分析
+
+### 代码效率
+**改造前（手写汇编）**：
 ```assembly
-# Enter S-mode from M-mode - 10 lines
+# 从 M 模式进入 S 模式 - 10 行
 csrr    t0, mstatus
 li      t1, 0xFFFFE7FF
 and     t0, t0, t1
@@ -126,364 +126,364 @@ csrw    mepc, t0
 mret
 ```
 
-**After (With Macros)**:
+**改造后（使用宏）**：
 ```assembly
-# Enter S-mode from M-mode - 1 line
+# 从 M 模式进入 S 模式 - 1 行
 ENTER_SMODE_M s_mode_entry
 ```
 
-**Result**: **88% code reduction** for common privilege operations!
+**结果**：对常见特权操作而言，代码量减少 **88%**！
 
-### Coverage Improvement
+### 覆盖率提升
 
-**Current State**:
-- Privilege tests: ~18 tests
-- Coverage: Basic M/S mode operations
-- Gaps: U-mode, interrupts, state machine, most exceptions
+**当前状态**：  
+- 特权测试：约 18 个测试  
+- 覆盖内容：基础 M/S 模式操作  
+- 缺口：U 模式、中断、状态机、大部分异常  
 
-**After Implementation (34 new tests)**:
-- Total privilege tests: 52 tests (18 + 34)
-- Coverage: Complete M/S/U mode functionality
-- All 15 exception causes tested
-- State machine verified
-- Interrupt delegation functional
-- CSR constraints validated
+**实施后（新增 34 个测试）**：  
+- 特权测试总数：52 个（18 + 34）  
+- 覆盖内容：完整 M/S/U 模式功能  
+- 所有 15 个异常原因得到测试  
+- 状态机得到验证  
+- 中断委托功能正常  
+- CSR 约束得到验证  
 
-### Time Savings
+### 时间节省
 
-**Manual Implementation** (without macros):
-- Average test: ~30 min writing + 30 min debugging = 60 min
-- 34 tests × 60 min = **34 hours**
+**手工实现**（无宏）：  
+- 平均每个测试：~30 分钟编写 + 30 分钟调试 = 60 分钟  
+- 34 个测试 × 60 分钟 = **34 小时**
 
-**With Macro Library**:
-- Average test: ~10 min writing + 10 min debugging = 20 min
-- 34 tests × 20 min = **11.3 hours**
+**使用宏库**：  
+- 平均每个测试：~10 分钟编写 + 10 分钟调试 = 20 分钟  
+- 34 个测试 × 20 分钟 = **11.3 小时**
 
-**Savings**: **22.7 hours** (67% time reduction)
+**节省**：**22.7 小时**（时间减少 67%）
 
-**Plus**: Consistency, fewer bugs, easier maintenance
-
----
-
-## 🎓 Key Insights
-
-### Critical Gaps Found
-
-1. **U-Mode Testing** (Highest Priority)
-   - Almost no U-mode tests exist
-   - RTL has U-mode support but it's untested
-   - Risk: Unknown if U-mode actually works
-   - Solution: Phase 1 focuses on U-mode fundamentals
-
-2. **Interrupt Handling** (High Priority)
-   - mideleg (interrupt delegation) untested
-   - Timer/software/external interrupts not verified
-   - Interrupt priority untested
-   - Solution: Phase 3 comprehensive interrupt tests
-
-3. **State Machine** (High Priority)
-   - MPIE/SPIE/MPP/SPP transitions not thoroughly tested
-   - Nested trap handling unclear
-   - MIE/SIE interaction with privilege modes unclear
-   - Solution: Phase 2 state machine verification
-
-4. **Exception Coverage** (Medium Priority)
-   - Only 2 of 15 exception causes tested
-   - Breakpoint, misaligned access, page faults untested
-   - Exception priority untested
-   - Solution: Phase 4 exception coverage
-
-5. **CSR Constraints** (Medium Priority)
-   - WARL (Write Any, Read Legal) semantics untested
-   - Read-only CSRs not verified immutable
-   - sstatus masking not tested
-   - Solution: Phase 5 CSR edge cases
-
-### Design Decisions
-
-**Macro-Based Approach**:
-- ✅ Reduces boilerplate by 88%
-- ✅ Ensures consistency across tests
-- ✅ Self-documenting code
-- ✅ Easy to update if RTL changes
-- ⚠️ Requires learning macro library (but well documented)
-
-**Phased Implementation**:
-- ✅ Prioritizes critical gaps first (U-mode)
-- ✅ Allows early validation after each phase
-- ✅ Can stop at any phase and still have value
-- ✅ Spreads work across multiple sessions
-- ✅ Each phase is independently useful
-
-**Test Template Standardization**:
-- ✅ Consistent structure across all tests
-- ✅ Easy to review and understand
-- ✅ Simplified debugging (know where to look)
-- ✅ Quick to write new tests
+**附加收益**：一致性更好、缺陷更少、维护更容易  
 
 ---
 
-## 📈 Progress Metrics
+## 🎓 关键洞见
 
-### Documentation
-- **Words Written**: ~25,000 words
-- **Code Lines**: 520+ lines (macro library)
-- **Documents Created**: 5 major documents
-- **Examples Provided**: 40+ code examples
+### 发现的关键缺口
 
-### Infrastructure
-- **Macros Created**: 50+ macros
-- **Constants Defined**: 30+ constants
-- **Test Template**: 1 complete template
-- **Demo Test**: 1 working example
+1. **U 模式测试**（最高优先级）  
+   - 几乎不存在 U 模式测试  
+   - RTL 支持 U 模式但未测试  
+   - 风险：不清楚 U 模式是否真正可用  
+   - 解决方案：阶段 1 专注 U 模式基础  
 
-### Planning
-- **Tests Designed**: 34 tests across 7 phases
-- **Time Estimated**: 10-15 hours total
-- **Validation Strategy**: 3-level (per-test, per-phase, overall)
-- **Success Criteria**: Defined for each level
+2. **中断处理**（高优先级）  
+   - mideleg（中断委托）未测试  
+   - 定时器/软件/外部中断未验证  
+   - 中断优先级未测试  
+   - 解决方案：阶段 3 做全面中断测试  
 
----
+3. **状态机**（高优先级）  
+   - MPIE/SPIE/MPP/SPP 状态切换未彻底测试  
+   - 嵌套陷阱处理不清晰  
+   - MIE/SIE 与各特权模式交互不清晰  
+   - 解决方案：阶段 2 验证状态机  
 
-## ✅ Quality Gates Met
+4. **异常覆盖**（中优先级）  
+   - 15 个异常原因中仅 2 个被测试  
+   - 断点、未对齐访问、页故障未测试  
+   - 异常优先级未测试  
+   - 解决方案：阶段 4 覆盖异常  
 
-### Documentation Quality
-- ✅ Complete implementation plan with code examples
-- ✅ Gap analysis with current state assessment
-- ✅ Macro library fully documented
-- ✅ Quick reference guides created
-- ✅ Session planning templates provided
+5. **CSR 约束**（中优先级）  
+   - WARL（任意写入，读取合法值）语义未测试  
+   - 只读 CSR 未验证不可变性  
+   - sstatus 屏蔽行为未测试  
+   - 解决方案：阶段 5 测 CSR 边界情况  
 
-### Code Quality
-- ✅ Macro library follows project conventions
-- ✅ Demo test compiles successfully
-- ✅ Code is well-commented
-- ✅ Consistent naming conventions
+### 设计决策
 
-### Process Quality
-- ✅ Validation strategy defined
-- ✅ Success criteria established
-- ✅ Debugging guides provided
-- ✅ Session planning structured
-- ✅ Progress tracking enabled
+**基于宏的方式**：  
+- ✅ 将样板代码减少 88%  
+- ✅ 保证测试之间的一致性  
+- ✅ 代码自文档化  
+- ✅ 日后 RTL 变化时易于集中更新  
+- ⚠️ 需要学习宏库（但文档充分）
 
----
+**分阶段实施**：  
+- ✅ 优先解决关键缺口（U 模式）  
+- ✅ 每个阶段结束都可做早期验证  
+- ✅ 即使中途停止也有实际价值  
+- ✅ 可拆分到多次会话完成  
+- ✅ 每个阶段独立有用  
 
-## 🚀 Next Steps
-
-### Immediate (Next Session)
-1. **Start Phase 1: U-Mode Fundamentals**
-   - Implement 6 critical U-mode tests
-   - Estimated time: 2-3 hours
-   - Use NEXT_SESSION_START_HERE.md as guide
-
-### Short Term (Sessions 2-3)
-2. **Complete Phase 2: Status State Machine**
-   - 5 tests verifying MRET/SRET/trap state transitions
-   - Estimated time: 1-2 hours
-
-3. **Complete Phase 3: Interrupt Handling**
-   - 6 tests for interrupt delegation and handling
-   - Estimated time: 2-3 hours
-   - May defer if interrupt HW not ready
-
-### Medium Term (Sessions 4-5)
-4. **Complete Phases 4-7**
-   - Exception coverage (8 tests)
-   - CSR edge cases (4 tests)
-   - Delegation edge cases (3 tests)
-   - Stress & regression (2 tests)
-   - Estimated time: 4-5 hours total
-
-### Long Term
-5. **Validation & Documentation**
-   - Full test suite validation
-   - Results documentation
-   - Final statistics update
-   - Estimated time: 1 hour
+**测试模板标准化**：  
+- ✅ 所有测试结构统一  
+- ✅ 易于审查和理解  
+- ✅ 调试简化（知道该去哪里看）  
+- ✅ 快速撰写新测试  
 
 ---
 
-## 📚 Repository State
+## 📈 进度指标
 
-### Files Added (9 files)
+### 文档
+- **撰写字数**：约 25,000 字  
+- **代码行数**：520+ 行（宏库）  
+- **创建文档**：5 份主要文档  
+- **给出的示例**：40+ 个代码示例  
+
+### 基础设施
+- **宏数量**：50+ 个宏  
+- **常量定义**：30+ 个常量  
+- **测试模板**：1 套完整模板  
+- **演示测试**：1 个工作示例  
+
+### 规划
+- **设计的测试**：7 个阶段共 34 个测试  
+- **估算时间**：总计 10–15 小时  
+- **验证策略**：3 层（单测、阶段、整体）  
+- **成功标准**：对各层级均已定义  
+
+---
+
+## ✅ 已通过的质量关卡
+
+### 文档质量
+- ✅ 有完整实现计划和代码示例  
+- ✅ 有当前状态评估与缺口分析  
+- ✅ 宏库有完整文档  
+- ✅ 有快速参考指南  
+- ✅ 有会话规划模板  
+
+### 代码质量
+- ✅ 宏库遵循项目约定  
+- ✅ 演示测试可成功编译  
+- ✅ 代码注释充分  
+- ✅ 命名规范一致  
+
+### 流程质量
+- ✅ 已定义验证策略  
+- ✅ 已建立成功标准  
+- ✅ 提供调试向导  
+- ✅ 会话规划结构化  
+- ✅ 支持进度跟踪  
+
+---
+
+## 🚀 下一步
+
+### 近期（下次会话）
+1. **开始阶段 1：U 模式基础**  
+   - 实现 6 个关键 U 模式测试  
+   - 预计时间：2–3 小时  
+   - 使用 NEXT_SESSION_START_HERE.md 作为指南  
+
+### 短期（会话 2–3）
+2. **完成阶段 2：状态状态机**  
+   - 5 个测试验证 MRET/SRET/陷阱状态切换  
+   - 预计时间：1–2 小时  
+
+3. **完成阶段 3：中断处理**  
+   - 6 个测试覆盖中断委托与处理中断  
+   - 预计时间：2–3 小时  
+   - 如中断硬件未准备好可适当延后  
+
+### 中期（会话 4–5）
+4. **完成阶段 4–7**  
+   - 异常覆盖（8 个测试）  
+   - CSR 边界情况（4 个测试）  
+   - 委托边界情况（3 个测试）  
+   - 压力与回归（2 个测试）  
+   - 总预计时间：4–5 小时  
+
+### 长期
+5. **验证与文档收尾**  
+   - 完整测试套件验证  
+   - 结果文档化  
+   - 最终统计数据更新  
+   - 预计时间：1 小时  
+
+---
+
+## 📚 仓库状态
+
+### 新增文件（9 个）
 ```
 docs/
-├── PRIVILEGE_TEST_ANALYSIS.md           (NEW - 5,000 words)
-├── PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md (NEW - 15,000 words)
-├── PRIVILEGE_MACRO_LIBRARY.md           (NEW - 3,000 words)
-├── PRIVILEGE_TEST_CHECKLIST.md          (NEW - 2,000 words)
-└── NEXT_SESSION_START_HERE.md           (NEW - Quick start)
+├── PRIVILEGE_TEST_ANALYSIS.md             （新 - 5,000 字）
+├── PRIVILEGE_TEST_IMPLEMENTATION_PLAN.md  （新 - 15,000 字）
+├── PRIVILEGE_MACRO_LIBRARY.md             （新 - 3,000 字）
+├── PRIVILEGE_TEST_CHECKLIST.md            （新 - 2,000 字）
+└── NEXT_SESSION_START_HERE.md             （新 - 快速开始）
 
 tests/asm/include/
-├── priv_test_macros.s                   (NEW - 520 lines)
-└── README.md                            (NEW - Quick ref)
+├── priv_test_macros.s                     （新 - 520 行）
+└── README.md                              （新 - 快速参考）
 
 tests/asm/
-└── test_priv_macros_demo.s              (NEW - Demo test)
+└── test_priv_macros_demo.s                （新 - 演示测试）
 ```
 
-### Files Modified (1 file)
+### 修改文件（1 个）
 ```
-CLAUDE.md                                (UPDATED - Added priv test section)
+CLAUDE.md                                  （更新 - 增加特权测试章节）
 ```
 
-### Commits Made (2 commits)
-1. "Privilege Mode Testing Framework - Complete Infrastructure"
-   - Main framework commit
-   - 8 files changed, 3,549 insertions
+### 提交记录（2 次提交）
+1. “Privilege Mode Testing Framework - Complete Infrastructure”  
+   - 主框架提交  
+   - 8 个文件变更，3,549 行新增  
 
-2. "Add quick start guide for next session (Phase 1 implementation)"
-   - Quick start document
-   - 1 file changed, 407 insertions
+2. “Add quick start guide for next session (Phase 1 implementation)”  
+   - 快速开始文档  
+   - 1 个文件变更，407 行新增  
 
-### Repository Status
-- ✅ All changes committed
-- ✅ All changes pushed to origin/main
-- ✅ Working directory clean
-- ✅ No conflicts
-- ✅ Ready for next session
+### 仓库状态
+- ✅ 所有改动已提交  
+- ✅ 所有改动已推送至 origin/main  
+- ✅ 工作区干净  
+- ✅ 无冲突  
+- ✅ 已准备好进行下一次会话  
 
 ---
 
-## 🎯 Success Criteria Met
+## 🎯 已满足的成功标准
 
-### Session Goals
-- ✅ Gap analysis complete
-- ✅ Test suite designed
-- ✅ Macro library created
-- ✅ Documentation complete
-- ✅ Implementation plan ready
-- ✅ Next session prepared
+### 会话目标
+- ✅ 完成缺口分析  
+- ✅ 设计测试套件  
+- ✅ 创建宏库  
+- ✅ 完成文档编写  
+- ✅ 实现计划就绪  
+- ✅ 下一次会话准备就绪  
 
-### Deliverable Quality
-- ✅ All documents comprehensive and detailed
-- ✅ Code examples provided throughout
-- ✅ Validation strategies defined
-- ✅ Success criteria established
-- ✅ Troubleshooting guides included
+### 交付质量
+- ✅ 所有文档内容详尽  
+- ✅ 全程提供代码示例  
+- ✅ 定义了验证策略  
+- ✅ 明确成功标准  
+- ✅ 包含故障排除指南  
 
-### Process
-- ✅ Structured approach (7 phases)
-- ✅ Prioritization clear (critical → low)
-- ✅ Time estimates realistic
-- ✅ Progress tracking enabled
-- ✅ Flexibility built in (can skip phases)
-
----
-
-## 💡 Lessons Learned
-
-### What Worked Well
-1. **Macro Library Approach**: Huge time saver, well worth the upfront investment
-2. **Phased Planning**: Breaking into 7 phases makes it manageable
-3. **Code Examples**: Implementation plan with actual code is very helpful
-4. **Gap Analysis First**: Understanding current state before planning was crucial
-5. **Documentation**: Comprehensive docs will save time during implementation
-
-### Potential Challenges
-1. **U-Mode Testing**: May reveal RTL bugs (but that's the point!)
-2. **Interrupt Tests**: May need to defer if HW support not ready
-3. **MMU Tests**: Some tests may SKIP if MMU not fully functional
-4. **Time Estimates**: May need adjustment based on actual implementation
-5. **RTL Debugging**: Some tests may fail due to RTL issues, not test issues
-
-### Recommendations
-1. **Start with Phase 1**: Critical U-mode tests, builds foundation
-2. **Validate Early**: Run `make test-quick` before and after each phase
-3. **Document Issues**: Track any RTL bugs found during testing
-4. **Be Flexible**: Skip phases if dependencies not met (e.g., interrupts)
-5. **Use Macros**: Don't reinvent the wheel, leverage macro library
+### 流程
+- ✅ 采用分阶段结构化方案（7 阶段）  
+- ✅ 优先级明确（从关键到低优先级）  
+- ✅ 时间估算合理  
+- ✅ 支持进度跟踪  
+- ✅ 具备灵活性（可跳过某些阶段）  
 
 ---
 
-## 📞 Handoff to Next Session
+## 💡 经验总结
 
-### What You Need to Know
-1. **Everything is ready**: Just open NEXT_SESSION_START_HERE.md
-2. **Start with Phase 1**: 6 U-mode tests, most critical
-3. **Use the templates**: Implementation plan has complete code examples
-4. **Track progress**: Update checklist as you go
-5. **Expect ~3 hours**: 2-3 hours for Phase 1
+### 做得好的方面
+1. **宏库方案**：极大节省时间，非常值得前期投入  
+2. **分阶段规划**：拆成 7 个阶段后可控性很好  
+3. **代码示例**：带真实代码的实施计划非常有帮助  
+4. **先做缺口分析**：先搞清现状对规划至关重要  
+5. **文档**：详尽文档将在实施期间节省大量时间  
 
-### Quick Start Command
+### 潜在挑战
+1. **U 模式测试**：可能暴露多个 RTL bug（但这正是目的）  
+2. **中断测试**：如果硬件不就绪可能需要推迟  
+3. **MMU 测试**：部分测试在 MMU 不完全时需要 SKIP  
+4. **时间估计**：实际实施后可能需要微调  
+5. **RTL 调试**：部分失败可能是 RTL 问题而非测试问题  
+
+### 建议
+1. **从阶段 1 开始**：关键的 U 模式测试，打基础  
+2. **尽早验证**：每个阶段前后都运行 `make test-quick`  
+3. **记录问题**：跟踪测试中发现的 RTL 缺陷  
+4. **保持灵活**：依赖未满足时（如中断）可跳过阶段  
+5. **用好宏库**：不要重复造轮子，充分利用现有宏  
+
+---
+
+## 📞 移交到下一次会话
+
+### 你需要知道的
+1. **一切准备就绪**：直接打开 NEXT_SESSION_START_HERE.md 即可  
+2. **从阶段 1 开始**：6 个 U 模式测试，最关键  
+3. **使用模板**：实现计划中有完整代码示例  
+4. **跟踪进度**：实施时同步更新检查清单  
+5. **预计 ~3 小时**：阶段 1 预计 2–3 小时  
+
+### 快速开始命令
 ```bash
 cd /home/lei/rv1
 cat docs/NEXT_SESSION_START_HERE.md
-make test-quick  # Verify baseline
-# Then start implementing tests from Phase 1
+make test-quick  # 先验证基线
+# 然后开始按阶段 1 实施测试
 ```
 
-### If You Get Stuck
-1. **Check implementation plan**: Detailed examples in Phase 1 section
-2. **Review demo test**: `tests/asm/test_priv_macros_demo.s`
-3. **Check macro docs**: `tests/asm/include/README.md`
-4. **Look at similar test**: Existing privilege tests in `tests/asm/`
+### 如果遇到问题
+1. **查实现计划**：阶段 1 部分有详细示例  
+2. **看演示测试**：`tests/asm/test_priv_macros_demo.s`  
+3. **看宏文档**：`tests/asm/include/README.md`  
+4. **找类似测试**：现有特权测试在 `tests/asm/`  
 
 ---
 
-## 🎉 Achievements
+## 🎉 已取得成果
 
-### Quantitative
-- **Documentation**: 25,000+ words
-- **Code**: 520+ lines
-- **Macros**: 50+ macros
-- **Tests Designed**: 34 tests
-- **Time Investment**: 2.5 hours (planning and infrastructure)
-- **Time Saved**: 22+ hours (via macro library)
-- **Code Reduction**: 88% (via macros)
+### 定量指标
+- **文档**：25,000+ 字  
+- **代码**：520+ 行  
+- **宏**：50+ 个  
+- **设计的测试**：34 个  
+- **投入时间**：2.5 小时（规划和基础设施）  
+- **节省时间**：22+ 小时（经由宏库）  
+- **代码量减少**：88%（使用宏）  
 
-### Qualitative
-- ✅ Comprehensive test plan created
-- ✅ Macro library dramatically improves productivity
-- ✅ Clear path forward for implementation
-- ✅ Foundation laid for complete privilege coverage
-- ✅ Next session can start immediately
-
----
-
-## 📊 Final Statistics
-
-**Created This Session**:
-- Documents: 5
-- Lines of documentation: ~1,800 lines
-- Lines of code: 520+ lines
-- Macros: 50+
-- Code examples: 40+
-- Tests designed: 34
-- Hours invested: 2.5
-- Hours saved: 22+
-- Efficiency gain: 88%
-
-**Repository Impact**:
-- Files added: 9
-- Files modified: 1
-- Lines added: 3,956
-- Commits: 2
-- Branches: main
-- Status: Clean, pushed
-
-**Next Session**:
-- Goal: Implement Phase 1
-- Tests: 6
-- Time: 2-3 hours
-- Priority: CRITICAL
-- Status: Ready
+### 定性指标
+- ✅ 构建了完整测试计划  
+- ✅ 宏库显著提升生产力  
+- ✅ 前进路径清晰  
+- ✅ 为完整特权覆盖打下基础  
+- ✅ 下一次会话可立即开始  
 
 ---
 
-## ✨ Summary
+## 📊 最终统计
 
-This session successfully established complete infrastructure for comprehensive privilege mode testing. A macro library with 50+ macros reduces test code by 88%, and detailed documentation provides a clear path to implementing 34 new tests across 7 phases. The next session can begin Phase 1 immediately using the provided quick-start guide.
+**本次会话创建内容**：  
+- 文档：5 份  
+- 文档行数：约 1,800 行  
+- 代码行数：520+ 行  
+- 宏：50+ 个  
+- 代码示例：40+ 个  
+- 设计的测试：34 个  
+- 投入时间：2.5 小时  
+- 节省时间：22+ 小时  
+- 效率提升：88%
 
-**Status**: ✅ Infrastructure Complete - Ready for Implementation
+**仓库影响**：  
+- 新增文件：9 个  
+- 修改文件：1 个  
+- 新增行数：3,956 行  
+- 提交：2 次  
+- 分支：main  
+- 状态：干净，已推送  
 
-**Next**: 🚀 Begin Phase 1: U-Mode Fundamentals (6 tests, 2-3 hours)
+**下一次会话**：  
+- 目标：实施阶段 1  
+- 测试：6 个  
+- 时间：2–3 小时  
+- 优先级：关键  
+- 状态：已准备好  
 
 ---
 
-**Session Completed**: 2025-10-23
-**Documentation Quality**: ⭐⭐⭐⭐⭐ (5/5)
-**Code Quality**: ⭐⭐⭐⭐⭐ (5/5)
-**Preparation**: ⭐⭐⭐⭐⭐ (5/5)
-**Overall**: ✅ Excellent - Ready to Proceed
+## ✨ 总结
+
+本次会话成功搭建了完整的特权模式测试基础设施。包含 50+ 宏的宏库将测试代码量减少 88%，而详尽的文档为在 7 个阶段实施 34 个新测试提供了清晰路径。下一次会话可以依据快速开始指南立即进入阶段 1 实施。
+
+**状态**：✅ 基础设施完成 - 准备实施  
+
+**下一步**：🚀 开始阶段 1：U 模式基础（6 个测试，2–3 小时）
+
+---
+
+**会话结束时间**：2025-10-23  
+**文档质量**：⭐⭐⭐⭐⭐ (5/5)  
+**代码质量**：⭐⭐⭐⭐⭐ (5/5)  
+**准备情况**：⭐⭐⭐⭐⭐ (5/5)  
+**总体评价**：✅ 优秀 - 可继续推进
