@@ -1,99 +1,98 @@
-// uart_16550.v - 16550-Compatible UART
-// Implements a subset of the 16550 UART for serial console
-// Compatible with standard 16550 drivers (Linux, FreeRTOS, xv6)
-// Author: RV1 Project
-// Date: 2025-10-26
+// uart_16550.v - 16550 兼容 UART
+// 实现 16550 UART 的一个子集，用于串行控制台
+// 与标准 16550 驱动程序兼容（Linux、FreeRTOS、xv6）
+// 作者：RV1 项目组
+// 日期：2025-10-26
 //
-// Memory Map (Base: 0x1000_0000):
-//   0x00: RBR (R) / THR (W) - Receive Buffer / Transmit Holding Register
-//   0x01: IER (RW) - Interrupt Enable Register
-//   0x02: IIR (R) / FCR (W) - Interrupt Identification / FIFO Control
-//   0x03: LCR (RW) - Line Control Register
-//   0x04: MCR (RW) - Modem Control Register
-//   0x05: LSR (R) - Line Status Register
-//   0x06: MSR (R) - Modem Status Register
-//   0x07: SCR (RW) - Scratch Register
+// 内存映射（基地址：0x1000_0000）：
+//   0x00: RBR (读) / THR (写) - 接收缓冲寄存器 / 发送保持寄存器
+//   0x01: IER (读写) - 中断使能寄存器
+//   0x02: IIR (读) / FCR (写) - 中断标识寄存器 / FIFO 控制寄存器
+//   0x03: LCR (读写) - 线路控制寄存器
+//   0x04: MCR (读写) - 调制解调器控制寄存器
+//   0x05: LSR (读) - 线路状态寄存器
+//   0x06: MSR (读) - 调制解调器状态寄存器
+//   0x07: SCR (读写) - 暂存寄存器
 //
-// Features:
-// - 16-byte TX/RX FIFOs
-// - Fixed 8N1 mode (8 data bits, no parity, 1 stop bit)
-// - Programmable interrupt enables
-// - Status registers for polling or interrupt-driven I/O
-// - Byte-level simulation (no actual serial timing)
+// 特性：
+// - 16 字节的 TX/RX FIFO
+// - 固定的 8N1 模式（8 数据位，无奇偶校验，1 停止位）
+// - 可编程中断使能
+// - 用于轮询或中断驱动 I/O 的状态寄存器
+// - 字节级仿真（无实际串行时序）
 
 `include "config/rv_config.vh"
 
 module uart_16550 #(
-  parameter BASE_ADDR = 32'h1000_0000,    // Base address (informational)
-  parameter FIFO_DEPTH = 16               // TX/RX FIFO depth
+  parameter BASE_ADDR = 32'h1000_0000,    // 基地址（仅供参考）
+  parameter FIFO_DEPTH = 16               // TX/RX FIFO 深度
 ) (
   input  wire        clk,
   input  wire        reset_n,
 
-  // Memory-mapped interface
+  // 内存映射接口
   input  wire        req_valid,
-  input  wire [2:0]  req_addr,      // 3-bit offset (8 registers)
-  input  wire [7:0]  req_wdata,     // 8-bit data bus (byte-oriented)
+  input  wire [2:0]  req_addr,      // 3 位偏移 (8 个寄存器)
+  input  wire [7:0]  req_wdata,     // 8 位数据总线（字节导向）
   input  wire        req_we,
   output reg         req_ready,
   output reg  [7:0]  req_rdata,
 
-  // Serial interface (for testbench/simulation)
-  output reg         tx_valid,      // TX data valid
-  output reg  [7:0]  tx_data,       // TX data byte
-  input  wire        tx_ready,      // TX ready (flow control)
+  // 串行接口（用于测试平台/仿真）
+  output reg         tx_valid,      // TX 数据有效
+  output reg  [7:0]  tx_data,       // TX 数据字节
+  input  wire        tx_ready,      // TX 准备好（流控制）
 
-  input  wire        rx_valid,      // RX data valid
-  input  wire [7:0]  rx_data,       // RX data byte
-  output wire        rx_ready,      // RX ready (flow control)
-
-  // Interrupt output
-  output wire        irq_o          // UART interrupt request
+  input  wire        rx_valid,      // RX 数据有效
+  input  wire [7:0]  rx_data,       // RX 数据字节
+  output wire        rx_ready,      // RX 准备好（流控制）
+  // 中断输出
+  output wire        irq_o          // UART 中断请求
 );
 
   //===========================================================================
-  // Register Addresses
+  // 寄存器地址
   //===========================================================================
 
-  localparam REG_RBR_THR = 3'h0;  // Receive Buffer (R) / Transmit Holding (W)
-  localparam REG_IER     = 3'h1;  // Interrupt Enable Register
-  localparam REG_IIR_FCR = 3'h2;  // Interrupt ID (R) / FIFO Control (W)
-  localparam REG_LCR     = 3'h3;  // Line Control Register
-  localparam REG_MCR     = 3'h4;  // Modem Control Register
-  localparam REG_LSR     = 3'h5;  // Line Status Register (read-only)
-  localparam REG_MSR     = 3'h6;  // Modem Status Register (read-only)
-  localparam REG_SCR     = 3'h7;  // Scratch Register
+  localparam REG_RBR_THR = 3'h0;  // 接收缓冲寄存器 (读) / 发送保持寄存器 (写)
+  localparam REG_IER     = 3'h1;  // 中断使能寄存器
+  localparam REG_IIR_FCR = 3'h2;  // 中断标识寄存器 (读) / FIFO 控制寄存器 (写)
+  localparam REG_LCR     = 3'h3;  // 线路控制寄存器
+  localparam REG_MCR     = 3'h4;  // 调制解调器控制寄存器
+  localparam REG_LSR     = 3'h5;  // 线路状态寄存器 (只读)
+  localparam REG_MSR     = 3'h6;  // 调制解调器状态寄存器 (只读)
+  localparam REG_SCR     = 3'h7;  // 暂存寄存器
 
   //===========================================================================
-  // Internal Registers
+  // 内部寄存器
   //===========================================================================
 
-  // Control/Config Registers
-  reg [7:0] ier;      // Interrupt Enable Register
-  reg [7:0] lcr;      // Line Control Register
-  reg [7:0] mcr;      // Modem Control Register
-  reg [7:0] scr;      // Scratch Register
-  reg       fcr_fifo_en;  // FIFO enable bit (from FCR)
+  // 控制/配置寄存器
+  reg [7:0] ier;      // 中断使能寄存器
+  reg [7:0] lcr;      // 线路控制寄存器
+  reg [7:0] mcr;      // 调制解调器控制寄存器
+  reg [7:0] scr;      // 暂存寄存器
+  reg       fcr_fifo_en;  // FIFO 使能位（来自 FCR）
 
   // TX FIFO
   reg [7:0] tx_fifo [0:FIFO_DEPTH-1];
-  reg [4:0] tx_fifo_wptr;  // Write pointer (5 bits for 0-16 range)
-  reg [4:0] tx_fifo_rptr;  // Read pointer
-  reg tx_fifo_write_last_cycle;  // Track writes to avoid read-during-write hazard
+  reg [4:0] tx_fifo_wptr;  // 写指针（5 位，范围 0-16）
+  reg [4:0] tx_fifo_rptr;  // 读指针
+  reg tx_fifo_write_last_cycle;  // 跟踪写操作以避免读写冲突
   wire [4:0] tx_fifo_count;
   wire tx_fifo_empty;
   wire tx_fifo_full;
 
   // RX FIFO
   reg [7:0] rx_fifo [0:FIFO_DEPTH-1];
-  reg [4:0] rx_fifo_wptr;  // Write pointer
-  reg [4:0] rx_fifo_rptr;  // Read pointer
+  reg [4:0] rx_fifo_wptr;  // 写指针
+  reg [4:0] rx_fifo_rptr;  // 读指针
   wire [4:0] rx_fifo_count;
   wire rx_fifo_empty;
   wire rx_fifo_full;
 
   //===========================================================================
-  // FIFO Control Logic
+  // FIFO 控制逻辑
   //===========================================================================
 
   assign tx_fifo_count = tx_fifo_wptr - tx_fifo_rptr;
@@ -105,47 +104,47 @@ module uart_16550 #(
   assign rx_fifo_full  = (rx_fifo_count >= FIFO_DEPTH);
 
   //===========================================================================
-  // Line Status Register (LSR) - Computed Dynamically
+  // 线路状态寄存器 (LSR) - 动态计算
   //===========================================================================
 
   wire [7:0] lsr;
-  assign lsr[0] = !rx_fifo_empty;     // DR: Data Ready
-  assign lsr[1] = 1'b0;                // OE: Overrun Error (not implemented)
-  assign lsr[2] = 1'b0;                // PE: Parity Error (no parity)
-  assign lsr[3] = 1'b0;                // FE: Framing Error (not implemented)
-  assign lsr[4] = 1'b0;                // BI: Break Interrupt (not implemented)
-  assign lsr[5] = !tx_fifo_full;       // THRE: Transmit Holding Register Empty
-  assign lsr[6] = tx_fifo_empty;       // TEMT: Transmitter Empty
-  assign lsr[7] = 1'b0;                // Error in RX FIFO (not implemented)
+  assign lsr[0] = !rx_fifo_empty;     // DR: 数据准备好
+  assign lsr[1] = 1'b0;                // OE: 溢出错误（未实现）
+  assign lsr[2] = 1'b0;                // PE: 奇偶校验错误（无奇偶校验）
+  assign lsr[3] = 1'b0;                // FE: 帧错误（未实现）
+  assign lsr[4] = 1'b0;                // BI: 断开中断（未实现）
+  assign lsr[5] = !tx_fifo_full;       // THRE: 发送保持寄存器空
+  assign lsr[6] = tx_fifo_empty;       // TEMT: 发送器空
+  assign lsr[7] = 1'b0;                // RX FIFO 中的错误（未实现）
 
   //===========================================================================
-  // Interrupt Identification Register (IIR) - Computed Dynamically
+  // 中断标识寄存器 (IIR) - 动态计算
   //===========================================================================
 
   wire irq_rx_data_avail;
   wire irq_tx_empty;
   wire [7:0] iir;
 
-  assign irq_rx_data_avail = !rx_fifo_empty && ier[0];  // RDA interrupt enabled
-  // THRE interrupt: FIFO empty AND transmitter not busy
+  assign irq_rx_data_avail = !rx_fifo_empty && ier[0];  // RDA 中断使能
+  // THRE 中断: FIFO 空且发送器不忙
   assign irq_tx_empty      = tx_fifo_empty && !tx_valid && ier[1];
 
-  // IIR format:
-  // Bit 0: 0=interrupt pending, 1=no interrupt
-  // Bits 3:1: Interrupt ID (priority encoded)
-  //   001 = No interrupt pending
-  //   010 = THR empty
-  //   100 = Received data available
-  assign iir[0] = !(irq_rx_data_avail || irq_tx_empty);  // 0 if any interrupt pending
-  assign iir[3:1] = irq_rx_data_avail ? 3'b010 :          // RX has higher priority
+  // IIR 格式：
+  // Bit 0: 0=中断挂起, 1=无中断
+  // Bits 3:1: 中断 ID（优先级编码）
+  //   001 = 无中断挂起
+  //   010 = 发送保持寄存器空
+  //   100 = 接收数据可用
+  assign iir[0] = !(irq_rx_data_avail || irq_tx_empty);  // 如果有任意中断挂起则为 0
+  assign iir[3:1] = irq_rx_data_avail ? 3'b010 :          // RX 拥有更高优先级
                     irq_tx_empty ? 3'b001 :
-                    3'b000;                               // No interrupt
-  assign iir[7:4] = 4'b0000;  // Reserved
+                    3'b000;                               // 无中断
+  assign iir[7:4] = 4'b0000;  // 保留
 
   assign irq_o = irq_rx_data_avail || irq_tx_empty;
 
   //===========================================================================
-  // TX FIFO → Serial Output Logic
+  // TX FIFO → 串行输出逻辑
   //===========================================================================
 
   always @(posedge clk or negedge reset_n) begin
@@ -154,25 +153,25 @@ module uart_16550 #(
       tx_data <= 8'h0;
       tx_fifo_rptr <= 5'd0;
     end else begin
-      // If FIFO has data and TX interface is not busy, send next byte
-      // IMPORTANT: Block reads for 1 cycle after writes to avoid read-during-write hazard
+      // 如果 FIFO 有数据且 TX 接口空闲，则发送下一个字节
+      // 重要：写操作后阻止读操作 1 个周期以避免读写冲突
       if (!tx_fifo_empty && !tx_valid && !tx_fifo_write_last_cycle) begin
         tx_valid <= 1'b1;
-        tx_data <= tx_fifo[tx_fifo_rptr[3:0]];  // Use lower 4 bits for indexing
+        tx_data <= tx_fifo[tx_fifo_rptr[3:0]];  // 使用低 4 位进行索引
         tx_fifo_rptr <= tx_fifo_rptr + 5'd1;
         `ifdef DEBUG_UART
         $display("UART TX: 0x%02h ('%c') at time %t", tx_fifo[tx_fifo_rptr[3:0]],
                  tx_fifo[tx_fifo_rptr[3:0]], $time);
         `endif
       end else if (tx_valid && tx_ready) begin
-        // Clear valid when consumer accepts data
+        // 当接收端接受数据时清除 valid 信号
         tx_valid <= 1'b0;
       end
     end
   end
 
   //===========================================================================
-  // RX Serial Input → FIFO Logic
+  // RX 串行输入 → FIFO 逻辑
   //===========================================================================
 
   assign rx_ready = !rx_fifo_full;
@@ -181,7 +180,7 @@ module uart_16550 #(
     if (!reset_n) begin
       rx_fifo_wptr <= 5'd0;
     end else begin
-      // If RX data arrives and FIFO has space, store it
+      // 如果 RX 数据到达且 FIFO 有空间，则存储数据
       if (rx_valid && !rx_fifo_full) begin
         rx_fifo[rx_fifo_wptr[3:0]] <= rx_data;
         rx_fifo_wptr <= rx_fifo_wptr + 5'd1;
@@ -193,31 +192,31 @@ module uart_16550 #(
   end
 
   //===========================================================================
-  // Memory-Mapped Register Access
+  // 内存映射寄存器访问
   //===========================================================================
 
-  // Write Logic
+  // 写逻辑
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       ier <= 8'h00;
-      lcr <= 8'h03;  // Default: 8N1 mode
+      lcr <= 8'h03;  // 默认：8N1 模式
       mcr <= 8'h00;
       scr <= 8'h00;
-      fcr_fifo_en <= 1'b1;  // FIFO enabled by default
+      fcr_fifo_en <= 1'b1;  // 默认启用 FIFO
       tx_fifo_wptr <= 5'd0;
       tx_fifo_write_last_cycle <= 1'b0;
     end else begin
-      // Default: no write this cycle (will be set to 1 if THR write occurs)
+      // 默认：本周期不写入（如果发生 THR 写入则设置为 1）
       tx_fifo_write_last_cycle <= 1'b0;
 
       if (req_valid && req_we) begin
         case (req_addr)
           REG_RBR_THR: begin
-            // Write to THR: Push data to TX FIFO
+            // 写入 THR：将数据推入 TX FIFO
             if (!tx_fifo_full) begin
               tx_fifo[tx_fifo_wptr[3:0]] <= req_wdata;
               tx_fifo_wptr <= tx_fifo_wptr + 5'd1;
-              tx_fifo_write_last_cycle <= 1'b1;  // Flag write for TX read blocking
+              tx_fifo_write_last_cycle <= 1'b1;  // 标记写入以阻止 TX 读取
               `ifdef DEBUG_UART
               $display("UART THR write: 0x%02h ('%c') at time %t", req_wdata, req_wdata, $time);
               `endif
@@ -233,13 +232,13 @@ module uart_16550 #(
           end
 
           REG_IIR_FCR: begin
-            // Write to FCR (FIFO Control Register)
-            fcr_fifo_en <= req_wdata[0];  // Bit 0: FIFO enable
-            if (req_wdata[1]) begin        // Bit 1: Clear RX FIFO
-              rx_fifo_rptr <= rx_fifo_wptr;  // Reset read pointer to write pointer
+            // 写入 FCR（FIFO 控制寄存器）
+            fcr_fifo_en <= req_wdata[0];  // 第 0 位：FIFO 使能
+            if (req_wdata[1]) begin        // 第 1 位：清空 RX FIFO
+              rx_fifo_rptr <= rx_fifo_wptr;  // 将读指针重置为写指针
             end
-            if (req_wdata[2]) begin        // Bit 2: Clear TX FIFO
-              tx_fifo_rptr <= tx_fifo_wptr;  // Reset read pointer to write pointer
+            if (req_wdata[2]) begin        // 第 2 位：清空 TX FIFO
+              tx_fifo_rptr <= tx_fifo_wptr;  // 将读指针重置为写指针
             end
           end
 
@@ -256,7 +255,7 @@ module uart_16550 #(
           end
 
           default: begin
-            // LSR, MSR are read-only
+            // LSR, MSR 是只读寄存器
           end
         endcase
       end
@@ -270,12 +269,12 @@ module uart_16550 #(
       req_ready <= 1'b0;
       rx_fifo_rptr <= 5'd0;
     end else begin
-      req_ready <= req_valid;  // Single-cycle response
+      req_ready <= req_valid;  // 单周期响应
 
       if (req_valid && !req_we) begin
         case (req_addr)
           REG_RBR_THR: begin
-            // Read from RBR: Pop data from RX FIFO
+            // 从 RBR 读取：从 RX FIFO 弹出数据
             if (!rx_fifo_empty) begin
               req_rdata <= rx_fifo[rx_fifo_rptr[3:0]];
               rx_fifo_rptr <= rx_fifo_rptr + 5'd1;
@@ -284,7 +283,7 @@ module uart_16550 #(
                        rx_fifo[rx_fifo_rptr[3:0]], rx_fifo[rx_fifo_rptr[3:0]], $time);
               `endif
             end else begin
-              req_rdata <= 8'h00;  // No data available
+              req_rdata <= 8'h00;  // 无可用数据
             end
           end
 
@@ -293,7 +292,7 @@ module uart_16550 #(
           end
 
           REG_IIR_FCR: begin
-            // Read from IIR (Interrupt Identification Register)
+            // 从 IIR 读取（中断识别寄存器）
             req_rdata <= iir;
           end
 
@@ -310,8 +309,8 @@ module uart_16550 #(
           end
 
           REG_MSR: begin
-            // Modem Status Register (stub - always indicate ready)
-            req_rdata <= 8'b1011_0000;  // CTS, DSR, CD set
+            // 调制解调器状态寄存器（占位实现 - 始终指示就绪）
+            req_rdata <= 8'b1011_0000;  // CTS, DSR, CD 设置
           end
 
           REG_SCR: begin
@@ -329,7 +328,7 @@ module uart_16550 #(
   end
 
   //===========================================================================
-  // Debug Monitoring (Optional)
+  // 调试监控 (可选)
   //===========================================================================
 
   `ifdef DEBUG_UART

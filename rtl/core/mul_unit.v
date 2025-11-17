@@ -1,7 +1,7 @@
-// mul_unit.v - Sequential Multiplier for M Extension
-// Implements MUL, MULH, MULHSU, MULHU instructions
-// Uses iterative add-and-shift algorithm
-// Parameterized for RV32/RV64 support
+// mul_unit.v - M 扩展顺序乘法器
+// 实现 MUL, MULH, MULHSU, MULHU 指令
+// 使用迭代 加法+移位 算法
+// 支持 RV32/RV64 的参数化实现
 
 `include "config/rv_config.vh"
 
@@ -11,44 +11,44 @@ module mul_unit #(
   input  wire                clk,
   input  wire                reset_n,
 
-  // Control interface
-  input  wire                start,        // Start multiplication
-  input  wire  [1:0]         mul_op,       // Operation: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
-  input  wire                is_word_op,   // RV64: W-suffix instruction (32-bit)
+  // 控制接口
+  input  wire                start,        // 启动乘法运算
+  input  wire  [1:0]         mul_op,       // 操作类型: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
+  input  wire                is_word_op,   // RV64: W 后缀指令（32 位操作）
 
-  // Data interface
-  input  wire  [XLEN-1:0]    operand_a,    // Multiplicand
-  input  wire  [XLEN-1:0]    operand_b,    // Multiplier
-  output reg   [XLEN-1:0]    result,       // Result
+  // 数据接口
+  input  wire  [XLEN-1:0]    operand_a,    // 被乘数
+  input  wire  [XLEN-1:0]    operand_b,    // 乘数
+  output reg   [XLEN-1:0]    result,       // 结果
 
-  // Status
-  output wire                busy,         // Operation in progress
-  output reg                 ready         // Result ready (1 cycle pulse)
+  // 状态
+  output wire                busy,         // 运算进行中
+  output reg                 ready         // 结果准备好（1 周期脉冲）
 );
 
-  // Operation encoding
-  localparam MUL    = 2'b00;  // Lower XLEN bits
-  localparam MULH   = 2'b01;  // Upper XLEN bits (signed × signed)
-  localparam MULHSU = 2'b10;  // Upper XLEN bits (signed × unsigned)
-  localparam MULHU  = 2'b11;  // Upper XLEN bits (unsigned × unsigned)
+  // 操作编码
+  localparam MUL    = 2'b00;  // 取低 XLEN 位
+  localparam MULH   = 2'b01;  // 取高 XLEN 位（有符号 × 有符号）
+  localparam MULHSU = 2'b10;  // 取高 XLEN 位（有符号 × 无符号）
+  localparam MULHU  = 2'b11;  // 取高 XLEN 位（无符号 × 无符号）
 
-  // State machine
+  // 状态机编码
   localparam IDLE      = 2'b00;
   localparam COMPUTE   = 2'b01;
   localparam DONE      = 2'b10;
 
   reg [1:0] state, state_next;
 
-  // Determine effective operand width for RV64W operations
+  // 对 RV64W 操作确定有效运算位宽
   wire [6:0] op_width;
   assign op_width = (XLEN == 64 && is_word_op) ? 7'd32 : XLEN[6:0];
 
-  // Sign handling
+  // 符号处理
   wire op_a_signed, op_b_signed;
   assign op_a_signed = (mul_op == MULH) || (mul_op == MULHSU);
   assign op_b_signed = (mul_op == MULH);
 
-  // Sign extension for signed operands
+  // 对有符号操作数进行绝对值和符号扩展
   wire [XLEN-1:0] abs_a, abs_b;
   wire sign_a, sign_b;
 
@@ -65,7 +65,7 @@ module mul_unit #(
   wire negate_a = op_a_signed && sign_a;
   wire negate_b = op_b_signed && sign_b;
 
-  // For word operations, mask to lower 32 bits and sign-extend
+  // 对 W 类型操作进行 32 位掩码并符号扩展
   wire [XLEN-1:0] masked_a, masked_b;
   generate
     if (XLEN == 64) begin : gen_mask_64
@@ -80,25 +80,25 @@ module mul_unit #(
   assign abs_a = negate_a ? (~masked_a + 1'b1) : masked_a;
   assign abs_b = negate_b ? (~masked_b + 1'b1) : masked_b;
 
-  // Double-width accumulator for product
+  // 双倍位宽乘积累加器
   reg [2*XLEN-1:0] product;
   reg [2*XLEN-1:0] multiplicand;
   reg [XLEN-1:0]   multiplier;
 
-  // Cycle counter
+  // 周期计数器
   reg [6:0] cycle_count;
 
-  // Result sign (for signed operations)
+  // 结果符号（对有符号运算）
   reg result_negative;
 
-  // Control signals
+  // 控制寄存
   reg [1:0] op_reg;
   reg       word_op_reg;
 
-  // Temporary result extraction register
+  // 临时结果提取寄存器
   reg [XLEN-1:0] extracted_result;
 
-  // State machine
+  // 状态机寄存
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       state <= IDLE;
@@ -126,7 +126,7 @@ module mul_unit #(
     endcase
   end
 
-  // Datapath
+  // 数据通路
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       product         <= {(2*XLEN){1'b0}};
@@ -144,24 +144,24 @@ module mul_unit #(
           ready <= 1'b0;
 
           if (start) begin
-            // Initialize for multiplication
+            // 初始化乘法运算
             product         <= {(2*XLEN){1'b0}};
             multiplicand    <= {{XLEN{1'b0}}, abs_a};
             multiplier      <= abs_b;
             cycle_count     <= 7'd0;
-            result_negative <= negate_a ^ negate_b;  // XOR for result sign
+            result_negative <= negate_a ^ negate_b;  // 结果符号 = 两个操作数符号的异或
             op_reg          <= mul_op;
             word_op_reg     <= is_word_op;
           end
         end
 
         COMPUTE: begin
-          // Add and shift algorithm
+          // 迭代加法与移位算法
           if (multiplier[0]) begin
             product <= product + multiplicand;
           end
 
-          // Shift for next iteration
+          // 下一个迭代的移位
           multiplicand <= multiplicand << 1;
           multiplier   <= multiplier >> 1;
           cycle_count  <= cycle_count + 1;
@@ -170,11 +170,11 @@ module mul_unit #(
         DONE: begin
           ready <= 1'b1;
 
-          // Extract result based on operation
-          // Note: For word operations, result will be sign-extended after extraction
+          // 根据操作类型提取结果
+          // 注意：对 W 类型指令，提取后会再进行符号扩展
           case (op_reg)
             MUL: begin
-              // Lower XLEN bits
+              // 取低 XLEN 位
               if (result_negative) begin
                 extracted_result = ~product[XLEN-1:0] + 1'b1;
               end else begin
@@ -183,11 +183,11 @@ module mul_unit #(
             end
 
             MULH, MULHSU, MULHU: begin
-              // Upper XLEN bits
+              // 取高 XLEN 位
               if (result_negative && op_reg != MULHU) begin
-                // Negate 2*XLEN product, then take upper bits
+                // 先对 2*XLEN 位乘积取负，再取高位
                 reg [2*XLEN-1:0] neg_product;
-                neg_product = ~product + 1'b1;
+                neg_product      = ~product + 1'b1;
                 extracted_result = neg_product[2*XLEN-1:XLEN];
               end else begin
                 extracted_result = product[2*XLEN-1:XLEN];
@@ -197,7 +197,7 @@ module mul_unit #(
             default: extracted_result = product[XLEN-1:0];
           endcase
 
-          // Sign-extend for RV64W operations
+          // RV64W 指令的符号扩展
           if (XLEN == 64 && word_op_reg) begin
             result <= {{32{extracted_result[31]}}, extracted_result[31:0]};
           end else begin
@@ -212,11 +212,11 @@ module mul_unit #(
     end
   end
 
-  // Combinational busy signal - asserts when not in IDLE state
-  // This is one cycle faster than using a registered busy signal.
+  // busy 信号为组合逻辑：只要不在 IDLE 状态即为忙
+  // 这样比使用寄存 busy 信号少一个周期的延迟
   assign busy = (state != IDLE);
 
-  // Debug tracing
+  // 调试跟踪
   `ifdef DEBUG_MULTIPLIER
   always @(posedge clk) begin
     if (start && state == IDLE) begin
@@ -241,7 +241,7 @@ module mul_unit #(
                XLEN-1, product[XLEN-1:0]);
       $display("[MUL_UNIT]   result=0x%h, ready=%b", result, ready);
 
-      // Special trace for MULHU
+      // 针对 MULHU 的特殊跟踪
       if (op_reg == MULHU) begin
         $display("[MUL_UNIT] *** MULHU SPECIFIC: expected upper bits, got result=0x%h ***", result);
         $display("[MUL_UNIT]     If result equals operand_a (0x%h), THIS IS THE BUG!", operand_a);

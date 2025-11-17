@@ -1,15 +1,15 @@
-// bus_arbiter.v - Simple Bus Interconnect with Address Decoder
-// Routes CPU memory requests to DMEM, CLINT, or UART based on address
-// Single-cycle response, no pipelining, combinational routing
-// Author: RV1 Project
-// Date: 2025-10-26
+// bus_arbiter.v - 带地址解码的简单总线互联
+// 根据地址将 CPU 的存储器请求路由到 DMEM、CLINT 或 UART
+// 单周期响应，无流水，组合逻辑路由
+// 作者: RV1 项目组
+// 日期: 2025-10-26
 
 `include "config/rv_config.vh"
 
 module bus_arbiter #(
   parameter XLEN = `XLEN
 ) (
-  // CPU/Master interface
+  // CPU / 主设备接口
   input  wire             req_valid,
   input  wire [XLEN-1:0]  req_addr,
   input  wire [63:0]      req_wdata,
@@ -19,7 +19,7 @@ module bus_arbiter #(
   output wire [63:0]      req_rdata,
   output wire             req_error,
 
-  // DMEM interface
+  // DMEM 接口
   output wire             dmem_valid,
   output wire [XLEN-1:0]  dmem_addr,
   output wire [63:0]      dmem_wdata,
@@ -28,18 +28,18 @@ module bus_arbiter #(
   input  wire             dmem_ready,
   input  wire [63:0]      dmem_rdata,
 
-  // CLINT interface (Core-Local Interruptor)
+  // CLINT 接口（Core-Local Interruptor）
   output wire             clint_valid,
-  output wire [15:0]      clint_addr,     // 16-bit offset within 64KB region
+  output wire [15:0]      clint_addr,     // 64KB 区间内的 16 位偏移
   output wire [63:0]      clint_wdata,
   output wire             clint_we,
   output wire [2:0]       clint_size,
   input  wire             clint_ready,
   input  wire [63:0]      clint_rdata,
 
-  // UART interface (16550-compatible)
+  // UART 接口（16550 兼容）
   output wire             uart_valid,
-  output wire [2:0]       uart_addr,      // 3-bit offset (8 registers)
+  output wire [2:0]       uart_addr,      // 3 位偏移（8 个寄存器）
   output wire [7:0]       uart_wdata,
   output wire             uart_we,
   input  wire             uart_ready,
@@ -47,12 +47,12 @@ module bus_arbiter #(
 );
 
   //==========================================================================
-  // Address Decode
+  // 地址解码
   //==========================================================================
-  // Memory map:
-  //   0x0200_0000 - 0x0200_FFFF : CLINT (64KB)
-  //   0x1000_0000 - 0x1000_0FFF : UART (4KB, only first 8 bytes used)
-  //   0x8000_0000 - 0x8000_FFFF : DMEM (64KB)
+  // 内存映射：
+  //   0x0200_0000 - 0x0200_FFFF : CLINT（64KB）
+  //   0x1000_0000 - 0x1000_0FFF : UART（4KB，只使用前 8 字节）
+  //   0x8000_0000 - 0x8000_FFFF : DMEM（64KB）
 
   wire sel_clint = (req_addr[31:16] == 16'h0200);        // 0x0200_xxxx
   wire sel_uart  = (req_addr[31:12] == 20'h10000);       // 0x1000_0xxx
@@ -60,51 +60,51 @@ module bus_arbiter #(
   wire sel_none  = !(sel_dmem || sel_clint || sel_uart);
 
   //==========================================================================
-  // Request Routing (Combinational)
+  // 请求路由（组合逻辑）
   //==========================================================================
 
-  // DMEM routing
+  // DMEM 路由
   assign dmem_valid = req_valid && sel_dmem;
   assign dmem_addr  = req_addr;
   assign dmem_wdata = req_wdata;
   assign dmem_we    = req_we;
   assign dmem_size  = req_size;
 
-  // CLINT routing
+  // CLINT 路由
   assign clint_valid = req_valid && sel_clint;
-  assign clint_addr  = req_addr[15:0];           // Extract 16-bit offset
+  assign clint_addr  = req_addr[15:0];           // 取 16 位偏移
   assign clint_wdata = req_wdata;
   assign clint_we    = req_we;
   assign clint_size  = req_size;
 
-  // UART routing
+  // UART 路由
   assign uart_valid = req_valid && sel_uart;
-  assign uart_addr  = req_addr[2:0];             // Extract 3-bit register offset
-  assign uart_wdata = req_wdata[7:0];            // UART is 8-bit only
+  assign uart_addr  = req_addr[2:0];             // 取 3 位寄存器偏移
+  assign uart_wdata = req_wdata[7:0];            // UART 仅 8 位宽
   assign uart_we    = req_we;
 
   //==========================================================================
-  // Response Multiplexing (Combinational)
+  // 响应复用（组合逻辑）
   //==========================================================================
 
-  // Ready signal (1-cycle response from all slaves)
+  // ready 信号（所有从设备均为 1 周期响应）
   assign req_ready = sel_dmem  ? dmem_ready  :
                      sel_clint ? clint_ready :
                      sel_uart  ? uart_ready  :
                      sel_none  ? 1'b0 : 1'b0;
 
-  // Read data multiplexing
+  // 读数据复用
   assign req_rdata = sel_dmem  ? dmem_rdata :
                      sel_clint ? clint_rdata :
-                     sel_uart  ? {{56{1'b0}}, uart_rdata} :  // Zero-extend UART 8-bit
-                     64'h0;                                   // Default: return 0
+                     sel_uart  ? {{56{1'b0}}, uart_rdata} :  // UART 8 位零扩展
+                     64'h0;                                   // 默认返回 0
 
-  // Bus error detection
-  // Error if: (1) valid request to invalid address, or (2) no slave ready
+  // 总线错误检测
+  // 错误条件：(1) 对无效地址发起有效请求；或 (2) 没有从设备 ready
   assign req_error = sel_none && req_valid;
 
   //==========================================================================
-  // Debug Output (Optional)
+  // 调试输出（可选）
   //==========================================================================
   `ifdef DEBUG_BUS
   always @(posedge clk) begin

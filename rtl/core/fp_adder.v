@@ -1,45 +1,45 @@
-// Floating-Point Adder/Subtractor
-// Implements FADD.S/D and FSUB.S/D instructions
-// IEEE 754-2008 compliant with full rounding mode support
-// Multi-cycle execution: 3-4 cycles
+// 浮点加/减单元
+// 实现 FADD.S/D 和 FSUB.S/D 指令
+// 完整支持 IEEE 754-2008 舍入模式
+// 多周期执行: 3–4 周期
 
 `include "config/rv_config.vh"
 
 module fp_adder #(
-  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32 单精度，64 双精度
 ) (
   input  wire              clk,
   input  wire              reset_n,
 
-  // Control
-  input  wire              start,          // Start operation
-  input  wire              is_sub,         // 0: ADD, 1: SUB
-  input  wire              fmt,            // 0: single-precision, 1: double-precision
-  input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
-  output reg               busy,           // Operation in progress
-  output reg               done,           // Operation complete (1 cycle pulse)
+  // 控制信号
+  input  wire              start,          // 启动操作
+  input  wire              is_sub,         // 0: 加法, 1: 减法
+  input  wire              fmt,            // 0: 单精度, 1: 双精度
+  input  wire [2:0]        rounding_mode,  // IEEE 754 舍入模式
+  output reg               busy,           // 运算进行中
+  output reg               done,           // 运算完成 (1 周期脉冲)
 
-  // Operands
+  // 操作数
   input  wire [FLEN-1:0]   operand_a,
   input  wire [FLEN-1:0]   operand_b,
 
-  // Result
+  // 结果
   output reg  [FLEN-1:0]   result,
 
-  // Exception flags
-  output reg               flag_nv,        // Invalid operation
-  output reg               flag_of,        // Overflow
-  output reg               flag_uf,        // Underflow
-  output reg               flag_nx         // Inexact
+  // 异常标志
+  output reg               flag_nv,        // 无效操作
+  output reg               flag_of,        // 上溢
+  output reg               flag_uf,        // 下溢
+  output reg               flag_nx         // 不精确
 );
 
-  // IEEE 754 format parameters
+  // IEEE 754 格式参数
   localparam EXP_WIDTH = (FLEN == 32) ? 8 : 11;
   localparam MAN_WIDTH = (FLEN == 32) ? 23 : 52;
   localparam BIAS = (FLEN == 32) ? 127 : 1023;
   localparam MAX_EXP = (FLEN == 32) ? 255 : 2047;
 
-  // State machine
+  // 状态机
   localparam IDLE      = 3'b000;
   localparam UNPACK    = 3'b001;
   localparam ALIGN     = 3'b010;
@@ -50,49 +50,49 @@ module fp_adder #(
 
   reg [2:0] state, next_state;
 
-  // Unpacked operands (use max widths for both formats)
+  // 解包后的操作数 (使用最大位宽以支持双精度)
   reg sign_a, sign_b, sign_result;
-  reg [10:0] exp_a, exp_b, exp_result;  // Max 11 bits for double-precision
-  reg [52:0] man_a, man_b;              // Max 53 bits (52+1 implicit) for double-precision
-  reg fmt_latched;                      // Latched format signal
+  reg [10:0] exp_a, exp_b, exp_result;  // 最多 11 位用于双精度
+  reg [52:0] man_a, man_b;              // 最多 53 位 (52+1 隐含位) 用于双精度
+  reg fmt_latched;                      // 存储格式信号
 
-  // Special value flags
+  // 特殊值标志
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
   reg is_subnormal_a, is_subnormal_b;
-  reg special_case_handled;  // Track if special case was processed in ALIGN stage
+  reg special_case_handled;  // 标记特殊情况是否已在对齐阶段处理
 
-  // Computation (use max widths)
-  reg [55:0] aligned_man_a, aligned_man_b;  // 52+3 GRS bits + 1 for alignment
-  reg [56:0] sum;                            // +1 for overflow
-  reg [11:0] exp_diff;                       // 11+1 bits
+  // 对齐、求和、归一化与舍入所需的临时变量
+  reg [55:0] aligned_man_a, aligned_man_b;  // 52+3 GRS 位 + 1 位用于对齐
+  reg [56:0] sum;                            // +1 位用于溢出
+  reg [11:0] exp_diff;                       // 11+1 位
   reg [56:0] normalized_man;
   reg [11:0] adjusted_exp;
 
-  // Rounding
+  // 舍入相关寄存器
   reg guard, round, sticky;
   reg round_up;
 
-  // Combinational rounding decision
+  // 组合舍入决策
   wire round_up_comb;
-  wire lsb_bit;  // LSB of mantissa for tie-breaking (format-aware)
+  wire lsb_bit;  // 尾数的最低有效位，用于舍入时平分情况的判断（与格式相关）
 
-  // Format-aware LSB selection for rounding
-  // For single-precision in FLEN=64: mantissa is [54:32], so LSB is bit 32
-  // For double-precision: mantissa is [54:3], so LSB is bit 3
-  // For FLEN=32: mantissa is [25:3], so LSB is bit 3
+  // 与格式相关的 LSB 选择用于舍入
+  // 对于 FLEN=64 的单精度：尾数位于 [54:32]，因此 LSB 是第 32 位
+  // 对于双精度：尾数位于 [54:3]，因此 LSB 是第 3 位
+  // 对于 FLEN=32：尾数位于 [25:3]，因此 LSB 是第 3 位
   assign lsb_bit = (FLEN == 64 && !fmt_latched) ? normalized_man[32] : normalized_man[3];
 
-  // Combinational rounding logic
+  // 组合舍入逻辑
   assign round_up_comb = (state == ROUND) ? (
-    (rounding_mode == 3'b000) ? (guard && (round || sticky || lsb_bit)) :  // RNE
-    (rounding_mode == 3'b001) ? 1'b0 :                                      // RTZ
-    (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :        // RDN
-    (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) :       // RUP
-    (rounding_mode == 3'b100) ? guard :                                               // RMM
-    1'b0                                                                               // default
+    (rounding_mode == 3'b000) ? (guard && (round || sticky || lsb_bit)) : // RNE
+    (rounding_mode == 3'b001) ? 1'b0 :  // RTZ
+    (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) : // RDN
+    (rounding_mode == 3'b011) ? (!sign_result && (guard || round || sticky)) : // RUP
+    (rounding_mode == 3'b100) ? guard : // RMM
+    1'b0  // 默认
   ) : 1'b0;
 
-  // State machine
+  // 状态机
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
       state <= IDLE;
@@ -100,7 +100,7 @@ module fp_adder #(
       state <= next_state;
   end
 
-  // Next state logic
+  // 下一状态逻辑
   always @(*) begin
     case (state)
       IDLE:      next_state = start ? UNPACK : IDLE;
@@ -114,13 +114,13 @@ module fp_adder #(
     endcase
   end
 
-  // Busy and done signals
+  // busy 和 done 信号
   always @(*) begin
     busy = (state != IDLE) && (state != DONE);
     done = (state == DONE);
   end
 
-  // Main datapath
+  // 主数据通路
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       result <= {FLEN{1'b0}};
@@ -135,19 +135,19 @@ module fp_adder #(
       case (state)
 
         // ============================================================
-        // UNPACK: Extract sign, exponent, mantissa
+        // UNPACK: 提取符号、指数、尾数，区分 FLEN=64 单/双精度
         // ============================================================
         UNPACK: begin
-          // Clear special case flag for new operation
+          // 清除特殊情况标志以便进行新操作
           special_case_handled <= 1'b0;
 
-          // Latch format signal
+          // 存储格式信号
           fmt_latched <= fmt;
 
-          // Format-aware extraction for FLEN=64
+          // 针对 FLEN=64 的格式化提取
           if (FLEN == 64) begin
             if (fmt) begin
-              // Double-precision: use bits [63:0]
+              // 双精度: 使用 [63:0] 位
               sign_a <= operand_a[63];
               sign_b <= operand_b[63] ^ is_sub;
               exp_a  <= operand_a[62:52];
@@ -170,7 +170,7 @@ module fp_adder #(
               is_zero_a <= (operand_a[62:0] == 0);
               is_zero_b <= (operand_b[62:0] == 0);
             end else begin
-              // Single-precision: use bits [31:0] (NaN-boxed in [63:32])
+              // 单精度: 使用 [31:0] 位 (NaN-boxed 在 [63:32])
               sign_a <= operand_a[31];
               sign_b <= operand_b[31] ^ is_sub;
               exp_a  <= {3'b000, operand_a[30:23]};
@@ -194,7 +194,7 @@ module fp_adder #(
               is_zero_b <= (operand_b[30:0] == 0);
             end
           end else begin
-            // FLEN=32: always single-precision
+            // FLEN=32: 始终为单精度
             sign_a <= operand_a[31];
             sign_b <= operand_b[31] ^ is_sub;
             exp_a  <= {3'b000, operand_a[30:23]};
@@ -220,133 +220,133 @@ module fp_adder #(
         end
 
         // ============================================================
-        // ALIGN: Align mantissas by shifting smaller operand
+        // ALIGN：对齐尾数，通过移位较小的操作数
         // ============================================================
         ALIGN: begin
           `ifdef DEBUG_FPU
           $display("[FP_ADDER] ALIGN: sign_a=%b sign_b=%b exp_a=%h exp_b=%h man_a=%h man_b=%h",
                    sign_a, sign_b, exp_a, exp_b, man_a, man_b);
           `endif
-          // Handle special cases first
+          // 先处理特殊情况
           if (is_nan_a || is_nan_b) begin
-            // NaN propagation: return canonical NaN based on format
+            // NaN 传播: 返回基于格式的规范 NaN
             if (FLEN == 64 && fmt_latched)
-              result <= 64'h7FF8000000000000;  // Double canonical NaN
+              result <= 64'h7FF8000000000000;  // 双精度规范 NaN
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single canonical NaN (NaN-boxed)
+              result <= {32'hFFFFFFFF, 32'h7FC00000};  // 单精度规范 NaN (NaN-boxed)
             else
-              result <= 32'h7FC00000;  // FLEN=32 single canonical NaN
-            flag_nv <= 1'b1;  // Invalid operation
-            flag_nx <= 1'b0;  // Clear inexact flag for special cases
+              result <= 32'h7FC00000;  // FLEN=32 单精度规范 NaN
+            flag_nv <= 1'b1;  // 无效操作
+            flag_nx <= 1'b0;  // 清除特殊情况的非精确标志
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
-            special_case_handled <= 1'b1;  // Mark as special case
+            special_case_handled <= 1'b1;  // 标记为特殊情况
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] NaN detected, returning canonical NaN");
+            $display("[FP_ADDER] NaN 检测到，返回规范 NaN");
             `endif
           end else if (is_inf_a && is_inf_b && (sign_a != sign_b)) begin
-            // ∞ - ∞: Invalid
+            // ∞ - ∞: 无效
             if (FLEN == 64 && fmt_latched)
-              result <= 64'h7FF8000000000000;  // Double canonical NaN
+              result <= 64'h7FF8000000000000;  // 双精度规范 NaN
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single canonical NaN (NaN-boxed)
+              result <= {32'hFFFFFFFF, 32'h7FC00000};  // 单精度规范 NaN (NaN-boxed)
             else
-              result <= 32'h7FC00000;  // FLEN=32 single canonical NaN
+              result <= 32'h7FC00000;  // FLEN=32 单精度规范 NaN
             flag_nv <= 1'b1;
-            flag_nx <= 1'b0;  // Clear inexact flag for invalid operations
+            flag_nx <= 1'b0;  // 清除无效操作的非精确标志
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
-            special_case_handled <= 1'b1;  // Mark as special case
+            special_case_handled <= 1'b1;  // 标记为特殊情况
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] Inf - Inf detected, invalid operation");
+            $display("[FP_ADDER] Inf - Inf 检测到，无效操作");
             `endif
           end else if (is_inf_a) begin
-            // a is ∞: return a (exact result, no exceptions)
+            // a 为 ∞: 返回 a (精确结果，无异常)
             if (FLEN == 64 && fmt_latched)
-              result <= {sign_a, 11'h7FF, 52'h0};  // Double infinity
+              result <= {sign_a, 11'h7FF, 52'h0};  // 双精度 ∞
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, sign_a, 8'hFF, 23'h0};  // Single infinity (NaN-boxed)
+              result <= {32'hFFFFFFFF, sign_a, 8'hFF, 23'h0};  // 单精度 ∞ (NaN-boxed)
             else
-              result <= {sign_a, 8'hFF, 23'h0};  // FLEN=32 single infinity
+              result <= {sign_a, 8'hFF, 23'h0};  // FLEN=32 单精度 ∞
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
-            special_case_handled <= 1'b1;  // Mark as special case
+            special_case_handled <= 1'b1;  // 标记为特殊情况
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] Operand A is Inf, returning Inf");
+            $display("[FP_ADDER] 操作数 A 是无穷大，返回无穷大");
             `endif
           end else if (is_inf_b) begin
-            // b is ∞: return b (exact result, no exceptions)
+            // b 为 ∞: 返回 b (精确结果，无异常)
             if (FLEN == 64 && fmt_latched)
-              result <= {sign_b, 11'h7FF, 52'h0};  // Double infinity
+              result <= {sign_b, 11'h7FF, 52'h0};  // 双精度 ∞
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, sign_b, 8'hFF, 23'h0};  // Single infinity (NaN-boxed)
+              result <= {32'hFFFFFFFF, sign_b, 8'hFF, 23'h0};  // 单精度 ∞ (NaN-boxed)
             else
-              result <= {sign_b, 8'hFF, 23'h0};  // FLEN=32 single infinity
+              result <= {sign_b, 8'hFF, 23'h0};  // FLEN=32 单精度 ∞
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
-            special_case_handled <= 1'b1;  // Mark as special case
+            special_case_handled <= 1'b1;  // 标记为特殊情况
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] Operand B is Inf, returning Inf");
+            $display("[FP_ADDER] 操作数 B 是无穷大，返回无穷大");
             `endif
           end else if (is_zero_a && is_zero_b) begin
-            // 0 + 0: sign depends on rounding mode and operand signs (exact result)
+            // 0 + 0: 符号取决于舍入模式和操作数符号 (精确结果)
             sign_result <= (sign_a && sign_b) || ((sign_a || sign_b) && (rounding_mode == 3'b010));
             result <= {sign_result, {FLEN-1{1'b0}}};
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
-            special_case_handled <= 1'b1;  // Mark as special case
+            special_case_handled <= 1'b1;  // 标记为特殊情况
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] Both operands zero, returning zero");
+            $display("[FP_ADDER] 两个操作数都是零，返回零");
             `endif
           end else if (is_zero_a) begin
-            // a is 0: return b (exact result)
-            // Format-aware result assembly
+            // a 为 0: 返回 b (精确结果)
+            // 针对格式的结果组装
             if (FLEN == 64 && fmt_latched)
-              result <= {sign_b, exp_b, man_b[51:0]};  // Double: 52-bit mantissa
+              result <= {sign_b, exp_b, man_b[51:0]};  // 双精度: 52 位尾数
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, sign_b, exp_b[7:0], man_b[51:29]};  // Single: 23-bit mantissa (NaN-boxed)
+              result <= {32'hFFFFFFFF, sign_b, exp_b[7:0], man_b[51:29]};  // 单精度: 23 位尾数 (NaN-boxed)
             else
-              result <= {sign_b, exp_b[7:0], man_b[51:29]};  // FLEN=32 single: 23-bit mantissa
+              result <= {sign_b, exp_b[7:0], man_b[51:29]};  // FLEN=32 单精度: 23 位尾数
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
-            special_case_handled <= 1'b1;  // Mark as special case
+            special_case_handled <= 1'b1;  // 标记为特殊情况
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] Operand A is zero, returning B");
+            $display("[FP_ADDER] 操作数 A 是零，返回操作数 B");
             `endif
           end else if (is_zero_b) begin
-            // b is 0: return a (exact result)
-            // Format-aware result assembly
+            // b 为 0: 返回 a (精确结果)
+            // 针对格式的结果组装
             if (FLEN == 64 && fmt_latched)
-              result <= {sign_a, exp_a, man_a[51:0]};  // Double: 52-bit mantissa
+              result <= {sign_a, exp_a, man_a[51:0]};  // 双精度: 52 位尾数
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, sign_a, exp_a[7:0], man_a[51:29]};  // Single: 23-bit mantissa (NaN-boxed)
+              result <= {32'hFFFFFFFF, sign_a, exp_a[7:0], man_a[51:29]};  // 单精度: 23 位尾数 (NaN-boxed)
             else
-              result <= {sign_a, exp_a[7:0], man_a[51:29]};  // FLEN=32 single: 23-bit mantissa
+              result <= {sign_a, exp_a[7:0], man_a[51:29]};  // FLEN=32 单精度: 23 位尾数
             flag_nv <= 1'b0;
             flag_nx <= 1'b0;
             flag_of <= 1'b0;
             flag_uf <= 1'b0;
-            special_case_handled <= 1'b1;  // Mark as special case
+            special_case_handled <= 1'b1;  // 标记为特殊情况
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] Operand B is zero, returning A");
+            $display("[FP_ADDER] 操作数 B 是零，返回操作数 A");
             `endif
           end else begin
-            // Normal case: align mantissas
+            // 正常情况: 对齐尾数
             if (exp_a >= exp_b) begin
               exp_result <= exp_a;
               exp_diff <= exp_a - exp_b;
-              aligned_man_a <= {man_a, 3'b000};  // Add GRS bits
-              // Shift smaller mantissa right
+              aligned_man_a <= {man_a, 3'b000};  // 添加 GRS 位
+              // 右移较小的尾数
               if (exp_a - exp_b > (MAN_WIDTH + 4))
-                aligned_man_b <= {{MAN_WIDTH+4{1'b0}}, 1'b1};  // All shifted out -> sticky
+                aligned_man_b <= {{MAN_WIDTH+4{1'b0}}, 1'b1};  // 全部移出 -> sticky
               else
                 aligned_man_b <= ({man_b, 3'b000} >> (exp_a - exp_b));
               `ifdef DEBUG_FPU
@@ -370,11 +370,11 @@ module fp_adder #(
         end
 
         // ============================================================
-        // COMPUTE: Add or subtract aligned mantissas
+        // COMPUTE: 根据符号进行加法或减法
         // ============================================================
         COMPUTE: begin
           if (sign_a == sign_b) begin
-            // Same sign: add magnitudes
+            // 相同符号: 相加绝对值
             sum <= aligned_man_a + aligned_man_b;
             sign_result <= sign_a;
             `ifdef DEBUG_FPU
@@ -382,7 +382,7 @@ module fp_adder #(
                      aligned_man_a, aligned_man_b, aligned_man_a + aligned_man_b);
             `endif
           end else begin
-            // Different signs: subtract magnitudes
+            // 不同符号: 相减绝对值
             if (aligned_man_a >= aligned_man_b) begin
               sum <= aligned_man_a - aligned_man_b;
               sign_result <= sign_a;
@@ -402,7 +402,7 @@ module fp_adder #(
         end
 
         // ============================================================
-        // NORMALIZE: Shift result to normalized form
+        // NORMALIZE: 将结果移位到规范化形式
         // ============================================================
         NORMALIZE: begin
           `ifdef DEBUG_FPU
@@ -411,19 +411,19 @@ module fp_adder #(
 
           adjusted_exp <= exp_result;
 
-          // Check for zero result (format-aware)
+          // 检查结果是否为零 (针对格式)
           if (sum == 0) begin
             if (FLEN == 64 && fmt_latched)
-              result <= {sign_result, 63'b0};  // Double zero
+              result <= {sign_result, 63'b0};  // 双精度零
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, sign_result, 31'b0};  // Single zero (NaN-boxed)
+              result <= {32'hFFFFFFFF, sign_result, 31'b0};  // 单精度零 (NaN-boxed)
             else
-              result <= {sign_result, 31'b0};  // FLEN=32 single zero
+              result <= {sign_result, 31'b0};  // FLEN=32 单精度零
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] NORMALIZE: sum is zero, returning zero");
+            $display("[FP_ADDER] NORMALIZE: 和是零，返回零");
             `endif
           end
-          // Check for overflow (carry out)
+          // 检查溢出 (进位输出)
           else if (sum[MAN_WIDTH+4]) begin
             normalized_man <= sum >> 1;
             adjusted_exp <= exp_result + 1;
@@ -431,28 +431,28 @@ module fp_adder #(
             round <= 1'b0;
             sticky <= 1'b0;
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] NORMALIZE: overflow detected, normalized_man=%h adj_exp=%h",
+            $display("[FP_ADDER] NORMALIZE: 溢出检测到，normalized_man=%h adj_exp=%h",
                      sum >> 1, exp_result + 1);
             `endif
           end
-          // Check for leading zeros (need to shift left)
+          // 检查前导零 (需要左移)
           else begin
-            // Normalization: shift left until bit MAN_WIDTH+3 is 1
-            // Simple cascaded if-else for priority encoding
-            // For single-precision: MAN_WIDTH+3 = 26, check bits 26 down to 3
+            // 归一化: 左移直到第 MAN_WIDTH+3 位为 1
+            // 简单的级联 if-else 优先级编码
+            // 对于单精度: MAN_WIDTH+3 = 26, 检查 26 位到 3 位
 
-            // Start from the MSB and check each bit position
+            // 从 MSB 开始检查每个位
             if (sum[MAN_WIDTH+3]) begin
-              // Already normalized - bit 26 is set
+              // 已归一化 - 第 26 位被设置
               normalized_man <= sum;
               adjusted_exp <= exp_result;
-              // Format-aware GRS extraction:
-              // - Single-precision (FLEN=64, fmt=0): GRS at bits [31:29] (padding boundary)
-              // - Double-precision or FLEN=32: GRS at bits [2:0] (normal position)
+              // 针对格式的 GRS 提取:
+              // - 单精度 (FLEN=64, fmt=0): GRS 在 [31:29] 位 (填充边界)
+              // - 双精度或 FLEN=32: GRS 在 [2:0] 位 (正常位置)
               if (FLEN == 64 && !fmt_latched) begin
                 guard <= sum[31];
                 round <= sum[30];
-                sticky <= |sum[29:0];  // OR of all remaining bits
+                sticky <= |sum[29:0];  // OR 其余所有位
               end else begin
                 guard <= sum[2];
                 round <= sum[1];
@@ -460,14 +460,14 @@ module fp_adder #(
               end
               `ifdef DEBUG_FPU
               if (FLEN == 64 && !fmt_latched)
-                $display("[FP_ADDER] NORMALIZE: already normalized (SP), normalized_man=%h adj_exp=%h GRS=%b%b%b",
-                         sum, exp_result, sum[31], sum[30], |sum[29:0]);
-              else
-                $display("[FP_ADDER] NORMALIZE: already normalized, normalized_man=%h adj_exp=%h GRS=%b%b%b",
-                         sum, exp_result, sum[2], sum[1], sum[0]);
+                $display("[FP_ADDER] NORMALIZE: 已归一化（单精度），normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                     sum, exp_result, sum[31], sum[30], |sum[29:0]);
+                else
+                $display("[FP_ADDER] NORMALIZE: 已归一化，normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                     sum, exp_result, sum[2], sum[1], sum[0]);
               `endif
             end else if (sum[MAN_WIDTH+2]) begin
-              // Shift left by 1
+              // 左移 1 位
               normalized_man <= sum << 1;
               adjusted_exp <= exp_result - 1;
               if (FLEN == 64 && !fmt_latched) begin
@@ -481,14 +481,14 @@ module fp_adder #(
               end
               `ifdef DEBUG_FPU
               if (FLEN == 64 && !fmt_latched)
-                $display("[FP_ADDER] NORMALIZE: shifted left 1 (SP), normalized_man=%h adj_exp=%h GRS=%b%b%b",
-                         sum << 1, exp_result - 1, sum[30], sum[29], |sum[28:0]);
-              else
-                $display("[FP_ADDER] NORMALIZE: shifted left 1, normalized_man=%h adj_exp=%h GRS=%b%b%b",
-                         sum << 1, exp_result - 1, sum[1], sum[0], 1'b0);
+                $display("[FP_ADDER] 归一化: 左移 1 位（单精度），normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                     sum << 1, exp_result - 1, sum[30], sum[29], |sum[28:0]);
+                else
+                $display("[FP_ADDER] 归一化: 左移 1 位，normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                     sum << 1, exp_result - 1, sum[1], sum[0], 1'b0);
               `endif
             end else if (sum[MAN_WIDTH+1]) begin
-              // Shift left by 2
+              // 左移 2 位
               normalized_man <= sum << 2;
               adjusted_exp <= exp_result - 2;
               if (FLEN == 64 && !fmt_latched) begin
@@ -502,63 +502,63 @@ module fp_adder #(
               end
               `ifdef DEBUG_FPU
               if (FLEN == 64 && !fmt_latched)
-                $display("[FP_ADDER] NORMALIZE: shifted left 2 (SP), normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                $display("[FP_ADDER] NORMALIZE: 左移 2 位（单精度），normalized_man=%h adj_exp=%h GRS=%b%b%b",
                          sum << 2, exp_result - 2, sum[29], sum[28], |sum[27:0]);
               else
-                $display("[FP_ADDER] NORMALIZE: shifted left 2, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+                $display("[FP_ADDER] NORMALIZE: 左移 2 位，normalized_man=%h adj_exp=%h GRS=%b%b%b",
                          sum << 2, exp_result - 2, sum[0], 1'b0, 1'b0);
               `endif
             end else begin
-              // Need to shift by more than 2 (rare case - very small result)
-              // For now, shift by 3 and handle larger shifts in future
+              // 需要左移超过 2 位 (少见情况 - 非常小的结果)
+              // 目前左移 3 位，未来处理更大移位
               normalized_man <= sum << 3;
               adjusted_exp <= exp_result - 3;
-              // After 3+ shifts, precision is lost - GRS become 0
+              // 左移 3+ 位后，精度丢失 - GRS 变为 0
               guard <= 1'b0;
               round <= 1'b0;
               sticky <= 1'b0;
               `ifdef DEBUG_FPU
-              $display("[FP_ADDER] NORMALIZE: shifted left 3+, normalized_man=%h adj_exp=%h GRS=%b%b%b",
+              $display("[FP_ADDER] NORMALIZE: 左移 3 位以上，normalized_man=%h adj_exp=%h GRS=%b%b%b",
                        sum << 3, exp_result - 3, 1'b0, 1'b0, 1'b0);
               `endif
             end
           end
 
-          // Check for overflow (format-aware)
+          // 检查溢出 (针对格式)
           if ((FLEN == 64 && fmt_latched && adjusted_exp >= 12'd2047) ||
               (FLEN == 64 && !fmt_latched && adjusted_exp >= 12'd255) ||
               (FLEN == 32 && adjusted_exp >= 12'd255)) begin
             flag_of <= 1'b1;
-            // Return ±infinity based on format
+            // 返回 ±∞ 基于格式
             if (FLEN == 64 && fmt_latched)
-              result <= {sign_result, 11'h7FF, 52'h0};  // Double infinity
+              result <= {sign_result, 11'h7FF, 52'h0};  // 双精度 ∞
             else if (FLEN == 64 && !fmt_latched)
-              result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // Single infinity (NaN-boxed)
+              result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // 单精度 ∞ (NaN-boxed)
             else
-              result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 single infinity
+              result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 单精度 ∞
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] NORMALIZE: exponent overflow, returning Inf");
+            $display("[FP_ADDER] NORMALIZE: 指数溢出，返回无穷大");
             `endif
           end
         end
 
         // ============================================================
-        // ROUND: Apply rounding mode
+        // ROUND: 应用舍入模式，组装最终结果
         // ============================================================
         ROUND: begin
-          // Only process normal cases - special cases already handled in ALIGN
+          // 仅处理正常情况 - 特殊情况已在 ALIGN 阶段处理
           if (!special_case_handled) begin
             `ifdef DEBUG_FPU
-            $display("[FP_ADDER] ROUND inputs: G=%b R=%b S=%b LSB=%b (lsb_bit=%b) rmode=%d",
+            $display("[FP_ADDER] 舍入 输入: G=%b R=%b S=%b LSB=%b (lsb_bit=%b) rmode=%d",
                      guard, round, sticky, normalized_man[3], lsb_bit, rounding_mode);
             `endif
 
-            // Apply rounding (using combinational round_up_comb)
-            // Format-aware result assembly
+            // 应用舍入 (使用组合逻辑 round_up_comb)
+            // 针对格式的结果组装
             if (FLEN == 64 && fmt_latched) begin
-              // Double-precision: 64-bit result
+              // 双精度: 64 位结果
               `ifdef DEBUG_FPU
-              $display("[FP_ADDER] ROUND (double): sign=%b exp=%h man=%h round_up=%b",
+              $display("[FP_ADDER] 舍入 (双精度): sign=%b exp=%h man=%h round_up=%b",
                        sign_result, adjusted_exp[10:0], normalized_man[54:3], round_up_comb);
               `endif
               if (round_up_comb) begin
@@ -567,10 +567,10 @@ module fp_adder #(
                 result <= {sign_result, adjusted_exp[10:0], normalized_man[54:3]};
               end
             end else if (FLEN == 64 && !fmt_latched) begin
-              // Single-precision in 64-bit register (NaN-boxed)
-              // Extract mantissa from bits [54:32] (where actual SP mantissa is after padding)
+              // 单精度在 64 位寄存器中 (NaN-boxed)
+              // 从 [54:32] 位提取尾数 (实际 SP尾数在填充后的位置)
               `ifdef DEBUG_FPU
-              $display("[FP_ADDER] ROUND (single/64): sign=%b exp=%h man=%h round_up=%b",
+              $display("[FP_ADDER] 舍入 (单精度/64): sign=%b exp=%h man=%h round_up=%b",
                        sign_result, adjusted_exp[7:0], normalized_man[54:32], round_up_comb);
               `endif
               if (round_up_comb) begin
@@ -579,11 +579,11 @@ module fp_adder #(
                 result <= {32'hFFFFFFFF, sign_result, adjusted_exp[7:0], normalized_man[54:32]};
               end
             end else begin
-              // FLEN=32: single-precision in 32-bit register
-              // For FLEN=32, normalized_man layout is different (no padding)
-              // Mantissa is at bits [25:3] (23 bits)
+              // FLEN=32: 单精度在 32 位寄存器中
+              // 对于 FLEN=32，normalized_man 布局不同 (无填充)
+              // 尾数位于 [25:3] 位 (23 位)
               `ifdef DEBUG_FPU
-              $display("[FP_ADDER] ROUND (single/32): sign=%b exp=%h man=%h round_up=%b",
+              $display("[FP_ADDER] 舍入 (单精度/32): sign=%b exp=%h man=%h round_up=%b",
                        sign_result, adjusted_exp[7:0], normalized_man[25:3], round_up_comb);
               `endif
               if (round_up_comb) begin
@@ -593,19 +593,19 @@ module fp_adder #(
               end
             end
 
-            // Set inexact flag (only for normal cases)
+            // 设置非精确标志 (仅针对正常情况)
             flag_nx <= guard || round || sticky;
           end
-          // else: special case - result and flags already set in ALIGN stage
+          // else: 特殊情况 - 结果和标志已在 ALIGN 阶段设置
         end
 
         // ============================================================
-        // DONE: Hold result for 1 cycle
+        // DONE: 保持结果 (调试宏下打印结果)
         // ============================================================
         DONE: begin
-          // Just hold result
+          // 仅保持结果
           `ifdef DEBUG_FPU
-          $display("[FP_ADDER] Result: %h", result);
+          $display("[FP_ADDER] 结果: %h", result);
           `endif
         end
 

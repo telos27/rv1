@@ -1,94 +1,94 @@
-// tlb.v - Translation Lookaside Buffer (TLB)
-// Reusable TLB module for both I-TLB and D-TLB
-// Provides fast virtual-to-physical address translation with permission checking
-// Author: RV1 Project
-// Date: 2025-11-08 (Session 125)
+// tlb.v - 翻译后备缓冲区 (TLB)
+// 可复用的 TLB 模块，同时用于 I-TLB 和 D-TLB
+// 提供快速虚拟地址到物理地址的翻译，并进行权限检查
+// 作者：RV1 项目组
+// 日期：2025-11-08 (Session 125)
 
 `include "config/rv_config.vh"
 
 module tlb #(
   parameter XLEN = `XLEN,
-  parameter TLB_ENTRIES = 8  // Number of TLB entries
+  parameter TLB_ENTRIES = 8  // TLB 项目数
 ) (
   input  wire             clk,
   input  wire             reset_n,
 
-  // Lookup request
-  input  wire             lookup_valid,      // Lookup request valid
-  input  wire [XLEN-1:0]  lookup_vaddr,      // Virtual address to translate
-  input  wire             lookup_is_store,   // 1=store, 0=load
-  input  wire             lookup_is_fetch,   // 1=instruction fetch, 0=data access
-  output wire             lookup_hit,        // TLB hit
-  output wire [XLEN-1:0]  lookup_paddr,      // Physical address (if hit)
-  output wire             lookup_page_fault, // Page fault (if hit but no permission)
+  // 查表请求
+  input  wire             lookup_valid,      // 查表请求有效
+  input  wire [XLEN-1:0]  lookup_vaddr,      // 需要翻译的虚拟地址
+  input  wire             lookup_is_store,   // 1=写存储(store)，0=读(load)
+  input  wire             lookup_is_fetch,   // 1=取指(fetch)，0=数据访问
+  output wire             lookup_hit,        // TLB 命中
+  output wire [XLEN-1:0]  lookup_paddr,      // 物理地址（命中时）
+  output wire             lookup_page_fault, // 页错误（命中但权限不允许时）
 
-  // TLB update from PTW
-  input  wire             update_valid,      // Update TLB entry
-  input  wire [XLEN-1:0]  update_vpn,        // Virtual page number
-  input  wire [XLEN-1:0]  update_ppn,        // Physical page number
-  input  wire [7:0]       update_pte,        // PTE flags (V,R,W,X,U,G,A,D)
-  input  wire [XLEN-1:0]  update_level,      // Page level (0=4KB, 1=2/4MB, 2=1GB)
+  // 来自 PTW 的 TLB 更新
+  input  wire             update_valid,      // 更新 TLB 项
+  input  wire [XLEN-1:0]  update_vpn,        // 虚拟页号 VPN
+  input  wire [XLEN-1:0]  update_ppn,        // 物理页号 PPN
+  input  wire [7:0]       update_pte,        // PTE 标志位 (V,R,W,X,U,G,A,D)
+  input  wire [XLEN-1:0]  update_level,      // 页级别 (0=4KB, 1=2/4MB, 2=1GB)
 
-  // CSR interface for permission checking
-  input  wire [1:0]       privilege_mode,    // Current privilege mode (0=U, 1=S, 3=M)
-  input  wire             mstatus_sum,       // Supervisor User Memory access
+  // 用于权限检查的 CSR 接口
+  input  wire [1:0]       privilege_mode,    // 当前特权级 (0=U, 1=S, 3=M)
+  input  wire             mstatus_sum,       // Supervisor User Memory 访问允许
   input  wire             mstatus_mxr,       // Make eXecutable Readable
-  input  wire             translation_enabled, // Translation enabled (satp.MODE != 0)
+  input  wire             translation_enabled, // 启用地址翻译 (satp.MODE != 0)
 
-  // TLB flush control
-  input  wire             flush_all,         // Flush entire TLB
-  input  wire             flush_vaddr,       // Flush specific virtual address
-  input  wire [XLEN-1:0]  flush_addr         // Address to flush (if flush_vaddr)
+  // TLB 刷新控制
+  input  wire             flush_all,         // 刷新整张 TLB
+  input  wire             flush_vaddr,       // 按虚拟地址刷新
+  input  wire [XLEN-1:0]  flush_addr         // 要刷新的虚拟地址（当 flush_vaddr=1 时有效）
 );
 
   // =========================================================================
-  // RISC-V Virtual Memory Parameters
+  // RISC-V 虚拟内存参数
   // =========================================================================
 
-  localparam PAGE_SHIFT = 12;  // 4KB pages
+  localparam PAGE_SHIFT = 12;  // 4KB 页
 
-  // PTE (Page Table Entry) bit fields
-  localparam PTE_V = 0;  // Valid
-  localparam PTE_R = 1;  // Readable
-  localparam PTE_W = 2;  // Writable
-  localparam PTE_X = 3;  // Executable
-  localparam PTE_U = 4;  // User accessible
-  localparam PTE_G = 5;  // Global mapping
-  localparam PTE_A = 6;  // Accessed
-  localparam PTE_D = 7;  // Dirty
+  // PTE (页表项) 位编码
+  localparam PTE_V = 0;  // 是否有效
+  localparam PTE_R = 1;  // 可读
+  localparam PTE_W = 2;  // 可写
+  localparam PTE_X = 3;  // 可执行
+  localparam PTE_U = 4;  // 用户可访问
+  localparam PTE_G = 5;  // 全局映射
+  localparam PTE_A = 6;  // 访问标记
+  localparam PTE_D = 7;  // 脏页标记
 
   // =========================================================================
-  // TLB Storage
+  // TLB 存储结构
   // =========================================================================
 
   reg                   tlb_valid [0:TLB_ENTRIES-1];
-  reg [XLEN-1:0]        tlb_vpn   [0:TLB_ENTRIES-1];  // Virtual page number
-  reg [XLEN-1:0]        tlb_ppn   [0:TLB_ENTRIES-1];  // Physical page number
-  reg [7:0]             tlb_pte   [0:TLB_ENTRIES-1];  // PTE flags
-  reg [XLEN-1:0]        tlb_level [0:TLB_ENTRIES-1];  // Page level
+  reg [XLEN-1:0]        tlb_vpn   [0:TLB_ENTRIES-1];  // 虚拟页号 VPN
+  reg [XLEN-1:0]        tlb_ppn   [0:TLB_ENTRIES-1];  // 物理页号 PPN
+  reg [7:0]             tlb_pte   [0:TLB_ENTRIES-1];  // PTE 标志位
+  reg [XLEN-1:0]        tlb_level [0:TLB_ENTRIES-1];  // 页级别
 
-  // TLB replacement policy: simple round-robin
+  // TLB 替换策略：简单轮询 (round-robin)
   reg [$clog2(TLB_ENTRIES)-1:0] tlb_replace_idx;
 
   // =========================================================================
-  // VPN Extraction
+  // VPN 提取
   // =========================================================================
 
   function [XLEN-1:0] get_full_vpn;
     input [XLEN-1:0] vaddr;
     begin
       if (XLEN == 32) begin
-        // Sv32: VPN = bits[31:12] (20 bits)
+        // Sv32: VPN = bits[31:12] (20 位)
         get_full_vpn = {{(XLEN-20){1'b0}}, vaddr[31:12]};
       end else begin
-        // Sv39: VPN = bits[38:12] (27 bits)
+        // Sv39: VPN = bits[38:12] (27 位)
         get_full_vpn = {{(XLEN-27){1'b0}}, vaddr[38:12]};
       end
     end
   endfunction
 
   // =========================================================================
-  // TLB Lookup (Combinational)
+  // TLB 查表逻辑（组合逻辑）
   // =========================================================================
 
   reg tlb_hit_found;
@@ -118,7 +118,7 @@ module tlb #(
     end
   end
 
-  // Debug: print TLB lookups
+  // 调试：打印 TLB 查表信息
   always @(posedge clk) begin
     if (lookup_valid && translation_enabled && reset_n) begin
       $display("[TLB_LOOKUP] VA=0x%h VPN=0x%h hit=%b fetch=%b",
@@ -135,7 +135,7 @@ module tlb #(
   assign lookup_hit = tlb_hit_found;
 
   // =========================================================================
-  // Permission Checking (Combinational)
+  // 权限检查（组合逻辑）
   // =========================================================================
 
   function check_permission;
@@ -148,59 +148,59 @@ module tlb #(
     begin
       check_permission = 1;
 
-      // Check valid bit
+      // 检查有效位
       if (!pte_flags[PTE_V]) begin
         check_permission = 0;
       end
-      // Check for leaf PTE (at least one of R, X must be set)
+      // 检查是否为叶子 PTE（至少 R 或 X 之一为 1）
       else if (!pte_flags[PTE_R] && !pte_flags[PTE_W] && !pte_flags[PTE_X]) begin
-        check_permission = 0;  // Non-leaf PTE
+        check_permission = 0;  // 非叶子 PTE
       end
-      // Check write permission (W=1 requires R=1)
+      // 检查写权限（W=1 要求 R=1）
       else if (pte_flags[PTE_W] && !pte_flags[PTE_R]) begin
         check_permission = 0;
       end
-      // Check user mode access
-      else if (priv_mode == 2'b00) begin  // User mode
+      // 用户态访问检查
+      else if (priv_mode == 2'b00) begin  // 用户态（User mode）
         if (!pte_flags[PTE_U]) begin
-          check_permission = 0;  // User accessing supervisor page
+          check_permission = 0;  // 用户访问 S 态页
         end
       end
-      else if (priv_mode == 2'b01) begin  // Supervisor mode
+      else if (priv_mode == 2'b01) begin  // 监督者态 (Supervisor mode)
         if (pte_flags[PTE_U] && !sum) begin
-          check_permission = 0;  // Supervisor accessing user page without SUM
+          check_permission = 0;  // S 态访问 U 态页且 SUM=0
         end
       end
 
-      // Check specific access type
+      // 按访问类型检查权限
       if (check_permission) begin
         if (is_fetch) begin
           check_permission = pte_flags[PTE_X];
         end else if (is_store) begin
           check_permission = pte_flags[PTE_W];
         end else begin
-          // Load: need R or (X and MXR)
+          // load：需要 R，或 (X 且 MXR=1)
           check_permission = pte_flags[PTE_R] || (pte_flags[PTE_X] && mxr);
         end
       end
     end
   endfunction
 
-  // Check permissions for lookup
+  // 查表访问的权限检查
   wire perm_ok = check_permission(tlb_pte_out, lookup_is_store, lookup_is_fetch,
                                   privilege_mode, mstatus_sum, mstatus_mxr);
 
   assign lookup_page_fault = tlb_hit_found && !perm_ok;
 
   // =========================================================================
-  // Physical Address Construction (Combinational)
+  // 物理地址构造（组合逻辑）
   // =========================================================================
 
-  // Construct physical address from PPN and virtual address based on page level
+  // 根据页级别，从 PPN 和虚拟地址构造物理地址
   function [XLEN-1:0] construct_pa;
-    input [XLEN-1:0] ppn;    // Full PPN from PTE
-    input [XLEN-1:0] vaddr;  // Virtual address
-    input [XLEN-1:0] level;  // Page table level
+    input [XLEN-1:0] ppn;    // PTE 中的完整 PPN
+    input [XLEN-1:0] vaddr;  // 虚拟地址
+    input [XLEN-1:0] level;  // 页表级别
     begin
       if (XLEN == 32) begin
         // Sv32
@@ -224,7 +224,7 @@ module tlb #(
   assign lookup_paddr = construct_pa(tlb_ppn_out, lookup_vaddr, tlb_level_out);
 
   // =========================================================================
-  // TLB Update and Flush Logic (Sequential)
+  // TLB 更新与刷新逻辑（时序逻辑）
   // =========================================================================
 
   always @(posedge clk or negedge reset_n) begin
@@ -238,7 +238,7 @@ module tlb #(
         tlb_level[i] <= 0;
       end
     end else begin
-      // TLB flush logic
+      // TLB 刷新逻辑
       if (flush_all) begin
         for (i = 0; i < TLB_ENTRIES; i = i + 1) begin
           tlb_valid[i] <= 0;
@@ -251,7 +251,7 @@ module tlb #(
         end
       end
 
-      // TLB update from PTW
+      // 来自 PTW 的 TLB 更新
       if (update_valid) begin
         tlb_valid[tlb_replace_idx] <= 1;
         tlb_vpn[tlb_replace_idx] <= update_vpn;
@@ -259,7 +259,7 @@ module tlb #(
         tlb_pte[tlb_replace_idx] <= update_pte;
         tlb_level[tlb_replace_idx] <= update_level;
         tlb_replace_idx <= tlb_replace_idx + 1;
-        $display("[TLB] Update entry[%0d]: VPN=0x%h PPN=0x%h pte=0x%02h level=%0d fetch=%b",
+        $display("[TLB] 更新条目[%0d]: VPN=0x%h PPN=0x%h pte=0x%02h level=%0d fetch=%b",
                  tlb_replace_idx, update_vpn, update_ppn, update_pte, update_level, lookup_is_fetch);
       end
     end

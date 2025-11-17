@@ -1,46 +1,46 @@
-// Floating-Point Divider
-// Implements FDIV.S/D instruction
-// IEEE 754-2008 compliant with SRT radix-2 division algorithm
-// Multi-cycle execution: 16-32 cycles (depending on FLEN)
+// 浮点除法器
+// 实现 FDIV.S/D 指令
+// 符合 IEEE 754-2008，采用 SRT 基 2 除法算法
+// 多周期执行：16-32 个周期（取决于 FLEN）
 
 `include "config/rv_config.vh"
 
 module fp_divider #(
-  parameter FLEN = `FLEN  // 32 for single-precision, 64 for double-precision
+  parameter FLEN = `FLEN  // 32：单精度，64：双精度
 ) (
   input  wire              clk,
   input  wire              reset_n,
 
-  // Control
-  input  wire              start,          // Start operation
-  input  wire              fmt,            // Format: 0=single, 1=double
-  input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
-  output reg               busy,           // Operation in progress
-  output reg               done,           // Operation complete (1 cycle pulse)
+  // 控制信号
+  input  wire              start,          // 启动运算
+  input  wire              fmt,            // 格式：0=单精度，1=双精度
+  input  wire [2:0]        rounding_mode,  // IEEE 754 舍入模式
+  output reg               busy,           // 运算进行中
+  output reg               done,           // 运算完成（1 个周期脉冲）
 
-  // Operands
-  input  wire [FLEN-1:0]   operand_a,      // Dividend
-  input  wire [FLEN-1:0]   operand_b,      // Divisor
+  // 操作数
+  input  wire [FLEN-1:0]   operand_a,      // 被除数
+  input  wire [FLEN-1:0]   operand_b,      // 除数
 
-  // Result
+  // 结果
   output reg  [FLEN-1:0]   result,
 
-  // Exception flags
-  output reg               flag_nv,        // Invalid operation
-  output reg               flag_dz,        // Divide by zero
-  output reg               flag_of,        // Overflow
-  output reg               flag_uf,        // Underflow
-  output reg               flag_nx         // Inexact
+  // 异常标志
+  output reg               flag_nv,        // 非法操作
+  output reg               flag_dz,        // 被零除
+  output reg               flag_of,        // 上溢
+  output reg               flag_uf,        // 下溢
+  output reg               flag_nx         // 不精确
 );
 
-  // IEEE 754 format parameters
+  // IEEE 754 格式参数
   localparam EXP_WIDTH = (FLEN == 32) ? 8 : 11;
   localparam MAN_WIDTH = (FLEN == 32) ? 23 : 52;
   localparam BIAS = (FLEN == 32) ? 127 : 1023;
   localparam MAX_EXP = (FLEN == 32) ? 255 : 2047;
-  localparam DIV_CYCLES = MAN_WIDTH + 4;  // Iterations needed
+  localparam DIV_CYCLES = MAN_WIDTH + 4;  // 所需迭代次数
 
-  // State machine
+  // 状态机
   localparam IDLE      = 3'b000;
   localparam UNPACK    = 3'b001;
   localparam DIVIDE    = 3'b010;
@@ -50,52 +50,52 @@ module fp_divider #(
 
   reg [2:0] state, next_state;
 
-  // Unpacked operands
+  // 反规范化后的操作数
   reg sign_a, sign_b, sign_result;
   reg [EXP_WIDTH-1:0] exp_a, exp_b;
-  reg [MAN_WIDTH:0] man_a, man_b;  // +1 bit for implicit leading 1
+  reg [MAN_WIDTH:0] man_a, man_b;  // +1 位用于隐含的最高位 1
 
-  // Special value flags
+  // 特殊值标志
   reg is_nan_a, is_nan_b, is_inf_a, is_inf_b, is_zero_a, is_zero_b;
-  reg special_case_handled;  // Track if special case was processed
-  reg fmt_latched;  // Latched format signal
+  reg special_case_handled;  // 标记特殊情况是否已经处理
+  reg fmt_latched;  // 锁存的格式信号
 
-  // Format-aware BIAS for exponent arithmetic
+  // 与格式相关的 BIAS，用于指数运算
   wire [10:0] bias_val;
   assign bias_val = (FLEN == 64 && !fmt_latched) ? 11'd127 : 11'd1023;
 
-  // Division computation (SRT radix-2)
-  reg [MAN_WIDTH+3:0] quotient;        // Quotient result (27 bits)
-  reg [MAN_WIDTH+5:0] remainder;       // Current remainder (29 bits - FIXED!)
-  reg [MAN_WIDTH+5:0] divisor_shifted; // Shifted divisor for comparison (29 bits - FIXED!)
-  reg [5:0] div_counter;               // Iteration counter
-  reg [EXP_WIDTH+1:0] exp_diff;        // Exponent difference
+  // 除法计算（SRT 基 2）
+  reg [MAN_WIDTH+3:0] quotient;        // 商结果
+  reg [MAN_WIDTH+5:0] remainder;       // 当前余数
+  reg [MAN_WIDTH+5:0] divisor_shifted; // 对齐后的除数，用于比较
+  reg [5:0] div_counter;               // 迭代计数器
+  reg [EXP_WIDTH+1:0] exp_diff;        // 指数差
   reg [EXP_WIDTH-1:0] exp_result;
 
-  // Rounding
+  // 舍入相关
   reg guard, round, sticky;
-  reg lsb_bit;  // Latched LSB bit for RNE tie-breaking
+  reg lsb_bit;  // RNE 平分舍入用的 LSB 锁存
 
-  // Combinational round_up computation (used within ROUND state)
+  // 组合逻辑计算 round_up（在 ROUND 状态中使用）
   reg round_up_comb;
   always @(*) begin
     case (rounding_mode)
-      3'b000: round_up_comb = guard && (round || sticky || lsb_bit);  // RNE
-      3'b001: round_up_comb = 1'b0;                                    // RTZ
-      3'b010: round_up_comb = sign_result && (guard || round || sticky);  // RDN
-      3'b011: round_up_comb = !sign_result && (guard || round || sticky); // RUP
-      3'b100: round_up_comb = guard;                                   // RMM
+      3'b000: round_up_comb = guard && (round || sticky || lsb_bit);  // RNE：最近偶数
+      3'b001: round_up_comb = 1'b0;                                    // RTZ：向零舍入
+      3'b010: round_up_comb = sign_result && (guard || round || sticky);  // RDN：向 -∞
+      3'b011: round_up_comb = !sign_result && (guard || round || sticky); // RUP：向 +∞
+      3'b100: round_up_comb = guard;                                   // RMM：最近，远离 0
       default: round_up_comb = 1'b0;
     endcase
   end
 
-  // LSB for RNE tie-breaking (format-aware) - only used during NORMALIZE to latch value
+  // 用于 RNE 平分舍入的 LSB（与格式相关）——只在 NORMALIZE 中锁存
   wire lsb_bit_div;
-  // For single-precision in FLEN=64: quotient mantissa at [MAN_WIDTH+3:32], LSB at bit 32
-  // For double-precision: quotient mantissa at [MAN_WIDTH+3:3], LSB at bit 3
+  // FLEN=64 的单精度：商尾数位于 [MAN_WIDTH+3:32]，LSB 在位 32
+  // 双精度：商尾数位于 [MAN_WIDTH+3:3]，LSB 在位 3
   assign lsb_bit_div = (FLEN == 64 && !fmt_latched) ? quotient[32] : quotient[3];
 
-  // Debug output
+  // 调试输出
   `ifdef DEBUG_FPU_DIVIDER
   always @(posedge clk) begin
     if (state != IDLE || busy || done) begin
@@ -147,7 +147,7 @@ module fp_divider #(
   end
   `endif
 
-  // State machine
+  // 状态机
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n)
       state <= IDLE;
@@ -155,14 +155,14 @@ module fp_divider #(
       state <= next_state;
   end
 
-  // Next state logic
+  // 次态逻辑
   always @(*) begin
     case (state)
       IDLE:      next_state = start ? UNPACK : IDLE;
       UNPACK:    next_state = DIVIDE;
-      // Transition after all DIV_CYCLES iterations (counter: DIV_CYCLES-1 → 0)
-      // When counter hits 0, we do the final iteration, then transition
-      // Special cases jump directly to DONE via state assignment in datapath
+      // 在完成所有 DIV_CYCLES 次迭代后跳转（计数器：DIV_CYCLES-1 → 0）
+      // 当计数器到 0 时执行最后一次迭代，然后跳转
+      // 特殊情况通过数据通路中的状态赋值直接跳到 DONE
       DIVIDE:    next_state = (div_counter == 6'd0) ? NORMALIZE : DIVIDE;
       NORMALIZE: next_state = ROUND;
       ROUND:     next_state = DONE;
@@ -171,13 +171,13 @@ module fp_divider #(
     endcase
   end
 
-  // Busy and done signals
+  // busy 和 done 信号
   always @(*) begin
     busy = (state != IDLE) && (state != DONE);
     done = (state == DONE);
   end
 
-  // Main datapath
+  // 主数据通路
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       result <= {FLEN{1'b0}};
@@ -188,7 +188,7 @@ module fp_divider #(
       flag_nx <= 1'b0;
       div_counter <= 6'd0;
       special_case_handled <= 1'b0;
-      // Initialize working registers to prevent X propagation
+      // 初始化工作寄存器以避免 X 传播
       quotient <= {(MAN_WIDTH+4){1'b0}};
       remainder <= {(MAN_WIDTH+6){1'b0}};
       divisor_shifted <= {(MAN_WIDTH+6){1'b0}};
@@ -215,16 +215,16 @@ module fp_divider #(
       case (state)
 
         // ============================================================
-        // UNPACK: Extract sign, exponent, mantissa
+        // UNPACK：提取符号、指数、尾数
         // ============================================================
         UNPACK: begin
-          // Latch format signal
+          // 锁存格式信号
           fmt_latched <= fmt;
 
-          // Format-aware extraction for FLEN=64
-          if (FLEN == 64) begin
+            // 针对 FLEN=64 的格式感知提取
+            if (FLEN == 64) begin
             if (fmt) begin
-              // Double-precision: use bits [63:0]
+              // 双精度：使用位 [63:0]
               sign_a <= operand_a[63];
               sign_b <= operand_b[63];
               sign_result <= operand_a[63] ^ operand_b[63];
@@ -245,7 +245,7 @@ module fp_divider #(
               is_zero_a <= (operand_a[62:0] == 0);
               is_zero_b <= (operand_b[62:0] == 0);
             end else begin
-              // Single-precision: use bits [31:0] (NaN-boxed in [63:32])
+              // 单精度：使用位 [31:0]（NaN 被包装在 [63:32] 中）
               sign_a <= operand_a[31];
               sign_b <= operand_b[31];
               sign_result <= operand_a[31] ^ operand_b[31];
@@ -267,7 +267,7 @@ module fp_divider #(
               is_zero_b <= (operand_b[30:0] == 0);
             end
           end else begin
-            // FLEN=32: always single-precision
+            // FLEN=32：始终为单精度
             sign_a <= operand_a[31];
             sign_b <= operand_b[31];
             sign_result <= operand_a[31] ^ operand_b[31];
@@ -289,29 +289,29 @@ module fp_divider #(
             is_zero_b <= (operand_b[30:0] == 0);
           end
 
-          // Initialize division counter for next state
+          // 初始化除法计数器
           div_counter <= DIV_CYCLES;
 
-          // Clear special case flag for new operation
+          // 清除新运算的特殊情况标志
           special_case_handled <= 1'b0;
 
-          // Handle special cases (check in next state for timing)
+          // 处理特殊情况（在下一个状态检查，便于时序）
         end
 
         // ============================================================
-        // DIVIDE: Iterative SRT radix-2 division
+        // DIVIDE：迭代 SRT 基 2 除法
         // ============================================================
         DIVIDE: begin
           if (div_counter == DIV_CYCLES) begin
-            // Special case handling
+            // 特殊情况处理
             if (is_nan_a || is_nan_b) begin
-              // NaN propagation
+              // NaN 传播
               if (FLEN == 64 && !fmt_latched)
-                result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single NaN (NaN-boxed)
+                result <= {32'hFFFFFFFF, 32'h7FC00000};  // 单精度 NaN（NaN-boxed）
               else if (FLEN == 64 && fmt_latched)
-                result <= 64'h7FF8000000000000;  // Double NaN
+                result <= 64'h7FF8000000000000;  // 双精度 NaN
               else
-                result <= 32'h7FC00000;  // FLEN=32 single NaN
+                result <= 32'h7FC00000;  // FLEN=32 单精度 NaN
               flag_nv <= 1'b1;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -320,13 +320,13 @@ module fp_divider #(
               special_case_handled <= 1'b1;
               state <= DONE;
             end else if ((is_inf_a && is_inf_b) || (is_zero_a && is_zero_b)) begin
-              // ∞/∞ or 0/0: Invalid
+              // ∞/∞ 或 0/0：非法
               if (FLEN == 64 && !fmt_latched)
-                result <= {32'hFFFFFFFF, 32'h7FC00000};  // Single NaN (NaN-boxed)
+                result <= {32'hFFFFFFFF, 32'h7FC00000};  // 单精度 NaN（NaN-boxed）
               else if (FLEN == 64 && fmt_latched)
-                result <= 64'h7FF8000000000000;  // Double NaN
+                result <= 64'h7FF8000000000000;  // 双精度 NaN
               else
-                result <= 32'h7FC00000;  // FLEN=32 single NaN
+                result <= 32'h7FC00000;  // FLEN=32 单精度 NaN
               flag_nv <= 1'b1;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -335,13 +335,13 @@ module fp_divider #(
               special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_inf_a) begin
-              // ∞/x: return ±∞
+              // ∞/x：返回 ±∞
               if (FLEN == 64 && !fmt_latched)
-                result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // Single ∞ (NaN-boxed)
+                result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // 单精度 ∞（NaN-boxed）
               else if (FLEN == 64 && fmt_latched)
-                result <= {sign_result, 11'h7FF, 52'h0};  // Double ∞
+                result <= {sign_result, 11'h7FF, 52'h0};  // 双精度 ∞
               else
-                result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 single ∞
+                result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 单精度 ∞
               flag_nv <= 1'b0;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -350,13 +350,13 @@ module fp_divider #(
               special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_inf_b) begin
-              // x/∞: return ±0
+              // x/∞：返回 ±0
               if (FLEN == 64 && !fmt_latched)
-                result <= {32'hFFFFFFFF, sign_result, 31'h0};  // Single 0 (NaN-boxed)
+                result <= {32'hFFFFFFFF, sign_result, 31'h0};  // 单精度 0（NaN-boxed）
               else if (FLEN == 64 && fmt_latched)
-                result <= {sign_result, 63'h0};  // Double 0
+                result <= {sign_result, 63'h0};  // 双精度 0
               else
-                result <= {sign_result, 31'h0};  // FLEN=32 single 0
+                result <= {sign_result, 31'h0};  // FLEN=32 单精度 0
               flag_nv <= 1'b0;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -365,13 +365,13 @@ module fp_divider #(
               special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_zero_a) begin
-              // 0/x: return ±0
+              // 0/x：返回 ±0
               if (FLEN == 64 && !fmt_latched)
-                result <= {32'hFFFFFFFF, sign_result, 31'h0};  // Single 0 (NaN-boxed)
+                result <= {32'hFFFFFFFF, sign_result, 31'h0};  // 单精度 0（NaN-boxed）
               else if (FLEN == 64 && fmt_latched)
-                result <= {sign_result, 63'h0};  // Double 0
+                result <= {sign_result, 63'h0};  // 双精度 0
               else
-                result <= {sign_result, 31'h0};  // FLEN=32 single 0
+                result <= {sign_result, 31'h0};  // FLEN=32 单精度 0
               flag_nv <= 1'b0;
               flag_dz <= 1'b0;
               flag_of <= 1'b0;
@@ -380,13 +380,13 @@ module fp_divider #(
               special_case_handled <= 1'b1;
               state <= DONE;
             end else if (is_zero_b) begin
-              // x/0: Divide by zero, return ±∞
+              // x/0：被零除，返回 ±∞
               if (FLEN == 64 && !fmt_latched)
-                result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // Single ∞ (NaN-boxed)
+                result <= {32'hFFFFFFFF, sign_result, 8'hFF, 23'h0};  // 单精度 ∞（NaN-boxed）
               else if (FLEN == 64 && fmt_latched)
-                result <= {sign_result, 11'h7FF, 52'h0};  // Double ∞
+                result <= {sign_result, 11'h7FF, 52'h0};  // 双精度 ∞
               else
-                result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 single ∞
+                result <= {sign_result, 8'hFF, 23'h0};  // FLEN=32 单精度 ∞
               flag_nv <= 1'b0;
               flag_dz <= 1'b1;
               flag_of <= 1'b0;
@@ -395,56 +395,56 @@ module fp_divider #(
               special_case_handled <= 1'b1;
               state <= DONE;
             end else begin
-              // Initialize division
-              // Compute exponent: exp_a - exp_b + BIAS (format-aware)
+              // 初始化除法
+              // 计算指数：exp_a - exp_b + BIAS（与格式相关）
               exp_diff <= exp_a - exp_b + bias_val;
 
-              // Initialize remainder = dividend (shifted left for alignment)
-              // Now using 29-bit register, add extra 0 bit at MSB
+              // 初始化余数 = 被除数（左移对齐）
+              // 现在使用 29 位寄存器，最高位补 0
               remainder <= {1'b0, man_a, 4'b0000};
 
-              // Initialize divisor (aligned)
-              // Now using 29-bit register, add extra 0 bit at MSB
+              // 初始化除数（对齐）
+              // 现在使用 29 位寄存器，最高位补 0
               divisor_shifted <= {1'b0, man_b, 4'b0000};
 
-              // Initialize quotient
+              // 初始化商
               quotient <= {(MAN_WIDTH+4){1'b0}};
 
-              // Start iteration counter
+              // 开始迭代计数
               div_counter <= DIV_CYCLES - 1;
             end
           end else begin
-            // SRT radix-2 division iteration
-            // Compare remainder with divisor
+            // SRT 基 2 除法迭代
+            // 比较余数与除数
             if (remainder >= divisor_shifted) begin
-              // Quotient bit = 1, subtract divisor
+              // 本位商为 1，减去除数
               quotient <= (quotient << 1) | 1'b1;
               remainder <= (remainder - divisor_shifted) << 1;
             end else begin
-              // Quotient bit = 0, keep remainder
+              // 本位商为 0，仅移位
               quotient <= quotient << 1;
               remainder <= remainder << 1;
             end
 
-            // Decrement counter
+            // 迭代计数器减一
             div_counter <= div_counter - 1;
           end
         end
 
         // ============================================================
-        // NORMALIZE: Adjust quotient to normalized form
+        // NORMALIZE：将商调整为规格化形式
         // ============================================================
         NORMALIZE: begin
-          // Quotient should have leading 1 in position MAN_WIDTH+3
-          // If not, shift left and adjust exponent
+          // 商应当在位 MAN_WIDTH+3 处有最高位 1
+          // 若没有，则左移并调整指数
 
           if (quotient[MAN_WIDTH+3]) begin
-            // Already normalized
+            // 已经规格化
             exp_result <= exp_diff[EXP_WIDTH-1:0];
-            lsb_bit <= lsb_bit_div;  // Latch LSB for RNE rounding
-            // Format-aware GRS extraction:
-            // - Single-precision (FLEN=64, fmt=0): GRS at bits [31:29] (padding boundary)
-            // - Double-precision or FLEN=32: GRS at bits [2:0] (normal position)
+            lsb_bit <= lsb_bit_div;  // 锁存 RNE 舍入用的 LSB
+            // 格式相关的 GRS 提取：
+            // - 单精度（FLEN=64，fmt=0）：GRS 在位 [31:29]（填充边界）
+            // - 双精度或 FLEN=32：GRS 在位 [2:0]（正常位置）
             if (FLEN == 64 && !fmt_latched) begin
               guard <= quotient[31];
               round <= quotient[30];
@@ -455,10 +455,10 @@ module fp_divider #(
               sticky <= quotient[0] || (remainder != 0);
             end
           end else if (quotient[MAN_WIDTH+2]) begin
-            // Shift left by 1
+            // 左移 1 位
             quotient <= quotient << 1;
             exp_result <= exp_diff - 1;
-            // LSB after shift will be at the position of current bit 1 (for double) or 30 (for single in FLEN=64)
+            // 移位后 LSB 位于当前位 1 的位置（双精度）或 30 位（单精度 FLEN=64）
             lsb_bit <= (FLEN == 64 && !fmt_latched) ? quotient[29] : quotient[1];
             if (FLEN == 64 && !fmt_latched) begin
               guard <= quotient[30];
@@ -467,13 +467,13 @@ module fp_divider #(
             end else begin
               guard <= quotient[1];
               round <= quotient[0];
-              sticky <= (remainder != 0);  // quotient[0] is moved to round, no bits lost
+              sticky <= (remainder != 0);  // quotient[0] 被移到 round，无位丢失
             end
           end else begin
-            // Larger shift needed (rare case, simplified handling)
+            // 需要更大移位（少见情况，简化处理）
             quotient <= quotient << 2;
             exp_result <= exp_diff - 2;
-            // LSB after 2-bit shift
+            // 2 位移位后的 LSB
             lsb_bit <= (FLEN == 64 && !fmt_latched) ? quotient[28] : quotient[0];
             if (FLEN == 64 && !fmt_latched) begin
               guard <= quotient[29];
@@ -486,14 +486,14 @@ module fp_divider #(
             end
           end
 
-          // Check for overflow
+          // 上溢检查
           if (exp_diff >= MAX_EXP) begin
             flag_of <= 1'b1;
             flag_nx <= 1'b1;
             result <= {sign_result, {EXP_WIDTH{1'b1}}, {MAN_WIDTH{1'b0}}};
             state <= DONE;
           end
-          // Check for underflow
+          // 下溢检查
           else if (exp_diff < 1) begin
             flag_uf <= 1'b1;
             flag_nx <= 1'b1;
@@ -503,19 +503,19 @@ module fp_divider #(
         end
 
         // ============================================================
-        // ROUND: Apply rounding mode
+        // ROUND：应用舍入模式
         // ============================================================
         ROUND: begin
-          // round_up_comb is computed combinationally from guard, round, sticky, lsb_bit
-          // No need to assign it here - it's already computed
+          // round_up_comb 由 guard、round、sticky、lsb_bit 组合计算
+          // 此处无需重新赋值
 
-          // Apply rounding with overflow handling
+          // 带上溢处理的舍入
           if (FLEN == 64 && !fmt_latched) begin
-            // Single-precision in 64-bit register (NaN-boxed)
+            // 单精度在 64 位寄存器中（NaN-boxed）
             if (round_up_comb) begin
-              // Check if rounding causes mantissa overflow (23-bit mantissa)
+              // 检查舍入是否导致尾数上溢（23 位尾数）
               if (quotient[MAN_WIDTH+2:32] == 23'h7FFFFF) begin
-                // Mantissa overflow: increment exponent, mantissa becomes 0
+                // 尾数上溢：指数加 1，尾数清零
                 result <= {32'hFFFFFFFF, sign_result, exp_result[7:0] + 1'b1, 23'h0};
               end else begin
                 result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], quotient[MAN_WIDTH+2:32] + 1'b1};
@@ -524,11 +524,11 @@ module fp_divider #(
               result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], quotient[MAN_WIDTH+2:32]};
             end
           end else if (FLEN == 64 && fmt_latched) begin
-            // Double-precision in 64-bit register
+            // 双精度在 64 位寄存器中
             if (round_up_comb) begin
-              // Check if rounding causes mantissa overflow (52-bit mantissa)
+              // 检查舍入是否导致尾数上溢（52 位尾数）
               if (quotient[MAN_WIDTH+2:3] == {MAN_WIDTH{1'b1}}) begin
-                // Mantissa overflow: increment exponent, mantissa becomes 0
+                // 尾数上溢：指数加 1，尾数清零
                 result <= {sign_result, exp_result[10:0] + 1'b1, {MAN_WIDTH{1'b0}}};
               end else begin
                 result <= {sign_result, exp_result[10:0], quotient[MAN_WIDTH+2:3] + 1'b1};
@@ -537,11 +537,11 @@ module fp_divider #(
               result <= {sign_result, exp_result[10:0], quotient[MAN_WIDTH+2:3]};
             end
           end else begin
-            // FLEN=32: single-precision in 32-bit register
+            // FLEN=32：单精度在 32 位寄存器中
             if (round_up_comb) begin
-              // Check if rounding causes mantissa overflow (23-bit mantissa)
+              // 检查舍入是否导致尾数上溢（23 位尾数）
               if (quotient[25:3] == 23'h7FFFFF) begin
-                // Mantissa overflow: increment exponent, mantissa becomes 0
+                // 尾数上溢：指数加 1，尾数清零
                 result <= {sign_result, exp_result[7:0] + 1'b1, 23'h0};
               end else begin
                 result <= {sign_result, exp_result[7:0], quotient[25:3] + 1'b1};
@@ -551,15 +551,15 @@ module fp_divider #(
             end
           end
 
-          // Set inexact flag
+          // 置不精确标志
           flag_nx <= guard || round || sticky;
         end
 
         // ============================================================
-        // DONE: Hold result for 1 cycle
+        // DONE：保持结果 1 个周期
         // ============================================================
         DONE: begin
-          div_counter <= DIV_CYCLES;  // Reset for next operation
+          div_counter <= DIV_CYCLES;  // 为下一次运算复位
         end
 
       endcase

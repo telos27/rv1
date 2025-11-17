@@ -1,36 +1,36 @@
-// MEM/WB Pipeline Register
-// Latches outputs from Memory stage for use in Write-Back stage
-// No stall or flush needed (last pipeline stage)
-// Updated: 2025-10-10 - Parameterized for XLEN (32/64-bit support)
+// MEM/WB 流水线寄存器
+// 锁存存储器阶段的输出供回写阶段使用
+// 不需要停顿或清空（最后一级流水线阶段）
+// 更新：2025-10-10 - 按 XLEN 参数化（支持 32/64 位）
 
 `include "config/rv_config.vh"
 
 module memwb_register #(
-  parameter XLEN = `XLEN,  // Data/address width: 32 or 64 bits
-  parameter FLEN = `FLEN   // FP register width: 32 or 64 bits
+  parameter XLEN = `XLEN,  // 数据/地址位宽：32 或 64 位
+  parameter FLEN = `FLEN   // 浮点寄存器位宽：32 或 64 位
 ) (
   input  wire             clk,
   input  wire             reset_n,
 
-  // Inputs from MEM stage
-  input  wire [XLEN-1:0]  alu_result_in,      // Propagated from EX
-  input  wire [XLEN-1:0]  mem_read_data_in,   // Integer load data (lower bits)
-  input  wire [FLEN-1:0]  fp_mem_read_data_in,// FP load data (full FLD for RV32D)
+  // 来自 MEM 阶段的输入
+  input  wire [XLEN-1:0]  alu_result_in,      // 从 EX 阶段传来的结果
+  input  wire [XLEN-1:0]  mem_read_data_in,   // 整数加载数据（低位部分）
+  input  wire [FLEN-1:0]  fp_mem_read_data_in,// 浮点加载数据（RV32D 下完整 FLD）
   input  wire [4:0]       rd_addr_in,
-  input  wire [XLEN-1:0]  pc_plus_4_in,       // For JAL/JALR
+  input  wire [XLEN-1:0]  pc_plus_4_in,       // 用于 JAL/JALR
 
-  // Control signals from MEM stage
+  // 来自 MEM 阶段的控制信号
   input  wire        reg_write_in,
-  input  wire [2:0]  wb_sel_in,          // Write-back source select
+  input  wire [2:0]  wb_sel_in,          // 回写源选择
   input  wire        valid_in,
 
-  // M extension result from MEM stage
+  // 来自 MEM 阶段的 M 扩展结果
   input  wire [XLEN-1:0] mul_div_result_in,
 
-  // A extension result from MEM stage
+  // 来自 MEM 阶段的 A 扩展结果
   input  wire [XLEN-1:0] atomic_result_in,
 
-  // F/D extension signals from MEM stage
+  // 来自 MEM 阶段的 F/D 扩展信号
   input  wire [FLEN-1:0]  fp_result_in,
   input  wire [XLEN-1:0]  int_result_fp_in,
   input  wire [4:0]       fp_rd_addr_in,
@@ -41,31 +41,31 @@ module memwb_register #(
   input  wire             fp_flag_of_in,
   input  wire             fp_flag_uf_in,
   input  wire             fp_flag_nx_in,
-  input  wire             fp_fmt_in,             // FP format: 0=single, 1=double
+  input  wire             fp_fmt_in,             // 浮点格式：0=单精度，1=双精度
 
-  // CSR signals from MEM stage
-  input  wire [XLEN-1:0] csr_rdata_in,       // CSR read data
-  input  wire            csr_we_in,          // CSR write enable
+  // 来自 MEM 阶段的 CSR 信号
+  input  wire [XLEN-1:0] csr_rdata_in,       // CSR 读数据
+  input  wire            csr_we_in,          // CSR 写使能
 
-  // Outputs to WB stage
+  // 输出到 WB 阶段
   output reg  [XLEN-1:0]  alu_result_out,
-  output reg  [XLEN-1:0]  mem_read_data_out,   // Integer load data
-  output reg  [FLEN-1:0]  fp_mem_read_data_out,// FP load data
+  output reg  [XLEN-1:0]  mem_read_data_out,   // 整数加载数据
+  output reg  [FLEN-1:0]  fp_mem_read_data_out,// 浮点加载数据
   output reg  [4:0]       rd_addr_out,
   output reg  [XLEN-1:0]  pc_plus_4_out,
 
-  // Control signals to WB stage
+  // 输出到 WB 阶段的控制信号
   output reg         reg_write_out,
   output reg  [2:0]  wb_sel_out,
   output reg         valid_out,
 
-  // M extension result to WB stage
+  // 输出到 WB 阶段的 M 扩展结果
   output reg  [XLEN-1:0] mul_div_result_out,
 
-  // A extension result to WB stage
+  // 输出到 WB 阶段的 A 扩展结果
   output reg  [XLEN-1:0] atomic_result_out,
 
-  // F/D extension signals to WB stage
+  // 输出到 WB 阶段的 F/D 扩展信号
   output reg  [FLEN-1:0]  fp_result_out,
   output reg  [XLEN-1:0]  int_result_fp_out,
   output reg  [4:0]       fp_rd_addr_out,
@@ -76,16 +76,16 @@ module memwb_register #(
   output reg              fp_flag_of_out,
   output reg              fp_flag_uf_out,
   output reg              fp_flag_nx_out,
-  output reg              fp_fmt_out,            // FP format: 0=single, 1=double
+  output reg              fp_fmt_out,            // 浮点格式：0=单精度，1=双精度
 
-  // CSR signals to WB stage
+  // 输出到 WB 阶段的 CSR 信号
   output reg  [XLEN-1:0] csr_rdata_out,
   output reg             csr_we_out
 );
 
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      // Reset: clear all outputs
+      // 复位：清除所有输出
       alu_result_out        <= {XLEN{1'b0}};
       mem_read_data_out     <= {XLEN{1'b0}};
       fp_mem_read_data_out  <= {FLEN{1'b0}};
@@ -115,7 +115,7 @@ module memwb_register #(
       csr_rdata_out      <= {XLEN{1'b0}};
       csr_we_out         <= 1'b0;
     end else begin
-      // Normal operation: latch all values
+      // 正常工作：锁存所有值
       alu_result_out        <= alu_result_in;
       mem_read_data_out     <= mem_read_data_in;
       fp_mem_read_data_out  <= fp_mem_read_data_in;

@@ -1,8 +1,8 @@
-// csr_priv_coordinator.v - CSR and Privilege Mode Coordination
-// Handles CSR forwarding (MRET/SRET) and privilege mode tracking
-// Extracted from rv32i_core_pipelined.v for better modularity
-// Author: RV1 Project
-// Date: 2025-10-26
+// csr_priv_coordinator.v - CSR 与特权模式协调模块
+// 处理 CSR 转发 (MRET/SRET) 与特权模式跟踪
+// 从 rv32i_core_pipelined.v 抽取以增强模块化
+// 作者: RV1 Project
+// 日期: 2025-10-26
 
 `include "config/rv_config.vh"
 `include "config/rv_csr_defines.vh"
@@ -13,13 +13,13 @@ module csr_priv_coordinator #(
   input  wire             clk,
   input  wire             reset_n,
 
-  // Trap/xRET control inputs
+  // 陷入/xRET 控制输入
   input  wire             trap_flush,
   input  wire [1:0]       trap_target_priv,
   input  wire             mret_flush,
   input  wire             sret_flush,
 
-  // MSTATUS bits from CSR file
+  // 来自 CSR 文件的 MSTATUS 位
   input  wire [1:0]       mpp,
   input  wire             spp,
   input  wire             mstatus_mie,
@@ -29,7 +29,7 @@ module csr_priv_coordinator #(
   input  wire             mstatus_mxr,
   input  wire             mstatus_sum,
 
-  // Pipeline stage signals for CSR forwarding
+  // 用于 CSR 转发的流水级信号
   input  wire             exmem_is_mret,
   input  wire             exmem_is_sret,
   input  wire             exmem_valid,
@@ -39,39 +39,39 @@ module csr_priv_coordinator #(
   input  wire             exception,
   input  wire [XLEN-1:0]  ex_csr_rdata,
 
-  // Outputs
-  output wire [1:0]       current_priv,       // Current privilege mode
-  output wire [1:0]       effective_priv,     // Forwarded privilege mode (for CSR checks)
-  output wire [XLEN-1:0]  ex_csr_rdata_forwarded  // Forwarded CSR read data
+  // 输出
+  output wire [1:0]       current_priv,       // 当前特权模式
+  output wire [1:0]       effective_priv,     // 转发后的特权模式 (用于 CSR 检查)
+  output wire [XLEN-1:0]  ex_csr_rdata_forwarded  // 转发后的 CSR 读数据
 );
 
   //==========================================================================
-  // Privilege Mode Tracking
+  // 特权模式跟踪
   //==========================================================================
-  // Privilege mode state machine: updates on trap entry and xRET
+  // 特权模式状态机: 在陷入进入和 xRET 时更新
   reg [1:0] current_priv_r;
 
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      current_priv_r <= 2'b11;  // Start in Machine mode on reset
+      current_priv_r <= 2'b11;  // 复位时进入机器模式
     end else begin
       if (trap_flush) begin
-        // On trap entry, move to target privilege level
+        // 陷入时, 切换到目标特权级别
         current_priv_r <= trap_target_priv;
         `ifdef DEBUG_PRIV
-        $display("[PRIV] Time=%0t TRAP: priv %b -> %b", $time, current_priv_r, trap_target_priv);
+        $display("[PRIV] 时间=%0t TRAP: priv %b -> %b", $time, current_priv_r, trap_target_priv);
         `endif
       end else if (mret_flush) begin
-        // On MRET, restore privilege from MSTATUS.MPP
+        // MRET 时, 从 MSTATUS.MPP 恢复特权
         current_priv_r <= mpp;
         `ifdef DEBUG_PRIV
-        $display("[PRIV] Time=%0t MRET: priv %b -> %b (from MPP)", $time, current_priv_r, mpp);
+        $display("[PRIV] 时间=%0t MRET: priv %b -> %b (from MPP)", $time, current_priv_r, mpp);
         `endif
       end else if (sret_flush) begin
-        // On SRET, restore privilege from MSTATUS.SPP
-        current_priv_r <= {1'b0, spp};  // SPP: 0=U, 1=S -> {1'b0, spp} = 00 or 01
+        // SRET 时, 从 MSTATUS.SPP 恢复特权
+        current_priv_r <= {1'b0, spp};  // SPP: 0=U, 1=S -> {1'b0, spp} = 00 或 01
         `ifdef DEBUG_PRIV
-        $display("[PRIV] Time=%0t SRET: priv %b -> %b (from SPP=%b)", $time, current_priv_r, {1'b0, spp}, spp);
+        $display("[PRIV] 时间=%0t SRET: priv %b -> %b (from SPP=%b)", $time, current_priv_r, {1'b0, spp}, spp);
         `endif
       end
     end
@@ -80,13 +80,13 @@ module csr_priv_coordinator #(
   assign current_priv = current_priv_r;
 
   //==========================================================================
-  // CSR MRET/SRET Forwarding
+  // CSR MRET/SRET 转发
   //==========================================================================
-  // When MRET/SRET is in MEM stage, it updates mstatus at the end of the cycle.
-  // If a CSR read of mstatus/sstatus is in EX stage, it needs the updated value.
-  // Forward the "next" mstatus value to avoid reading stale data.
+  // 当 MRET/SRET 在 MEM 阶段时, 它会在周期末更新 mstatus。
+  // 若此时 EX 阶段有对 mstatus/sstatus 的 CSR 读, 需要看到更新后的值。
+  // 通过转发“下一周期”的 mstatus 值避免读到陈旧数据。
 
-  // Compute the "next" mstatus value after MRET
+  // 计算 MRET 后的“下一周期”mstatus 值
   function [XLEN-1:0] compute_mstatus_after_mret;
     input [XLEN-1:0] current_mstatus;
     input mpie_val;
@@ -103,7 +103,7 @@ module csr_priv_coordinator #(
     end
   endfunction
 
-  // Compute the "next" mstatus value after SRET
+  // 计算 SRET 后的“下一周期” mstatus 值
   function [XLEN-1:0] compute_mstatus_after_sret;
     input [XLEN-1:0] current_mstatus;
     input spie_val;
@@ -120,35 +120,35 @@ module csr_priv_coordinator #(
     end
   endfunction
 
-  // Construct current mstatus from individual bits (matching csr_file.v format)
+  // 构造当前 mstatus (与 csr_file.v 的存储格式一致)
   wire [XLEN-1:0] current_mstatus_reconstructed;
   assign current_mstatus_reconstructed = {
-    {(XLEN-32){1'b0}},           // Upper bits (if XLEN > 32)
-    12'b0,                        // Reserved bits [31:20]
+    {(XLEN-32){1'b0}},           // 上位未使用位 (如果 XLEN > 32)
+    12'b0,                        // 保留位 [31:20]
     mstatus_mxr,                  // MXR [19]
     mstatus_sum,                  // SUM [18]
-    5'b0,                         // Reserved bits [17:13]
+    5'b0,                         // 保留位 [17:13]
     mpp,                          // MPP [12:11]
-    2'b0,                         // Reserved [10:9]
+    2'b0,                         // 保留 [10:9]
     spp,                          // SPP [8]
     mstatus_mpie,                 // MPIE [7]
-    1'b0,                         // Reserved [6]
+    1'b0,                         // 保留 [6]
     mstatus_spie,                 // SPIE [5]
-    1'b0,                         // Reserved [4]
+    1'b0,                         // 保留 [4]
     mstatus_mie,                  // MIE [3]
-    1'b0,                         // Reserved [2]
+    1'b0,                         // 保留 [2]
     mstatus_sie,                  // SIE [1]
-    1'b0                          // Reserved [0]
+    1'b0                          // 保留 [0]
   };
 
-  // Track MRET/SRET from previous cycle (for forwarding after hazard stall)
-  // These flags must stay set until the CSR read that caused the hazard actually executes
+  // 记录上一周期的 MRET/SRET (为应对冒险停顿后的转发)
+  // 这些标志需要保持为 1, 直到导致冒险的 CSR 读真正执行
   reg exmem_is_mret_r;
   reg exmem_is_sret_r;
   reg exmem_valid_r;
 
-  // Detect when a CSR instruction consumes the forwarding
-  // Only consume if the CSR read will actually complete (not invalidated by exception)
+  // 检测 CSR 指令何时消耗该转发
+  // 仅当 CSR 读真正完成(未被异常取消)才清除
   wire mret_forward_consumed = exmem_is_mret_r && idex_is_csr && idex_valid && !exception &&
                                 ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS));
   wire sret_forward_consumed = exmem_is_sret_r && idex_is_csr && idex_valid && !exception &&
@@ -160,41 +160,41 @@ module csr_priv_coordinator #(
       exmem_is_sret_r <= 1'b0;
       exmem_valid_r <= 1'b0;
     end else begin
-      // Set when MRET/SRET is in MEM, clear when CSR read consumes it
+      // 当 MRET/SRET 在 MEM 中时设置, 当 CSR 读消耗转发时清除
       if (mret_forward_consumed) begin
-        exmem_is_mret_r <= 1'b0;  // Clear when forwarding is consumed
+        exmem_is_mret_r <= 1'b0;  // 当转发被消耗时清除
       end else if (exmem_is_mret && exmem_valid && !exception) begin
-        exmem_is_mret_r <= 1'b1;  // Set when MRET enters MEM
+        exmem_is_mret_r <= 1'b1;  // 当 MRET 进入 MEM 时设置
       end
-      // Else: hold current value (stays set during stall)
+      // 否则: 保持当前值 (在停顿期间保持设置)
 
       if (sret_forward_consumed) begin
-        exmem_is_sret_r <= 1'b0;  // Clear when forwarding is consumed
+        exmem_is_sret_r <= 1'b0;  // 当转发被消耗时清除
       end else if (exmem_is_sret && exmem_valid && !exception) begin
-        exmem_is_sret_r <= 1'b1;  // Set when SRET enters MEM
+        exmem_is_sret_r <= 1'b1;  // 当 SRET 进入 MEM 时设置
       end
-      // Else: hold current value (stays set during stall)
+      // 否则: 保持当前值 (在停顿期间保持设置)
 
       exmem_valid_r <= exmem_valid;
 
       `ifdef DEBUG_CSR_FORWARD
       if (exmem_is_mret && exmem_valid) begin
-        $display("[CSR_FORWARD] MRET in MEM: setting mret_r");
+        $display("[CSR_FORWARD] MRET in MEM: 设置 mret_r");
       end
       if (mret_forward_consumed) begin
-        $display("[CSR_FORWARD] CSR read consumed MRET forwarding: clearing mret_r");
+        $display("[CSR_FORWARD] CSR 读已消耗 MRET 转发: 清除 mret_r");
       end
       if (exmem_is_mret_r && !mret_forward_consumed) begin
-        $display("[CSR_FORWARD] Holding mret_r: waiting for CSR read in EX");
+        $display("[CSR_FORWARD] 保持 mret_r: 等待 EX 阶段的 CSR 读");
       end
       `endif
     end
   end
 
-  // Forward mstatus if:
-  // Case 1: MRET is in MEM stage NOW (same cycle - no stall occurred)
-  // Case 2: MRET was in MEM stage LAST cycle (CSR stalled, now advancing)
-  // CSR being read must be mstatus or sstatus
+  // 转发 mstatus 如果:
+  // 情况 1: MRET 当前在 MEM 阶段 (同一周期 - 未发生停顿)
+  // 情况 2: MRET 在上一周期在 MEM 阶段 (CSR 停顿, 现已推进)
+  // 正在被读的 CSR 必须是 mstatus 或 sstatus
   wire forward_mret_mstatus = ((exmem_is_mret && exmem_valid && !exception) || exmem_is_mret_r) &&
                               (idex_is_csr && idex_valid) &&
                               ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS));
@@ -203,8 +203,8 @@ module csr_priv_coordinator #(
                               (idex_is_csr && idex_valid) &&
                               ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS));
 
-  // If MRET/SRET was last cycle, mstatus is already updated - just use current value
-  // If MRET/SRET is this cycle, compute what it will be
+  // 如果 MRET/SRET 是上一周期, mstatus 已更新 - 直接使用当前值
+  // 如果 MRET/SRET 是本周期, 计算更新后的值
   wire [XLEN-1:0] mstatus_after_mret = exmem_is_mret_r ? current_mstatus_reconstructed :
                                         compute_mstatus_after_mret(current_mstatus_reconstructed, mstatus_mpie);
   wire [XLEN-1:0] mstatus_after_sret = exmem_is_sret_r ? current_mstatus_reconstructed :
@@ -212,19 +212,19 @@ module csr_priv_coordinator #(
 
   assign ex_csr_rdata_forwarded = forward_mret_mstatus ? mstatus_after_mret :
                                   forward_sret_mstatus ? mstatus_after_sret :
-                                  ex_csr_rdata;  // Normal case: no forwarding needed
+                                  ex_csr_rdata;  // 正常情况: 不需要转发
 
   `ifdef DEBUG_CSR_FORWARD
   always @(posedge clk) begin
     if (forward_mret_mstatus || forward_sret_mstatus) begin
-      $display("[CSR_FORWARD] Time=%0t forward_mret=%b forward_sret=%b", $time, forward_mret_mstatus, forward_sret_mstatus);
+      $display("[CSR_FORWARD] 时间=%0t forward_mret=%b forward_sret=%b", $time, forward_mret_mstatus, forward_sret_mstatus);
       $display("[CSR_FORWARD]   current_mstatus=%h forwarded_mstatus=%h", current_mstatus_reconstructed, ex_csr_rdata_forwarded);
       $display("[CSR_FORWARD]   exmem_is_mret=%b exmem_is_sret=%b exmem_valid=%b", exmem_is_mret, exmem_is_sret, exmem_valid);
       $display("[CSR_FORWARD]   idex_is_csr=%b idex_valid=%b idex_csr_addr=%h", idex_is_csr, idex_valid, idex_csr_addr);
     end
     if (idex_is_csr && idex_valid && ((idex_csr_addr == CSR_MSTATUS) || (idex_csr_addr == CSR_SSTATUS))) begin
-      $display("[CSR_FORWARD] CSR read: addr=%h rdata=%h (forwarded=%h)", idex_csr_addr, ex_csr_rdata, ex_csr_rdata_forwarded);
-      $display("[CSR_FORWARD]   Conditions: exmem_mret=%b exmem_mret_r=%b exmem_valid=%b exc=%b",
+      $display("[CSR_FORWARD] CSR 读取: addr=%h rdata=%h (forwarded=%h)", idex_csr_addr, ex_csr_rdata, ex_csr_rdata_forwarded);
+      $display("[CSR_FORWARD]   条件: exmem_mret=%b exmem_mret_r=%b exmem_valid=%b exc=%b",
                exmem_is_mret, exmem_is_mret_r, exmem_valid, exception);
       $display("[CSR_FORWARD]   forward_mret=%b forward_sret=%b", forward_mret_mstatus, forward_sret_mstatus);
     end
@@ -232,27 +232,27 @@ module csr_priv_coordinator #(
   `endif
 
   //==========================================================================
-  // Privilege Mode Forwarding
+  // 特权模式转发
   //==========================================================================
-  // When MRET/SRET is in MEM stage, it updates current_priv at the end of the cycle.
-  // However, instructions already in earlier pipeline stages (IF/ID/EX) use the OLD
-  // current_priv for CSR privilege checks and exception delegation decisions.
+  // 当 MRET/SRET 在 MEM 阶段时, 它会在周期末更新 current_priv。
+  // 但此时已经在前级 (IF/ID/EX) 的指令仍使用旧的 current_priv 进行
+  // CSR 特权检查和异常委托判断。
   //
-  // This causes incorrect behavior when a CSR access immediately follows MRET/SRET:
-  // - Example: MRET changes M→S, next instruction accesses CSR
-  // - CSR check sees old priv=M instead of new priv=S
-  // - Delegation decision is wrong (M-mode traps never delegate)
+  // 这会导致 MRET/SRET 后紧跟 CSR 访问时行为错误:
+  // - 例: MRET 将 M→S, 下一条指令访问 CSR
+  // - CSR 检查仍看到旧特权=M 而不是新特权=S
+  // - 委托判断出错 (M 模式陷入永不委托)
   //
-  // Solution: Forward the new privilege mode from MEM stage to earlier stages.
+  // 解决: 从 MEM 阶段向前级转发新的特权模式。
 
-  // Compute new privilege mode from MRET/SRET in MEM stage
-  wire [1:0] mret_new_priv = mpp;              // MRET restores from MPP
-  wire [1:0] sret_new_priv = {1'b0, spp};      // SRET restores from SPP (0=U, 1=S)
+  // 计算来自 MEM 阶段 MRET/SRET 的新特权模式
+  wire [1:0] mret_new_priv = mpp;              // MRET 从 MPP 恢复
+  wire [1:0] sret_new_priv = {1'b0, spp};      // SRET 从 SPP 恢复 (0=U, 1=S)
 
-  // Forward privilege mode when MRET/SRET is in MEM stage
+  // 当 MRET/SRET 在 MEM 阶段时转发特权模式
   wire forward_priv_mode = (exmem_is_mret || exmem_is_sret) && exmem_valid && !exception;
 
-  // Effective privilege mode for EX stage (used for CSR checks and delegation)
+  // EX 阶段的有效特权模式 (用于 CSR 检查和委托)
   assign effective_priv = forward_priv_mode ?
                           (exmem_is_mret ? mret_new_priv : sret_new_priv) :
                           current_priv_r;
@@ -260,10 +260,10 @@ module csr_priv_coordinator #(
   `ifdef DEBUG_PRIV
   always @(posedge clk) begin
     if (forward_priv_mode) begin
-      $display("[PRIV_FORWARD] Time=%0t Forwarding privilege: %s in MEM, current_priv=%b -> effective_priv=%b",
+      $display("[PRIV_FORWARD] 时间=%0t 转发特权: %s in MEM, current_priv=%b -> effective_priv=%b",
                $time, exmem_is_mret ? "MRET" : "SRET", current_priv_r, effective_priv);
       if (idex_is_csr && idex_valid) begin
-        $display("[PRIV_FORWARD]   CSR access in EX: addr=0x%03x will use effective_priv=%b",
+        $display("[PRIV_FORWARD]   CSR 访问在 EX: addr=0x%03x 将使用 effective_priv=%b",
                  idex_csr_addr, effective_priv);
       end
     end

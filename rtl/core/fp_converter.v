@@ -1,58 +1,58 @@
-// Floating-Point Converter Unit
-// Implements INT↔FP and FLOAT↔DOUBLE conversions
-// Multi-cycle execution: 2-3 cycles
+// 浮点转换单元
+// 实现 INT↔FP 和 FLOAT↔DOUBLE 转换
+// 多周期执行: 2–3 周期
 
 `include "config/rv_config.vh"
 
 module fp_converter #(
-  parameter FLEN = `FLEN,  // 32 for single-precision, 64 for double-precision
-  parameter XLEN = `XLEN   // 32 for RV32, 64 for RV64
+  parameter FLEN = `FLEN,  // 32 单精度, 64 双精度
+  parameter XLEN = `XLEN   // 32: RV32, 64: RV64
 ) (
   input  wire              clk,
   input  wire              reset_n,
 
-  // Control
-  input  wire              start,          // Start operation
-  input  wire [3:0]        operation,      // Conversion type (see encoding below)
-  input  wire [2:0]        rounding_mode,  // IEEE 754 rounding mode
-  input  wire              fmt,            // 0: single-precision, 1: double-precision
-  output reg               busy,           // Operation in progress
-  output reg               done,           // Operation complete (1 cycle pulse)
+  // 控制信号
+  input  wire              start,          // 启动操作
+  input  wire [3:0]        operation,      // 转换类型 (编码见下)
+  input  wire [2:0]        rounding_mode,  // IEEE 754 舍入模式
+  input  wire              fmt,            // 0: 单精度, 1: 双精度
+  output reg               busy,           // 运算进行中
+  output reg               done,           // 运算完成 (1 周期脉冲)
 
-  // Inputs (can be integer or FP depending on operation)
-  input  wire [XLEN-1:0]   int_operand,   // Integer input (for INT→FP)
-  input  wire [FLEN-1:0]   fp_operand,    // FP input (for FP→INT or FP→FP)
+  // 输入 (根据操作类型可以是整数或浮点数)
+  input  wire [XLEN-1:0]   int_operand,   // 整数输入 (用于 INT→FP)
+  input  wire [FLEN-1:0]   fp_operand,    // FP 输入 (用于 FP→INT 或 FP→FP)
 
-  // Outputs
-  output reg  [XLEN-1:0]   int_result,    // Integer result (for FP→INT)
-  output reg  [FLEN-1:0]   fp_result,     // FP result (for INT→FP or FP→FP)
+  // 输出
+  output reg  [XLEN-1:0]   int_result,    // 整数结果 (用于 FP→INT)
+  output reg  [FLEN-1:0]   fp_result,     // FP 结果 (用于 INT→FP 或 FP→FP)
 
-  // Exception flags
-  output reg               flag_nv,        // Invalid operation
-  output reg               flag_of,        // Overflow
-  output reg               flag_uf,        // Underflow
-  output reg               flag_nx         // Inexact
+  // 异常标志
+  output reg               flag_nv,        // 无效操作
+  output reg               flag_of,        // 上溢
+  output reg               flag_uf,        // 下溢
+  output reg               flag_nx         // 不精确
 );
 
-  // Operation encoding
-  localparam FCVT_W_S   = 4'b0000;  // Float to signed int32
-  localparam FCVT_WU_S  = 4'b0001;  // Float to unsigned int32
-  localparam FCVT_L_S   = 4'b0010;  // Float to signed int64 (RV64 only)
-  localparam FCVT_LU_S  = 4'b0011;  // Float to unsigned int64 (RV64 only)
-  localparam FCVT_S_W   = 4'b0100;  // Signed int32 to float
-  localparam FCVT_S_WU  = 4'b0101;  // Unsigned int32 to float
-  localparam FCVT_S_L   = 4'b0110;  // Signed int64 to float (RV64 only)
-  localparam FCVT_S_LU  = 4'b0111;  // Unsigned int64 to float (RV64 only)
-  localparam FCVT_S_D   = 4'b1000;  // Double to single
-  localparam FCVT_D_S   = 4'b1001;  // Single to double
+  // 操作编码
+  localparam FCVT_W_S   = 4'b0000;  // 浮点转有符号 int32
+  localparam FCVT_WU_S  = 4'b0001;  // 浮点转无符号 int32
+  localparam FCVT_L_S   = 4'b0010;  // 浮点转有符号 int64 (仅 RV64)
+  localparam FCVT_LU_S  = 4'b0011;  // 浮点转无符号 int64 (仅 RV64)
+  localparam FCVT_S_W   = 4'b0100;  // 有符号 int32 转浮点
+  localparam FCVT_S_WU  = 4'b0101;  // 无符号 int32 转浮点
+  localparam FCVT_S_L   = 4'b0110;  // 有符号 int64 转浮点 (仅 RV64)
+  localparam FCVT_S_LU  = 4'b0111;  // 无符号 int64 转浮点 (仅 RV64)
+  localparam FCVT_S_D   = 4'b1000;  // 双精度转单精度
+  localparam FCVT_D_S   = 4'b1001;  // 单精度转双精度
 
-  // IEEE 754 format parameters
+  // IEEE 754 格式参数
   localparam EXP_WIDTH = (FLEN == 32) ? 8 : 11;
   localparam MAN_WIDTH = (FLEN == 32) ? 23 : 52;
   localparam BIAS = (FLEN == 32) ? 127 : 1023;
   localparam MAX_EXP = (FLEN == 32) ? 255 : 2047;
 
-  // State machine
+  // 状态机
   localparam IDLE      = 2'b00;
   localparam CONVERT   = 2'b01;
   localparam ROUND     = 2'b10;
@@ -60,16 +60,16 @@ module fp_converter #(
 
   reg [1:0] state, next_state;
 
-  // Intermediate values
+  // 中间量
   reg sign_result;
   reg [EXP_WIDTH-1:0] exp_result;
   reg [MAN_WIDTH:0] man_result;
-  reg [63:0] int_abs;              // Absolute value for INT→FP
-  reg [5:0] leading_zeros;         // Leading zero count
+  reg [63:0] int_abs;              // INT→FP 的绝对值
+  reg [5:0] leading_zeros;         // 前导零计数
   reg guard, round, sticky;
   reg round_up;
 
-  // Temporary signals for FP component extraction
+  // FP 分量提取临时信号
   reg sign_fp;
   reg [EXP_WIDTH-1:0] exp_fp;
   reg [MAN_WIDTH-1:0] man_fp;
@@ -77,14 +77,14 @@ module fp_converter #(
   reg signed [15:0] int_exp;
   reg [63:0] shifted_man;
 
-  // Latched input operands (Bug #28 fix: latch operands on start to prevent re-sampling)
+  // 锁存输入操作数 (Bug #28 修复: 在启动时锁存操作数以防止重新采样)
   reg [XLEN-1:0] int_operand_latched;
   reg [FLEN-1:0] fp_operand_latched;
   reg [3:0] operation_latched;
   reg [2:0] rounding_mode_latched;
-  reg fmt_latched;  // Latched format signal
+  reg fmt_latched;  // 锁存的格式信号
 
-  // Effective operands: use latched values during conversion, direct values when idle
+  // 有效操作数: 在转换过程中使用锁存值，空闲时使用直接值
   wire [XLEN-1:0] int_operand_eff;
   wire [FLEN-1:0] fp_operand_eff;
   wire [3:0] operation_eff;
@@ -95,7 +95,7 @@ module fp_converter #(
   assign operation_eff = (state == IDLE) ? operation : operation_latched;
   assign rounding_mode_eff = (state == IDLE) ? rounding_mode : rounding_mode_latched;
 
-  // Double precision extraction
+  // 单/双精度提取辅助寄存器
   reg sign_d, sign_s;
   reg [10:0] exp_d, adjusted_exp_11;
   reg [51:0] man_d;
@@ -106,7 +106,7 @@ module fp_converter #(
   reg [10:0] adjusted_exp;
   reg [7:0] adjusted_exp_8;
 
-  // State machine and input latching
+  // 状态机与输入锁存
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       state <= IDLE;
@@ -117,7 +117,7 @@ module fp_converter #(
       fmt_latched <= 1'b0;
     end else begin
       state <= next_state;
-      // Latch inputs on start (transition from IDLE to CONVERT)
+      // 锁存输入操作数 (从 IDLE 到 CONVERT 的转换)
       if (state == IDLE && start) begin
         int_operand_latched <= int_operand;
         fp_operand_latched <= fp_operand;
@@ -128,9 +128,9 @@ module fp_converter #(
     end
   end
 
-  // Next state logic
-  // Bug #28 fix: Only accept start signal when in IDLE state
-  // This prevents re-sampling operands if start is asserted multiple times
+  // 下一状态逻辑
+  // Bug #28 修复: 仅在 IDLE 状态接受 start
+  // 这防止了在 start 信号多次有效时操作数被重新采样
   always @(*) begin
     case (state)
       IDLE:    next_state = start ? CONVERT : IDLE;
@@ -141,14 +141,14 @@ module fp_converter #(
     endcase
   end
 
-  // Busy and done signals
-  // Bug #28 fix: Keep busy=1 during DONE state to prevent immediate restart
+  // busy/done 信号
+  // Bug #28 修复: DONE 状态保持 busy=1，防止立即重启
   always @(*) begin
     busy = (state != IDLE);
     done = (state == DONE);
   end
 
-  // Main datapath
+  // 主数据通路
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       int_result <= {XLEN{1'b0}};
@@ -161,25 +161,25 @@ module fp_converter #(
       case (state)
 
         // ============================================================
-        // CONVERT: Perform conversion
+        // CONVERT: 执行转换
         // ============================================================
         CONVERT: begin
-          case (operation_latched)  // Bug #28 fix: use latched operation
+          case (operation_latched)  // Bug #28 修复: 使用锁存的操作
 
             // --------------------------------------------------------
-            // FP → INT conversions
+            // FP → INT 转换
             // --------------------------------------------------------
             FCVT_W_S, FCVT_WU_S, FCVT_L_S, FCVT_LU_S: begin
-              // Bug #14 fix: Clear flags at the start of FP→INT conversion
+              // Bug #14 修复: 在 FP→INT 转换开始时清除标志
               flag_nv <= 1'b0;
               flag_of <= 1'b0;
               flag_uf <= 1'b0;
               flag_nx <= 1'b0;
 
-              // Extract FP components - Bug #43 fix: extract based on fmt_latched
+              // 提取 FP 分量 - Bug #43 修复: 根据 fmt_latched 提取
               if (FLEN == 64) begin
                 if (fmt_latched) begin
-                  // Double-precision
+                  // 双精度
                   sign_fp = fp_operand_latched[63];
                   exp_fp = fp_operand_latched[62:52];
                   man_fp = fp_operand_latched[51:0];
@@ -187,16 +187,16 @@ module fp_converter #(
                   is_inf = (fp_operand_latched[62:52] == 11'h7FF) && (fp_operand_latched[51:0] == 0);
                   is_zero = (fp_operand_latched[62:0] == 0);
                 end else begin
-                  // Single-precision (extract from lower 32 bits)
+                  // 单精度 (从低 32 位提取)
                   sign_fp = fp_operand_latched[31];
-                  exp_fp = {3'b000, fp_operand_latched[30:23]};  // Pad to EXP_WIDTH
-                  man_fp = {fp_operand_latched[22:0], 29'b0};    // Pad to MAN_WIDTH
+                  exp_fp = {3'b000, fp_operand_latched[30:23]};  // 填充到 EXP_WIDTH
+                  man_fp = {fp_operand_latched[22:0], 29'b0};    // 填充到 MAN_WIDTH
                   is_nan = (fp_operand_latched[30:23] == 8'hFF) && (fp_operand_latched[22:0] != 0);
                   is_inf = (fp_operand_latched[30:23] == 8'hFF) && (fp_operand_latched[22:0] == 0);
                   is_zero = (fp_operand_latched[30:0] == 0);
                 end
               end else begin
-                // FLEN=32, always single-precision
+                // FLEN=32, 始终单精度
                 sign_fp = fp_operand_latched[31];
                 exp_fp = fp_operand_latched[30:23];
                 man_fp = fp_operand_latched[22:0];
@@ -213,9 +213,9 @@ module fp_converter #(
               `endif
 
               if (is_nan || is_inf) begin
-                // Bug #26 fix: NaN always converts to maximum positive integer (per RISC-V spec)
-                // Infinity respects sign bit: +Inf→max, -Inf→min (signed) or 0 (unsigned)
-                // Bug #24 fix: Use operation_latched not operation
+                // Bug #26 修复: NaN 始终转换为最大正整数 (符合 RISC-V 规范)
+                // 无穷大遵循符号位: +Inf→max, -Inf→min (有符号) 或 0 (无符号)
+                // Bug #24 修复: 使用 operation_latched 而不是 operation
                 case (operation_latched)
                   FCVT_W_S:  int_result <= (is_nan || !sign_fp) ? 32'h7FFFFFFF : 32'h80000000;
                   FCVT_WU_S: int_result <= (is_nan || !sign_fp) ? 32'hFFFFFFFF : 32'h00000000;
@@ -225,38 +225,38 @@ module fp_converter #(
                 flag_nv <= 1'b1;
 
                 `ifdef DEBUG_FPU_CONVERTER
-                $display("[CONVERTER]   NaN/Inf path: sign_fp=%b, result will be set based on operation", sign_fp);
+                $display("[CONVERTER]   NaN/Inf path: sign_fp=%b, 结果将基于操作设置", sign_fp);
                 `endif
               end else if (is_zero) begin
-                // Zero: return 0
+                // 零: 返回 0
                 int_result <= {XLEN{1'b0}};
               end else begin
-                // Normal conversion
-                // Compute integer exponent (Bug #43 fix: use correct bias based on format)
+                // 正常转换
+                // 计算整数指数 (Bug #43 修复: 根据格式使用正确的偏移量)
                 if (fmt_latched)
-                  int_exp = exp_fp - 16'd1023;  // Double-precision bias
+                  int_exp = exp_fp - 16'd1023;  // 双精度偏移量
                 else
-                  int_exp = exp_fp - 16'd127;   // Single-precision bias
+                  int_exp = exp_fp - 16'd127;   // 单精度偏移量
 
-                // Bug #20 fix: Check if exponent is too large (overflow)
-                // Bug #25 fix: Corrected unsigned word overflow detection
-                // Bug #Session86d fix: Distinguish W vs L conversions for overflow detection
-                // For 32-bit conversions (W/WU, operation_latched[1]==0):
-                //   - Signed word (W): overflow when int_exp > 31, OR int_exp==31 with value != -2^31
-                //   - Unsigned word (WU): overflow when int_exp >= 32 (int_exp > 31)
-                // For 64-bit conversions (L/LU, operation_latched[1]==1):
-                //   - Signed long (L): overflow when int_exp > 63, OR int_exp==63 with value != -2^63
-                //   - Unsigned long (LU): overflow when int_exp >= 64 (int_exp > 63)
+                // Bug #20 修复: 检查指数是否过大 (上溢)
+                // Bug #25 修复: 修正无符号字上溢检测
+                // Bug #Session86d 修复: 区分 W 和 L 转换的上溢检测
+                // 对于 32 位转换 (W/WU, operation_latched[1]==0):
+                //   - 有符号字 (W): 当 int_exp > 31 时上溢, 或 int_exp==31 且值 != -2^31
+                //   - 无符号字 (WU): 当 int_exp >= 32 (int_exp > 31) 时上溢
+                // 对于 64 位转换 (L/LU, operation_latched[1]==1):
+                //   - 有符号长整型 (L): 当 int_exp > 63 时上溢, 或 int_exp==63 且值 != -2^63
+                //   - 无符号长整型 (LU): 当 int_exp >= 64 (int_exp > 63) 时上溢
 
-                // Check for overflow based on W vs L
-                if ((operation_latched[1] == 1'b0 && int_exp > 31) ||  // W/WU: 32-bit overflow
+                // 根据 W 与 L 检查上溢
+                if ((operation_latched[1] == 1'b0 && int_exp > 31) ||  // W/WU: 32 位上溢
                     (operation_latched[1] == 1'b0 && int_exp == 31 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp)) ||  // W: special case at 2^31
-                    (operation_latched[1] == 1'b1 && int_exp > 63) ||  // L/LU: 64-bit overflow
-                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b1) ||  // LU: unsigned long at 2^63 always overflows
-                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp))) begin  // L: signed long overflow except exactly -2^63
-                  // Overflow: return max/min
-                  // Bug #23 fix: Unsigned conversions with negative values should saturate to 0
-                  // Bug #24 fix: Use operation_latched not operation
+                    (operation_latched[1] == 1'b1 && int_exp > 63) ||  // L/LU: 64 位上溢
+                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b1) ||  // LU: 无符号长整型在 2^63 处总是上溢
+                    (operation_latched[1] == 1'b1 && int_exp == 63 && operation_latched[0] == 1'b0 && (man_fp != 0 || !sign_fp))) begin  // L: 有符号长整型溢出，除非恰好是 -2^63
+                  // 上溢: 返回最大/最小值
+                  // Bug #23 修复: 无符号转换中带有负值的情况应饱和为 0
+                  // Bug #24 修复: 使用 operation_latched 而不是 operation
                   case (operation_latched)
                     FCVT_W_S:  int_result <= sign_fp ? 32'h80000000 : 32'h7FFFFFFF;
                     FCVT_WU_S: int_result <= sign_fp ? 32'h00000000 : 32'hFFFFFFFF;
@@ -270,63 +270,63 @@ module fp_converter #(
                            int_exp, man_fp, sign_fp);
                   `endif
                 end
-                // Check if exponent is negative (fractional result)
+                // 检查指数是否为负 (分数结果)
                 else if (int_exp < 0) begin
-                  // Bug #27 fix: Fractional values (0 < value < 1) need rounding
-                  // Result is either 0 or 1 depending on rounding mode
+                  // Bug #27 修复: 分数值 (0 < 值 < 1) 需要舍入
+                  // 结果是 0 或 1，具体取决于舍入模式
                   reg should_round_up_frac;
 
-                  // For values < 1.0:
-                  // - Truncated value is always 0
-                  // - Need to check if we should round up to 1
-                  // - Guard bit is the implicit 1 bit (MSB of mantissa)
-                  // - Round/sticky are the mantissa bits
+                  // 对于值 < 1.0:
+                  // - 截断值始终为 0
+                  // - 需要检查是否应舍入到 1
+                  // - Guard 位是隐含的 1 位 (尾数的 MSB)
+                  // - Round/sticky 是尾数位
 
                   flag_nx <= !is_zero;
 
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   int_exp=%d < 0, fractional result (0 < value < 1)", int_exp);
+                  $display("[CONVERTER]   int_exp=%d < 0, 分数结果 (0 < 值 < 1)", int_exp);
                   $display("[CONVERTER]   sign=%b, mantissa=0x%h", sign_fp, man_fp);
                   `endif
 
-                  // Determine rounding for fractional values
+                  // 确定分数值的舍入方式
                   case (rounding_mode)
                     3'b000: begin // RNE
-                      // For int_exp = -1: value = 1.mantissa * 2^-1 = 0.1mantissa (binary)
-                      // Guard bit is the implicit 1, which is always 1 for normalized numbers
-                      // Round bit is MSB of mantissa
-                      // Sticky is OR of remaining mantissa bits
-                      // Round up if guard=1 AND (round=1 OR sticky=1 OR LSB=1)
-                      // Since truncated result is 0 (LSB=0), round up if: 1 AND (MSB_man=1 OR other_bits≠0)
-                      // This simplifies to: round up if value >= 0.5
-                      // For value=0.5 exactly (man=0), round to even (0)
-                      // For value>0.5 (man!=0 with MSB=0, or MSB=1), round up to 1
+                      // 对于 int_exp = -1: value = 1.mantissa * 2^-1 = 0.1mantissa (binary)
+                      // Guard 位是隐含的 1，规范数的值始终为 1
+                      // 舍入位是尾数的 MSB
+                      // Sticky 位是剩余尾数位的 OR
+                      // 如果 guard=1 且 (round=1 或 sticky=1 或 LSB=1)，则向上舍入
+                      // 由于截断结果是 0 (LSB=0)，因此如果满足以下条件，则向上舍入: 1 AND (MSB_man=1 OR other_bits≠0)
+                      // 这简化为: 当值 >= 0.5 时向上舍入
+                      // 对于值=0.5 (man=0)，舍入到偶数 (0)
+                      // 对于值>0.5 (man!=0 且 MSB=0，或 MSB=1)，舍入到 1
 
                       // int_exp=-1: 0.1mantissa, rounds up if >= 0.75 (MSB=1) OR = 0.5 + epsilon (MSB=0, rest!=0)
-                      // But actually for 0.5 exact, we round to even (0)
+                      // 但实际上对于 0.5 精确值，我们舍入到偶数 (0)
                       if (int_exp == -1) begin
-                        // Value is 0.5 to 1.0
-                        // 0.5 exactly: man_fp = 0, round to 0 (even)
-                        // > 0.5: round to 1
+                        // 值在 0.5 到 1.0 之间
+                        // 0.5 精确: man_fp = 0, 舍入到 0 (偶数)
+                        // > 0.5: 舍入到 1
                         should_round_up_frac = (man_fp != 0);
                       end else begin
-                        // int_exp < -1: value < 0.5, always rounds to 0
+                        // int_exp < -1: 值 < 0.5, 始终舍入到 0
                         should_round_up_frac = 1'b0;
                       end
                     end
-                    3'b001: begin // RTZ - always truncate to 0
+                    3'b001: begin // RTZ - 始终截断为 0
                       should_round_up_frac = 1'b0;
                     end
-                    3'b010: begin // RDN - round down (toward -inf)
-                      // Round up magnitude if negative
+                    3'b010: begin // RDN - 向下舍入 (朝向 -inf)
+                      // 如果为负且有分数位，则增加幅度
                       should_round_up_frac = sign_fp && !is_zero;
                     end
-                    3'b011: begin // RUP - round up (toward +inf)
-                      // Round up if positive and non-zero
+                    3'b011: begin // RUP - 向上舍入 (朝向 +inf)
+                      // 如果为正且非零，则向上舍入
                       should_round_up_frac = !sign_fp && !is_zero;
                     end
-                    3'b100: begin // RMM - ties away from zero
-                      // Round up if >= 0.5
+                    3'b100: begin // RMM - 舍入到远离零
+                      // 如果大于等于 0.5，则向上舍入
                       should_round_up_frac = (int_exp == -1);
                     end
                     default: begin
@@ -335,81 +335,81 @@ module fp_converter #(
                   endcase
 
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Rounding mode=%b, should_round_up=%b",
+                  $display("[CONVERTER]   舍入模式=%b, should_round_up=%b",
                            rounding_mode, should_round_up_frac);
                   `endif
 
-                  // Apply rounding
+                  // 应用舍入
                   if (operation_latched[0] == 1'b1 && sign_fp) begin
-                    // Bug #22 fix: Unsigned conversion with negative value: saturate to 0
-                    // Set invalid flag ONLY if the rounded magnitude >= 1.0
-                    // For fractional values that round to 0, only set inexact (already set above)
+                    // Bug #22 修复: 无符号转换带负值: 饱和为 0
+                    // 仅当舍入后的幅度 >= 1.0 时设置无效标志
+                    // 对于舍入到 0 的分数值，仅设置不精确标志 (已处理)
                     int_result <= {XLEN{1'b0}};
                     if (should_round_up_frac) begin
-                      // Rounded to -1 (magnitude 1), which doesn't fit in unsigned: invalid
+                      // 舍入到 -1 (幅度 1)，在无符号下溢出: 无效
                       flag_nv <= 1'b1;
                     end
-                    // else: rounds to 0, which is valid (just inexact, already handled)
+                    // else: 舍入到 0，合法 (仅不精确，已处理)
                   end else if (operation_latched[0] == 1'b0 && sign_fp) begin
-                    // Signed negative: -0 or -1
-                    int_result <= should_round_up_frac ? {XLEN{1'b1}} : {XLEN{1'b0}}; // -1 or 0
+                    // 有符号负数: -0 或 -1
+                    int_result <= should_round_up_frac ? {XLEN{1'b1}} : {XLEN{1'b0}}; // -1 或 0
                   end else begin
-                    // Positive (signed or unsigned): 0 or 1
+                    // 正数 (有符号或无符号): 0 或 1
                     int_result <= should_round_up_frac ? {{(XLEN-1){1'b0}}, 1'b1} : {XLEN{1'b0}};
                   end
 
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Final result=%h",
+                  $display("[CONVERTER]   最终结果=%h",
                            should_round_up_frac ? (sign_fp ? {XLEN{1'b1}} : 1) : 0);
                   `endif
                 end else begin
-                  // Normal conversion: shift mantissa
-                  // Build 64-bit mantissa: {implicit 1, 23-bit mantissa, 40 zero bits}
+                  // 正常转换: 移位尾数
+                  // 构建 64 位尾数: {隐含的 1, 23 位尾数, 40 个零位}
                   reg [63:0] man_64_full;
                   reg [63:0] lost_bits;
-                  reg       frac_guard, frac_round, frac_sticky;
-                  reg       should_round_up;
+                  reg        frac_guard, frac_round, frac_sticky;
+                  reg        should_round_up;
                   reg [63:0] rounded_result;
 
-                  // Bug #48 fix: Adjust padding based on format when FLEN=64
-                  // For FLEN=64:
-                  //   - Single-precision: man_fp[51:29] contains 23-bit mantissa, man_fp[28:0] is zero
-                  //                      Build: {1'b1, man_fp[51:29], 40'b0} = 64 bits
-                  //   - Double-precision: man_fp[51:0] contains 52-bit mantissa
-                  //                      Build: {1'b1, man_fp[51:0], 11'b0} = 64 bits
-                  // For FLEN=32:
-                  //   - Single-precision only: man_fp[22:0] contains 23-bit mantissa
-                  //                      Build: {1'b1, man_fp[22:0], 40'b0} = 64 bits
+                  // Bug #48 修复: 根据格式调整填充
+                  // 对于 FLEN=64:
+                  //   - 单精度: man_fp[51:29] 包含 23 位尾数，man_fp[28:0] 为零
+                  //                      构建: {1'b1, man_fp[51:29], 40'b0} = 64 位
+                  //   - 双精度: man_fp[51:0] 包含 52 位尾数
+                  //                      构建: {1'b1, man_fp[51:0], 11'b0} = 64 位
+                  // 对于 FLEN=32:
+                  //   - 单精度: man_fp[22:0] 包含 23 位尾数
+                  //                      构建: {1'b1, man_fp[22:0], 40'b0} = 64 位
                   if (FLEN == 64) begin
                     if (fmt_latched)
-                      man_64_full = {1'b1, man_fp[51:0], 11'b0};  // Double-precision
+                      man_64_full = {1'b1, man_fp[51:0], 11'b0};  // 双精度
                     else
-                      man_64_full = {1'b1, man_fp[51:29], 40'b0}; // Single-precision
+                      man_64_full = {1'b1, man_fp[51:29], 40'b0}; // 单精度
                   end else begin
-                    man_64_full = {1'b1, man_fp[22:0], 40'b0};    // FLEN=32, single-precision only
+                    man_64_full = {1'b1, man_fp[22:0], 40'b0};    // FLEN=32, 单精度
                   end
 
                   shifted_man = man_64_full >> (63 - int_exp);
 
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   int_exp=%d >= 0, normal conversion", int_exp);
+                  $display("[CONVERTER]   int_exp=%d >= 0, 正常转换", int_exp);
                   $display("[CONVERTER]   man_64_full=%h, shift_amount=%d",
                            man_64_full, (63 - int_exp));
                   $display("[CONVERTER]   shifted_man=%h",
                            shifted_man);
                   `endif
 
-                  // Bug #26 fix: Extract fractional bits and apply rounding for FP→INT
-                  // Extract the bits that were shifted out (fractional part)
+                  // Bug #26 修复: 提取分数位并应用舍入用于 FP→INT
+                  // 提取被移出的位 (分数部分)
                   if (int_exp < 63) begin
                     reg [63:0] lost_bits_mask;
                     lost_bits_mask = (64'h1 << (63 - int_exp)) - 1;
                     lost_bits = man_64_full & lost_bits_mask;
 
-                    // Extract guard, round, sticky bits from fractional part
-                    // Guard bit: MSB of fractional part (bit position 63-int_exp-1)
-                    // Round bit: next bit (bit position 63-int_exp-2)
-                    // Sticky bit: OR of all remaining bits
+                    // 从分数部分提取 guard, round, sticky 位
+                    // Guard 位: 分数部分的 MSB (位位置 63-int_exp-1)
+                    // Round 位: 下一位 (位位置 63-int_exp-2)
+                    // Sticky 位: 所有剩余位的 OR
                     if (int_exp <= 61) begin
                       frac_guard  = lost_bits[63 - int_exp - 1];
                       frac_round  = (int_exp <= 60) ? lost_bits[63 - int_exp - 2] : 1'b0;
@@ -427,7 +427,7 @@ module fp_converter #(
 
                     flag_nx <= (lost_bits != 0);
                   end else begin
-                    // No fractional bits if exponent >= 63
+                    // 如果指数 >= 63，则没有分数位
                     lost_bits = 64'h0;
                     frac_guard = 1'b0;
                     frac_round = 1'b0;
@@ -436,35 +436,35 @@ module fp_converter #(
                   end
 
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Lost bits=%h, GRS=%b%b%b",
+                  $display("[CONVERTER]   丢失位=%h, GRS=%b%b%b",
                            lost_bits, frac_guard, frac_round, frac_sticky);
                   `endif
 
-                  // Determine if we should round up based on rounding mode
-                  // IEEE 754 rounding modes:
-                  // 000 = RNE (Round to Nearest, ties to Even)
-                  // 001 = RTZ (Round Toward Zero) - always truncate
-                  // 010 = RDN (Round Down / toward -infinity)
-                  // 011 = RUP (Round Up / toward +infinity)
-                  // 100 = RMM (Round to Nearest, ties to Max Magnitude)
+                  // 根据舍入模式确定是否应舍入
+                  // IEEE 754 舍入模式:
+                  // 000 = RNE (舍入到最近，平局时舍入到偶数)
+                  // 001 = RTZ (朝零舍入) - 始终截断
+                  // 010 = RDN (向下舍入 / 朝 -无穷大)
+                  // 011 = RUP (向上舍入 / 朝 +无穷大)
+                  // 100 = RMM (舍入到最近，平局时舍入到最大幅度)
                   case (rounding_mode)
                     3'b000: begin // RNE
-                      // Round up if: guard=1 AND (round=1 OR sticky=1 OR LSB=1)
+                      // 如果: guard=1 且 (round=1 或 sticky=1 或 LSB=1)，则向上舍入
                       should_round_up = frac_guard && (frac_round || frac_sticky || shifted_man[0]);
                     end
                     3'b001: begin // RTZ
                       should_round_up = 1'b0;
                     end
                     3'b010: begin // RDN
-                      // Round down (toward -infinity): round up magnitude if negative and fractional bits exist
+                      // 向下舍入 (朝 -无穷大): 如果为负，则增加幅度
                       should_round_up = sign_fp && (frac_guard || frac_round || frac_sticky);
                     end
                     3'b011: begin // RUP
-                      // Round up (toward +infinity): round up magnitude if positive and fractional bits exist
+                      // 向上舍入 (朝 +无穷大): 如果为正，则增加幅度
                       should_round_up = !sign_fp && (frac_guard || frac_round || frac_sticky);
                     end
                     3'b100: begin // RMM
-                      // Round to nearest, ties away from zero
+                      // 舍入到最近，平局时远离零
                       should_round_up = frac_guard;
                     end
                     default: begin
@@ -473,28 +473,28 @@ module fp_converter #(
                   endcase
 
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Rounding mode=%b, should_round_up=%b",
+                  $display("[CONVERTER]   舍入模式=%b, should_round_up=%b",
                            rounding_mode, should_round_up);
                   `endif
 
-                  // Apply rounding increment
+                  // 应用舍入增量
                   rounded_result = shifted_man + (should_round_up ? 64'h1 : 64'h0);
 
-                  // Apply sign for signed conversions, or saturate for unsigned
+                  // 对于有符号转换应用符号，或对无符号饱和
                   if (operation_latched[0] == 1'b1 && sign_fp) begin
-                    // Bug #21 fix: Unsigned conversion with negative value: saturate to 0 and set invalid flag
+                    // Bug #21 修复: 无符号转换带负值: 饱和为 0 并设置无效标志
                     int_result <= {XLEN{1'b0}};
                     flag_nv <= 1'b1;
                   end else if (operation_latched[0] == 1'b0 && sign_fp) begin
-                    // Signed negative
+                    // 有符号负数
                     int_result <= -rounded_result[XLEN-1:0];
                   end else begin
-                    // Positive (signed or unsigned)
+                    // 正数 (有符号或无符号)
                     int_result <= rounded_result[XLEN-1:0];
                   end
 
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Rounded result=%h, final int_result=%h",
+                  $display("[CONVERTER]   舍入结果=%h, 最终整数结果=%h",
                            rounded_result[XLEN-1:0],
                            (operation_latched[0] == 1'b0 && sign_fp) ? -rounded_result[XLEN-1:0] : rounded_result[XLEN-1:0]);
                   `endif
@@ -503,22 +503,22 @@ module fp_converter #(
             end
 
             // --------------------------------------------------------
-            // INT → FP conversions
+            // INT → FP 转换
             // --------------------------------------------------------
             FCVT_S_W, FCVT_S_WU, FCVT_S_L, FCVT_S_LU: begin
-              // Bug #14 fix: Clear flags at the start of INT→FP conversion
+              // Bug #14 修复: 在 INT→FP 转换开始时清除标志
               flag_nv <= 1'b0;
               flag_of <= 1'b0;
               flag_uf <= 1'b0;
               flag_nx <= 1'b0;
 
               `ifdef DEBUG_FPU_CONVERTER
-              $display("[CONVERTER] INT→FP CONVERT stage: op=%b, int_operand_latched=0x%h", operation, int_operand_latched);
+              $display("[CONVERTER] INT→FP 转换阶段: op=%b, int_operand_latched=0x%h", operation, int_operand_latched);
               `endif
 
-              // Check for zero
+              // 检查零
               if (int_operand_latched == 0) begin
-                // For zero input, set intermediate values so ROUND state doesn't corrupt result
+                // 对于零输入，设置中间值以便 ROUND 状态不破坏结果
                 sign_result <= 1'b0;
                 exp_result <= {EXP_WIDTH{1'b0}};
                 man_result <= {(MAN_WIDTH+1){1'b0}};
@@ -526,11 +526,11 @@ module fp_converter #(
                 round <= 1'b0;
                 sticky <= 1'b0;
                 `ifdef DEBUG_FPU_CONVERTER
-                $display("[CONVERTER]   Zero input, setting intermediate values to zero");
+                $display("[CONVERTER]   零输入，设置中间值为零");
                 `endif
               end else begin
-                // Bug #18 fix: Compute everything with blocking assignments first
-                // Then register at the end to avoid timing issues
+                // Bug #18 修复: 首先使用阻塞赋值计算所有值
+                // 然后在最后注册以避免时序问题
 
                 reg [63:0] int_abs_temp;
                 reg sign_temp;
@@ -540,57 +540,57 @@ module fp_converter #(
                 reg [MAN_WIDTH:0] man_temp;
                 reg g_temp, r_temp, s_temp;
 
-                // Extract sign and absolute value
-                // Bug #Session86b fix: Handle W/WU vs L/LU conversions properly
-                // operation_latched[1]: 0=W/WU (32-bit), 1=L/LU (64-bit)
-                // operation_latched[0]: 0=signed, 1=unsigned
+                // 提取符号和绝对值
+                // Bug #Session86b 修复: 正确处理 W/WU 与 L/LU 转换
+                // operation_latched[1]: 0=W/WU (32 位), 1=L/LU (64 位)
+                // operation_latched[0]: 0=有符号, 1=无符号
 
-                // Check if this is a signed negative value
-                // For W/WU: check bit 31, for L/LU: check bit XLEN-1
+                // 检查这是否是一个有符号的负值
+                // 对于 W/WU: 检查第 31 位，对于 L/LU: 检查第 XLEN-1 位
                 if (operation_latched[0] == 1'b0 &&
                     (operation_latched[1] == 1'b0 ? int_operand_latched[31] : int_operand_latched[XLEN-1])) begin
-                  // Signed negative
+                  // 有符号负数
                   sign_temp = 1'b1;
-                  // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
-                  // Bug #Session86c fix: For W conversions, shift left by 32 so leading zero
-                  // count is relative to 64-bit position (makes exponent calc consistent)
+                  // Bug #24 修复: 显式处理宽度转换以避免符号扩展
+                  // Bug #Session86c 修复: 对于 W 转换，左移 32 位以便前导零
+                  // 计数相对于 64 位位置 (使指数计算一致)
                   if (operation_latched[1] == 1'b0) begin
-                    // W conversion: negate lower 32 bits, shift to upper half
+                    // W 转换: 取反低 32 位，左移到上半部分
                     int_abs_temp = {(-int_operand_latched[31:0]), 32'b0};
                   end else if (XLEN == 32) begin
-                    // L conversion on RV32: use full XLEN (already in lower 32 bits)
+                    // RV32 上的 L 转换: 使用完整 XLEN (已经在低 32 位)
                     int_abs_temp = {(-int_operand_latched[31:0]), 32'b0};
                   end else begin
-                    // L conversion on RV64: use full 64 bits (no shift)
+                    // RV64 上的 L 转换: 使用完整 64 位 (无移位)
                     int_abs_temp = -int_operand_latched;
                   end
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Signed negative: int_abs = 0x%h, is_w=%b", int_abs_temp, (operation_latched[1] == 1'b0));
+                  $display("[CONVERTER]   有符号负数: int_abs = 0x%h, is_w=%b", int_abs_temp, (operation_latched[1] == 1'b0));
                   `endif
                 end else begin
-                  // Positive or unsigned
+                  // 正数或无符号
                   sign_temp = 1'b0;
-                  // Bug #24 fix: Explicitly handle width conversion to avoid sign-extension
-                  // Bug #Session86c fix: For W conversions, shift left by 32 so leading zero
-                  // count is relative to 64-bit position (makes exponent calc consistent)
+                  // Bug #24 修复: 显式处理宽度转换以避免符号扩展
+                  // Bug #Session86c 修复: 对于 W 转换，左移 32 位以便前导零
+                  // 计数相对于 64 位位置 (使指数计算一致)
                   if (operation_latched[1] == 1'b0) begin
-                    // W conversion: extract lower 32 bits, shift to upper half
+                    // W 转换: 提取低 32 位，左移到上半部分
                     int_abs_temp = {int_operand_latched[31:0], 32'b0};
                   end else if (XLEN == 32) begin
-                    // L conversion on RV32: use full XLEN (already in lower 32 bits)
+                    // RV32 上的 L 转换: 使用完整 XLEN (已经在低 32 位)
                     int_abs_temp = {int_operand_latched[31:0], 32'b0};
                   end else begin
-                    // L conversion on RV64: use full 64 bits (no shift)
+                    // RV64 上的 L 转换: 使用完整 64 位 (无移位)
                     int_abs_temp = int_operand_latched;
                   end
                   `ifdef DEBUG_FPU_CONVERTER
-                  $display("[CONVERTER]   Positive/unsigned: int_abs = 0x%h, is_w=%b", int_abs_temp, (operation_latched[1] == 1'b0));
+                  $display("[CONVERTER]   正数/无符号: int_abs = 0x%h, is_w=%b", int_abs_temp, (operation_latched[1] == 1'b0));
                   `endif
                 end
 
-                // Count leading zeros to find MSB position
-                // Bug #13 fix: Proper leading zero count using priority encoder
-                // Bug #18 fix: Use blocking assignments for all intermediate values
+                // 计数前导零以找到 MSB 位置
+                // Bug #13 修复: 使用优先编码器正确计数前导零
+                // Bug #18 修复: 对所有中间值使用阻塞赋值
                 casez (int_abs_temp)
                   64'b1???????????????????????????????????????????????????????????????: lz_temp = 6'd0;
                   64'b01??????????????????????????????????????????????????????????????: lz_temp = 6'd1;
@@ -656,52 +656,52 @@ module fp_converter #(
                   64'b00000000000000000000000000000000000000000000000000000000000001??: lz_temp = 6'd61;
                   64'b000000000000000000000000000000000000000000000000000000000000001?: lz_temp = 6'd62;
                   64'b0000000000000000000000000000000000000000000000000000000000000001: lz_temp = 6'd63;
-                  default: lz_temp = 6'd63;  // All zeros (shouldn't happen due to zero check)
+                  default: lz_temp = 6'd63;  // 全零 (由于零检查，不应发生)
                 endcase
 
-                // Compute exponent (Bug #43 fix: use correct bias based on format)
-                // Bug #Session86 fix: Adjust exponent for W vs L conversions
-                // For W/WU (32-bit int): bit position = 31 - lz_temp
-                // For L/LU (64-bit int): bit position = 63 - lz_temp
+                // 计算指数 (Bug #43 修复: 根据格式使用正确的偏移量)
+                // Bug #Session86 修复: 调整 W 与 L 转换的指数
+                // 对于 W/WU (32 位整数): 位位置 = 31 - lz_temp
+                // 对于 L/LU (64 位整数): 位位置 = 63 - lz_temp
                 if (fmt_latched) begin
-                  // Double-precision bias
+                  // 双精度偏移量
                   if (operation_latched[1])
-                    exp_temp = 11'd1023 + (63 - lz_temp);  // L/LU: 64-bit integer
+                    exp_temp = 11'd1023 + (63 - lz_temp);  // L/LU: 64 位整数
                   else
-                    exp_temp = 11'd1023 + (31 - lz_temp);  // W/WU: 32-bit integer
+                    exp_temp = 11'd1023 + (31 - lz_temp);  // W/WU: 32 位整数
                 end else begin
-                  // Single-precision bias
+                  // 单精度偏移量
                   if (operation_latched[1])
-                    exp_temp = 8'd127 + (63 - lz_temp);    // L/LU: 64-bit integer
+                    exp_temp = 8'd127 + (63 - lz_temp);    // L/LU: 64 位整数
                   else
-                    exp_temp = 8'd127 + (31 - lz_temp);    // W/WU: 32-bit integer
+                    exp_temp = 8'd127 + (31 - lz_temp);    // W/WU: 32 位整数
                 end
 
-                // Normalize mantissa (shift to align MSB to bit 63)
-                // Bug #13b fix: Shift by leading_zeros only (not +1)
-                // Bug #18 fix: Use blocking assignments throughout
-                // The +1 skip is implicit in the extraction [62:62-MAN_WIDTH+1]
+                // 规范化尾数 (移位以对齐 MSB 到位 63)
+                // Bug #13b 修复: 仅移位 leading_zeros (不 +1)
+                // Bug #18 修复: 对所有中间值使用阻塞赋值
+                // +1 跳过在提取 [62:62-MAN_WIDTH+1] 中隐含
                 shifted_temp = int_abs_temp << lz_temp;
 
-                // Extract mantissa bits (Bug #43 fix: extract correct width based on format)
-                // For double: 52 bits, for single: 23 bits
+                // 提取尾数位 (Bug #43 修复: 根据格式提取正确宽度)
+                // 对于双精度: 52 位，对于单精度: 23 位
                 if (fmt_latched) begin
-                  // Double-precision: extract bits [62:11] (52 bits)
+                  // 双精度: 提取位 [62:11] (52 位)
                   man_temp = shifted_temp[62:11];
-                  // GRS bits for double
+                  // 双精度的 GRS 位
                   g_temp = shifted_temp[10];
                   r_temp = shifted_temp[9];
                   s_temp = |shifted_temp[8:0];
                 end else begin
-                  // Single-precision: extract bits [62:40] (23 bits), pad with zeros
+                  // 单精度: 提取位 [62:40] (23 位)，填充零
                   man_temp = {shifted_temp[62:40], 29'b0};
-                  // GRS bits for single
+                  // 单精度的 GRS 位
                   g_temp = shifted_temp[39];
                   r_temp = shifted_temp[38];
                   s_temp = |shifted_temp[37:0];
                 end
 
-                // Now register all computed values
+                // 现在注册所有计算值
                 sign_result <= sign_temp;
                 int_abs <= int_abs_temp;
                 leading_zeros <= lz_temp;
@@ -716,58 +716,58 @@ module fp_converter #(
                          lz_temp, exp_temp, exp_temp);
                 $display("[CONVERTER]   shifted_temp=0x%h", shifted_temp);
                 $display("[CONVERTER]   man_temp=0x%h", man_temp);
-                $display("[CONVERTER]   GRS bits: g=%b, r=%b, s=%b", g_temp, r_temp, s_temp);
+                $display("[CONVERTER]   GRS 位: g=%b, r=%b, s=%b", g_temp, r_temp, s_temp);
                 `endif
               end
             end
 
             // --------------------------------------------------------
-            // FLOAT ↔ DOUBLE conversions
+            // FLOAT ↔ DOUBLE 转换
             // --------------------------------------------------------
             FCVT_S_D: begin
-              // Double to single (may lose precision)
-              // Extract double components
+              // 双精度转单精度 (可能损失精度)
+              // 提取双精度分量
               sign_d = fp_operand_latched[63];
               exp_d = fp_operand_latched[62:52];
               man_d = fp_operand_latched[51:0];
 
-              // Check for special values
+              // 检查特殊值
               is_nan_d = (exp_d == 11'h7FF) && (man_d != 0);
               is_inf_d = (exp_d == 11'h7FF) && (man_d == 0);
               is_zero_d = (fp_operand_latched[62:0] == 0);
 
               if (is_nan_d) begin
-                fp_result <= 32'h7FC00000;  // Canonical NaN
+                fp_result <= 32'h7FC00000;  // 规范 NaN
               end else if (is_inf_d) begin
-                fp_result <= {sign_d, 8'hFF, 23'b0};  // ±Infinity
+                fp_result <= {sign_d, 8'hFF, 23'b0};  // ±无穷大
               end else if (is_zero_d) begin
                 fp_result <= {sign_d, 31'b0};  // ±0
               end else begin
-                // Normal conversion: adjust exponent bias (1023 → 127)
+                // 正常转换: 调整指数偏移量 (1023 → 127)
                 adjusted_exp = exp_d - 1023 + 127;
 
-                // Check for overflow
+                // 检查上溢
                 if (adjusted_exp >= 255) begin
-                  fp_result <= {sign_d, 8'hFF, 23'b0};  // ±Infinity
+                  fp_result <= {sign_d, 8'hFF, 23'b0};  // ±无穷大
                   flag_of <= 1'b1;
                   flag_nx <= 1'b1;
                 end
-                // Check for underflow
+                // 检查下溢
                 else if (adjusted_exp < 1) begin
                   fp_result <= {sign_d, 31'b0};  // ±0
                   flag_uf <= 1'b1;
                   flag_nx <= 1'b1;
                 end else begin
-                  // Truncate mantissa (52 bits → 23 bits)
+                  // 截断尾数 (52 位 → 23 位)
                   fp_result <= {sign_d, adjusted_exp[7:0], man_d[51:29]};
-                  flag_nx <= |man_d[28:0];  // Inexact if lower bits non-zero
+                  flag_nx <= |man_d[28:0];  // 如果低位非零则不精确
                 end
               end
             end
 
             FCVT_D_S: begin
-              // Single to double (no precision loss)
-              // Extract single components
+              // 单精度转双精度 (无精度损失)
+              // 提取单精度分量
               sign_s = fp_operand_latched[31];
               exp_s = fp_operand_latched[30:23];
               man_s = fp_operand_latched[22:0];
@@ -777,7 +777,7 @@ module fp_converter #(
               $display("[FCVT_D_S] sign=%b, exp=%h, man=%h", sign_s, exp_s, man_s);
               `endif
 
-              // Check for special values
+              // 检查特殊值
               is_nan_s = (exp_s == 8'hFF) && (man_s != 0);
               is_inf_s = (exp_s == 8'hFF) && (man_s == 0);
               is_zero_s = (fp_operand_latched[30:0] == 0);
@@ -787,13 +787,13 @@ module fp_converter #(
               `endif
 
               if (is_nan_s) begin
-                fp_result <= 64'h7FF8000000000000;  // Canonical NaN
+                fp_result <= 64'h7FF8000000000000;  // 规范 NaN
               end else if (is_inf_s) begin
-                fp_result <= {sign_s, 11'h7FF, 52'b0};  // ±Infinity
+                fp_result <= {sign_s, 11'h7FF, 52'b0};  // ±无穷大
               end else if (is_zero_s) begin
                 fp_result <= {sign_s, 63'b0};  // ±0
               end else begin
-                // Normal conversion: adjust exponent bias (127 → 1023)
+                // 正常转换: 调整指数偏移量 (127 → 1023)
                 reg [10:0] adjusted_exp;
                 adjusted_exp = exp_s + 1023 - 127;
 
@@ -802,13 +802,13 @@ module fp_converter #(
                 $display("[FCVT_D_S] result={%b, %h, %h, 29'b0}", sign_s, adjusted_exp, man_s);
                 `endif
 
-                // Extend mantissa (23 bits → 52 bits, zero-pad)
+                // 扩展尾数 (23 位 → 52 位，零填充)
                 fp_result <= {sign_s, adjusted_exp, man_s, 29'b0};
               end
             end
 
             default: begin
-              // Invalid operation
+              // 无效操作
               fp_result <= {FLEN{1'b0}};
               int_result <= {XLEN{1'b0}};
             end
@@ -816,10 +816,10 @@ module fp_converter #(
         end
 
         // ============================================================
-        // ROUND: Apply rounding (for INT→FP only)
+        // ROUND: 仅 INT→FP 使用的舍入阶段
         // ============================================================
         ROUND: begin
-          // Only apply rounding for INT→FP conversions
+          // 仅对 INT→FP 转换应用舍入
           if (operation_latched[3:2] == 2'b01) begin
             `ifdef DEBUG_FPU_CONVERTER
             $display("[CONVERTER] ROUND stage:");
@@ -830,8 +830,8 @@ module fp_converter #(
             $display("[CONVERTER]   rounding_mode_latched=%b", rounding_mode_latched);
             `endif
 
-            // Determine if we should round up
-            // Compute round_up directly based on rounding mode
+            // 确定是否应舍入
+            // 根据舍入模式直接计算 round_up
             round_up <= (rounding_mode == 3'b000) ? (guard && (round || sticky || man_result[0])) :
                         (rounding_mode == 3'b001) ? 1'b0 :
                         (rounding_mode == 3'b010) ? (sign_result && (guard || round || sticky)) :
@@ -847,29 +847,29 @@ module fp_converter #(
                      (rounding_mode == 3'b100) ? guard : 1'b0);
             `endif
 
-            // Apply rounding - Bug #43 fix: handle both single and double precision
+            // 应用舍入 - Bug #43 修复: 同时处理单精度和双精度
             if ((rounding_mode == 3'b000 && guard && (round || sticky || man_result[0])) ||
                 (rounding_mode == 3'b010 && sign_result && (guard || round || sticky)) ||
                 (rounding_mode == 3'b011 && !sign_result && (guard || round || sticky)) ||
                 (rounding_mode == 3'b100 && guard)) begin
-              // Need to round up - check for mantissa overflow
+              // 需要向上舍入 - 检查尾数上溢
               if (fmt_latched) begin
-                // Double-precision (52-bit mantissa)
+                // 双精度 (52 位尾数)
                 if (man_result[51:0] == 52'hFFFFFFFFFFFFF) begin
                   fp_result <= {sign_result, exp_result + 1'b1, 52'b0};
                 end else begin
                   fp_result <= {sign_result, exp_result, man_result[51:0] + 1'b1};
                 end
               end else begin
-                // Single-precision (23-bit mantissa, NaN-boxed if FLEN=64)
+                // 单精度 (23 位尾数，FLEN=64 时 NaN-boxed)
                 if (man_result[51:29] == 23'h7FFFFF) begin
-                  // Mantissa overflow
+                  // 尾数上溢
                   if (FLEN == 64)
                     fp_result <= {32'hFFFFFFFF, sign_result, exp_result[7:0] + 1'b1, 23'b0};
                   else
                     fp_result <= {sign_result, exp_result[7:0] + 1'b1, 23'b0};
                 end else begin
-                  // No overflow
+                  // 无上溢
                   if (FLEN == 64)
                     fp_result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], man_result[51:29] + 1'b1};
                   else
@@ -877,12 +877,12 @@ module fp_converter #(
                 end
               end
             end else begin
-              // No rounding needed
+              // 无需舍入
               if (fmt_latched) begin
-                // Double-precision
+                // 双精度
                 fp_result <= {sign_result, exp_result, man_result[51:0]};
               end else begin
-                // Single-precision (NaN-boxed if FLEN=64)
+                // 单精度 (NaN-boxed if FLEN=64)
                 if (FLEN == 64)
                   fp_result <= {32'hFFFFFFFF, sign_result, exp_result[7:0], man_result[51:29]};
                 else
@@ -895,12 +895,12 @@ module fp_converter #(
         end
 
         // ============================================================
-        // DONE: Hold result for 1 cycle
+        // DONE: 保持结果并打印调试信息 (可选)
         // ============================================================
         DONE: begin
-          // Just hold result
+          // 仅保持结果
           `ifdef DEBUG_FPU_CONVERTER
-          $display("[CONVERTER] DONE state: fp_result=0x%h, int_result=0x%h",
+          $display("[CONVERTER] DONE 状态: fp_result=0x%h, int_result=0x%h",
                    fp_result, int_result);
           `endif
         end
